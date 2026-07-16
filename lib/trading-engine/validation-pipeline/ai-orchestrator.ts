@@ -66,7 +66,14 @@ export class AIValidationOrchestrator {
     if (this.ai) return this.ai;
     const apiKey = getEnv('GEMINI_API_KEY');
     if (apiKey) {
-      this.ai = new GoogleGenAI({ apiKey });
+      this.ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
       return this.ai;
     }
     return null;
@@ -249,7 +256,7 @@ export class AIValidationOrchestrator {
           const stateSummary = `Strategy: ${strategyId}, Timeframe: ${marketContext?.marketData?.timeframe || 'Unknown'}, Symbol: ${marketContext?.marketData?.symbol || 'Unknown'}, Rules: ${simplifiedResults.map(r => r.rule + "=" + r.status).join(',')}`;
           
           const embedRes = await aiClient.models.embedContent({
-              model: 'text-embedding-004',
+              model: 'gemini-embedding-2-preview',
               contents: stateSummary
           });
           
@@ -331,7 +338,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       };
 
       const response = await aiClient.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
