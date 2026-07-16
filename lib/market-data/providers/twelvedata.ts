@@ -153,6 +153,8 @@ export class TwelveDataProvider implements PriceProvider {
 
   private formatSymbol(symbol: string): string {
     if (symbol === 'XAUUSD') return 'XAU/USD';
+    if (symbol === 'DXY') return 'DXY';
+    if (symbol === 'US10Y') return 'US10Y';
     return symbol;
   }
 
@@ -200,7 +202,10 @@ export class TwelveDataProvider implements PriceProvider {
         freshness: 'live'
       };
     } catch (e: any) {
-      getProviderRegistry().reportError(this.name, e.message);
+      logger.error(`TwelveData failed to fetch ${symbol} (mapped: ${formattedSymbol}): ${e.message}`);
+      if (symbol === 'XAUUSD') {
+        getProviderRegistry().reportError(this.name, e.message);
+      }
       throw e;
     }
   }
@@ -238,7 +243,10 @@ export class TwelveDataProvider implements PriceProvider {
       // TwelveData returns descending order (newest first). Let's sort to ascending if needed, typically we return oldest to newest in arrays, let's reverse.
       return candles.reverse();
     } catch (e: any) {
-      getProviderRegistry().reportError(this.name, e.message);
+      logger.error(`TwelveData failed to fetch candles for ${symbol} (mapped: ${formattedSymbol}): ${e.message}`);
+      if (symbol === 'XAUUSD') {
+        getProviderRegistry().reportError(this.name, e.message);
+      }
       throw e;
     }
   }
