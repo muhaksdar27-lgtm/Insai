@@ -20,8 +20,12 @@ export function getEnv(key: string): string | undefined {
               if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
                 val = val.substring(1, val.length - 1);
               }
-              envCache[k.trim()] = val;
-              process.env[k.trim()] = val; // sync to process.env
+              const trimmedKey = k.trim();
+              envCache[trimmedKey] = val;
+              // Only overwrite process.env if it is not already set with a truthy value
+              if (!process.env[trimmedKey]) {
+                process.env[trimmedKey] = val; // sync to process.env
+              }
             }
           }
         }

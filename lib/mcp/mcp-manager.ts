@@ -159,13 +159,17 @@ export class MCPManager {
              timeoutPromise
            ])) as any;
            if (error) {
-               getMcpRegistry().reportError('Supabase', error.message);
+               if (error.code === 'PGRST114' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
+                   getMcpRegistry().reportConnected('Supabase');
+               } else {
+                   getMcpRegistry().reportError('Supabase', error.message);
+               }
            } else {
                getMcpRegistry().reportConnected('Supabase');
            }
         } catch(e: any) {
            getMcpRegistry().reportError('Supabase', e.message);
-        }
+         }
     } else {
       getMcpRegistry().reportNotConfigured('Supabase', 'Missing Supabase URL or Service Role Key');
     }

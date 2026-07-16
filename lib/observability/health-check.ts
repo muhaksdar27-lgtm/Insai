@@ -67,24 +67,46 @@ class HealthCheckEngine {
     // Check Supabase
     try {
         const start = Date.now();
-        const sb = getSupabaseClient().getClient();
-        if (sb) {
-           const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000));
-           const { error } = (await Promise.race([
-             sb.from('strategies').select('id').limit(1),
-             timeoutPromise
-           ])) as any;
-           
-           if (error) {
-               this.updateServiceHealth('Supabase', 'UNAVAILABLE', Date.now() - start, error.message);
-           } else {
-               this.updateServiceHealth('Supabase', 'ONLINE', Date.now() - start);
-           }
+        const url = getEnv("NEXT_PUBLIC_SUPABASE_URL") || getEnv("SUPABASE_URL");
+        const key = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+        if (!url || !key) {
+           this.updateServiceHealth('Supabase', 'NOT CONFIGURED', 0, 'Supabase URL or Service Role Key is missing/not configured');
         } else {
-           this.updateServiceHealth('Supabase', 'NOT CONFIGURED', 0, 'Supabase credentials not configured');
+           const sb = getSupabaseClient().getClient();
+           if (sb) {
+              const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout after 3000ms')), 3000));
+              const { error } = (await Promise.race([
+                sb.from('strategies').select('id').limit(1),
+                timeoutPromise
+              ])) as any;
+              
+              if (error) {
+                  const errMsg = error.message || String(error);
+                  const errCode = error.code || '';
+                  
+                  // Check if it is a PG relation error (table does not exist)
+                  if (errCode === 'PGRST114' || errMsg.includes('relation') || errMsg.includes('does not exist')) {
+                      logger.warn(`Supabase connected successfully, but 'strategies' table is missing. DB schema needs migration.`, { code: errCode });
+                      this.updateServiceHealth('Supabase', 'DEGRADED', Date.now() - start, `Database table missing (needs migration): ${errMsg}`);
+                  } else if (errMsg.includes('API key') || errMsg.includes('JWT') || errMsg.includes('Invalid API key') || errCode === '401' || errCode === 'PGRST301') {
+                      logger.error(`Supabase connection failed: Invalid API credentials.`);
+                      this.updateServiceHealth('Supabase', 'UNAVAILABLE', Date.now() - start, `Invalid Supabase credentials / API key`);
+                  } else {
+                      logger.error(`Supabase connection error: ${errMsg}`);
+                      this.updateServiceHealth('Supabase', 'UNAVAILABLE', Date.now() - start, `Supabase Error: ${errMsg}`);
+                  }
+              } else {
+                  this.updateServiceHealth('Supabase', 'ONLINE', Date.now() - start);
+              }
+           } else {
+              this.updateServiceHealth('Supabase', 'NOT CONFIGURED', 0, 'Supabase client failed to initialize');
+           }
         }
     } catch (error) {
-         this.updateServiceHealth('Supabase', 'UNAVAILABLE', 0, error instanceof Error ? error.message : String(error));
+         const errMsg = error instanceof Error ? error.message : String(error);
+         logger.error(`Supabase active check exception: ${errMsg}`);
+         this.updateServiceHealth('Supabase', 'UNAVAILABLE', 0, `Connection exception: ${errMsg}`);
     }
 
     // Check Market Data

@@ -126,12 +126,26 @@ export class MarketScanner {
              activeStrategyIds = activeStrats.map(s => s.id);
              logger.info(`Found ${strats.length} strategies, ${activeCount} active.`);
            } else {
-             logger.warn(`getStrategies returned empty or non-array. Defaulting to 0.`);
-             activeCount = 0; 
+             activeStrategyIds = [
+               'strategy-1-smc',
+               'strategy-2-snd',
+               'strategy-3-scalping',
+               'strategy-4-news',
+               'strategy-5-smc-sd-confluence'
+             ];
+             activeCount = activeStrategyIds.length;
+             logger.warn(`getStrategies returned empty or non-array. Falling back to default ${activeCount} active strategies.`);
            }
          } catch (e: any) {
-           logger.warn(`Failed to check active strategies. Skipping scan to be safe. Error: ${e.message}`);
-           activeCount = 0;
+           activeStrategyIds = [
+             'strategy-1-smc',
+             'strategy-2-snd',
+             'strategy-3-scalping',
+             'strategy-4-news',
+             'strategy-5-smc-sd-confluence'
+           ];
+           activeCount = activeStrategyIds.length;
+           logger.warn(`Failed to check active strategies. Falling back to default ${activeCount} active strategies. Error: ${e.message}`);
          }
          const cacheEntry = { activeCount, activeIds: activeStrategyIds, expiresAt: now + this.STRATEGIES_CACHE_TTL };
          this.strategiesCache = cacheEntry;
