@@ -66,12 +66,13 @@ export class TradingEngine {
          const { getSupabaseClient } = await import('../supabase/client');
          await getSupabaseClient().insertStrategyState({
              strategy_id: strategyId,
+             symbol: payload?.context?.symbol || payload?.symbol || 'XAUUSD',
              state_name: stateName,
              state_status: status,
              reason: reason,
              signal_key: signalKey || undefined,
              payload_json: payload,
-             timeframe: payload?.context?.timeframe
+             timeframe: payload?.context?.timeframe || payload?.timeframe || 'M15'
          });
      } catch (e: any) {
          logger.error(`Failed to sync state ${stateName} for ${strategyId}: ${e.message}`);

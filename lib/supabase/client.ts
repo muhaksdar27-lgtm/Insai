@@ -311,8 +311,8 @@ export class SupabaseService {
           .from('strategy_states')
           .insert([{
              strategy_id: payload.strategy_id,
-             symbol: payload.symbol,
-             timeframe: payload.timeframe,
+             symbol: payload.symbol || 'XAUUSD',
+             timeframe: payload.timeframe || 'M15',
              state_name: payload.state_name,
              state_status: payload.state_status,
              signal_key: payload.signal_key,

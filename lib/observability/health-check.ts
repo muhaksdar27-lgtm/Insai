@@ -29,6 +29,7 @@ class HealthCheckEngine {
     this.registerService('TelegramBot', 'NOT CONFIGURED', 'Pending validation');
     this.registerService('RuleEngine', 'ONLINE');
     this.registerService('PythonEngine', 'NOT CONFIGURED', 'Checking Python Engine...');
+    this.registerService('Redis', 'NOT CONFIGURED', 'Pending validation');
   }
 
   private registerService(serviceName: string, initialStatus: ServiceHealthStatus, message?: string) {

@@ -30,7 +30,11 @@ function startPythonEngine() {
   
   logger.info('Starting Python Engine locally...');
   
-  // Nixpacks puts the venv at /app/prod-env
+  // Nixpacks puts the venv at /app/prod-env, Dockerfile puts it at /app/venv
+  const dockerVenv = "/app/venv/bin/python3";
+  const dockerVenv2 = "/app/venv/bin/python";
+  const dockerVenvLocal = path.join(process.cwd(), "venv", "bin", "python3");
+  const dockerVenvLocal2 = path.join(process.cwd(), "venv", "bin", "python");
   const rootVenv = path.join(process.cwd(), "prod-env", "bin", "python3");
   const rootVenv2 = path.join(process.cwd(), "prod-env", "bin", "python");
   const fallbackVenv = "/app/prod-env/bin/python3";
@@ -40,7 +44,15 @@ function startPythonEngine() {
   const systemPython = "python3";
   
   let pythonExec = systemPython;
-  if (fs.existsSync(rootVenv)) {
+  if (fs.existsSync(dockerVenv)) {
+      pythonExec = dockerVenv;
+  } else if (fs.existsSync(dockerVenv2)) {
+      pythonExec = dockerVenv2;
+  } else if (fs.existsSync(dockerVenvLocal)) {
+      pythonExec = dockerVenvLocal;
+  } else if (fs.existsSync(dockerVenvLocal2)) {
+      pythonExec = dockerVenvLocal2;
+  } else if (fs.existsSync(rootVenv)) {
       pythonExec = rootVenv;
   } else if (fs.existsSync(rootVenv2)) {
       pythonExec = rootVenv2;
