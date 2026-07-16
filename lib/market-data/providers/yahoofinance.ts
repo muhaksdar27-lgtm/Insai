@@ -8,11 +8,10 @@ export class YahooFinanceProvider implements PriceProvider {
   public name = 'YahooFinance';
 
   private formatSymbol(symbol: string): string {
-    const norm = symbol.toUpperCase().trim();
-    if (norm === 'XAUUSD') return 'GC=F';
-    if (norm === 'DXY') return 'DX-Y.NYB';
-    if (norm === 'US10Y') return '^TNX';
-    return norm;
+    if (symbol === 'XAUUSD') return 'GC=F';
+    if (symbol === 'DXY') return 'DX-Y.NYB';
+    if (symbol === 'US10Y') return '^TNX';
+    return symbol;
   }
 
   private mapTimeframe(tf: string): string {

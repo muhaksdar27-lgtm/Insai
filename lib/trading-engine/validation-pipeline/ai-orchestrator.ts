@@ -66,14 +66,7 @@ export class AIValidationOrchestrator {
     if (this.ai) return this.ai;
     const apiKey = getEnv('GEMINI_API_KEY');
     if (apiKey) {
-      this.ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
+      this.ai = new GoogleGenAI({ apiKey });
       return this.ai;
     }
     return null;
@@ -158,22 +151,18 @@ export class AIValidationOrchestrator {
         const { PythonEngineManager } = await import('../../mcp/engines/deployment');
         const pyHealth = await PythonEngineManager.evaluate();
         if (pyHealth.status !== 'active') {
-             if (pyHealth.status === 'not_configured') {
-                 logger.debug(`Python engine not configured, skipping python validation.`);
-             } else {
-                 const waits = validatorResults.filter(v => v.status === 'WAIT').map(v => v.rule);
-                 return {
-                    strategyName: strategyId,
-                    decision: 'WAIT',
-                    checklist: validatorResults,
-                    reasoning: `Python Engine OFFLINE: ${pyHealth.message}. Waiting for Python Engine.`,
-                    evidence: 'System degraded. AI request blocked.',
-                    riskNotes: 'Python Engine Offline',
-                    missingFactors: ['Python Engine', ...waits],
-                    recommendedAction: 'wait',
-                    scores: setupScores
-                 };
-             }
+             const waits = validatorResults.filter(v => v.status === 'WAIT').map(v => v.rule);
+             return {
+                strategyName: strategyId,
+                decision: 'WAIT',
+                checklist: validatorResults,
+                reasoning: `Python Engine OFFLINE: ${pyHealth.message}. Waiting for Python Engine.`,
+                evidence: 'System degraded. AI request blocked.',
+                riskNotes: 'Python Engine Offline',
+                missingFactors: ['Python Engine', ...waits],
+                recommendedAction: 'wait',
+                scores: setupScores
+             };
         } else {
              // Python Engine is online, perform quantitative validation
              const defaultPyPort = process.env.PYTHON_PORT || '8181';
@@ -235,29 +224,15 @@ export class AIValidationOrchestrator {
     const aiClient = this.getAiClient();
     
     if (!this.isConfigured || !aiClient) {
-       logger.warn('AI Service is not configured (Missing API Key). Falling back to deterministic rule-based decision.');
-       
-       const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-       const totalCount = activeValidators.length;
-       const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-       const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-       
-       let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
-       if (failedCritical) {
-           deterministicDecision = 'REJECTED';
-       } else if (realScore >= 80) { // High threshold for fallback approval
-           deterministicDecision = 'APPROVED';
-       }
-
        return {
           strategyName: strategyId,
-          decision: deterministicDecision as AIDecision,
+          decision: 'FAILED',
           checklist: validatorResults,
-          reasoning: `AI Service Not Configured. Deterministic fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
-          evidence: `AI Bypassed. Fallback used.`,
-          riskNotes: 'AI Offline - Fallback Active',
+          reasoning: 'AI Service is not configured (Missing API Key). Cannot validate signal.',
+          evidence: 'System degraded. AI validation bypassed and rejected.',
+          riskNotes: 'AI Offline - Blocked',
           missingFactors: ['AI Validation'],
-          recommendedAction: deterministicDecision === 'APPROVED' ? 'allow_signal' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+          recommendedAction: 'block',
           scores: setupScores
        };
     }
@@ -274,7 +249,7 @@ export class AIValidationOrchestrator {
           const stateSummary = `Strategy: ${strategyId}, Timeframe: ${marketContext?.marketData?.timeframe || 'Unknown'}, Symbol: ${marketContext?.marketData?.symbol || 'Unknown'}, Rules: ${simplifiedResults.map(r => r.rule + "=" + r.status).join(',')}`;
           
           const embedRes = await aiClient.models.embedContent({
-              model: 'gemini-embedding-2-preview',
+              model: 'text-embedding-004',
               contents: stateSummary
           });
           
@@ -356,7 +331,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       };
 
       const response = await aiClient.models.generateContent({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -397,37 +372,6 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       const endTime = performance.now();
       logger.error(`AI Validation Orchestrator failed for ${strategyId} after ${(endTime - startTime).toFixed(2)}ms: ` + error.message);
       getProviderRegistry().reportError('GeminiAI', error.message);
-
-      const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
-
-      if (isQuotaExceeded) {
-          logger.warn('AI Quota Exceeded. Falling back to deterministic rule-based decision.');
-          
-          const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-          const totalCount = activeValidators.length;
-          const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-          
-          const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-          
-          let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
-          if (failedCritical) {
-              deterministicDecision = 'REJECTED';
-          } else if (realScore >= 80) { // High threshold for fallback approval
-              deterministicDecision = 'APPROVED';
-          }
-
-          return {
-             strategyName: strategyId,
-             decision: deterministicDecision as AIDecision,
-             checklist: validatorResults,
-             reasoning: `AI Quota Exceeded. Deterministic fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
-             evidence: `Rate limit encountered. Fallback used.`,
-             riskNotes: 'API Rate Limited - Fallback Active',
-             missingFactors: ['AI Validation'],
-             recommendedAction: deterministicDecision === 'APPROVED' ? 'allow_signal' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
-             scores: setupScores
-          };
-      }
 
       return {
         strategyName: strategyId,

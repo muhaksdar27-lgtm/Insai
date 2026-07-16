@@ -14,8 +14,8 @@ import crypto from 'crypto';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0';
-const port = 3000;
-const turbopack = false;
+const port = parseInt(process.env.PORT || '3000', 10);
+const turbopack = dev;
 
 let pyProcess: ChildProcess | null = null;
 
@@ -25,11 +25,6 @@ function startPythonEngine() {
   
   if (externalUrl) {
     logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
-    return;
-  }
-  
-  if (process.env.NODE_ENV === 'production') {
-    logger.info(`Production environment detected, skipping local Python Engine spawn.`);
     return;
   }
   
@@ -164,11 +159,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         }
 
         healthCheckEngine.runHealthChecks().then(health => {
-           res.writeHead(200, { 'Content-Type': 'application/json' });
-           res.end(JSON.stringify({ status: 'ready', internal_status: health.status, services: health.services, timestamp: new Date().toISOString() }));
+           if (health.status === 'UNAVAILABLE') {
+               res.writeHead(503, { 'Content-Type': 'application/json' });
+               res.end(JSON.stringify({ status: 'not_ready', reason: 'UNAVAILABLE', services: health.services, timestamp: new Date().toISOString() }));
+           } else {
+               res.writeHead(200, { 'Content-Type': 'application/json' });
+               res.end(JSON.stringify({ status: 'ready', timestamp: new Date().toISOString() }));
+           }
         }).catch(err => {
-           res.writeHead(200, { 'Content-Type': 'application/json' });
-           res.end(JSON.stringify({ status: 'ready_with_errors', error: err.message, timestamp: new Date().toISOString() }));
+           res.writeHead(503, { 'Content-Type': 'application/json' });
+           res.end(JSON.stringify({ status: 'not_ready', error: err.message, timestamp: new Date().toISOString() }));
         });
         return;
       }

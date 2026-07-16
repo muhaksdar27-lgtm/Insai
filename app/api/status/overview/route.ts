@@ -35,7 +35,7 @@ export async function GET() {
         aiValidation: aiStatus,
         database: getSupabaseClient().isConnected() ? 'connected' : 'not configured',
         mcp: mcpData.some(m => m.status === 'ONLINE') ? 'active' : 'not configured',
-        queue: getQueueManager().isConnected() ? 'active' : (process.env.REDIS_URL ? 'unavailable' : 'not_configured')
+        queue: getQueueManager().isConnected() ? 'active' : 'unavailable'
       },
       error: null,
       meta: {

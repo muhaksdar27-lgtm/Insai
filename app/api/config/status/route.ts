@@ -45,12 +45,7 @@ export async function GET() {
         supabase_service_role_key: getHealthServiceStatus('SUPABASE_SERVICE_ROLE_KEY', 'Supabase'),
         app_url: getEnv('APP_URL') ? 'configured' : 'not configured',
         redis_url: getEnv('REDIS_URL') ? 'configured' : 'not configured',
-        python_engine_url: (() => {
-            const pyStatus = health.services.find((s: any) => s.serviceName === 'PythonEngine')?.status;
-            if (pyStatus === 'ONLINE') return 'configured';
-            if (pyStatus === 'DISABLED') return 'not configured';
-            return 'error';
-        })(),
+        python_engine_url: (health.services.find((s: any) => s.serviceName === 'PythonEngine')?.status === 'ONLINE') ? 'configured' : 'error',
       },
       lastChecked: new Date().toISOString()
     },

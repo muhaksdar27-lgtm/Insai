@@ -23,16 +23,17 @@ export async function GET(req: Request) {
   // readiness check
   try {
     const health = await healthCheckEngine.runHealthChecks();
-    // Return 200 even if some services are UNAVAILABLE to prevent Railway/load balancers from killing the instance
-    const statusCode = 200;
+    // In Railway, 503 means the container is failing healthcheck and will be restarted.
+    // So only return 503 if we are TRULY UNAVAILABLE across critical services.
+    const statusCode = (health.status === 'UNAVAILABLE') ? 503 : 200;
     
     const response: ApiResponse<any> = {
-      success: true,
+      success: statusCode === 200,
       data: {
         status: health.status,
         services: health.services.map(s => ({ name: s.serviceName, status: s.status }))
       },
-      error: null,
+      error: statusCode === 503 ? { code: 'UNAVAILABLE', message: 'Service unavailable' } : null,
       meta: { request_id: reqId, timestamp: health.timestamp }
     };
     return NextResponse.json(response, { status: statusCode });

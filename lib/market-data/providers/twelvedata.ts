@@ -121,17 +121,9 @@ export class TwelveDataProvider implements PriceProvider {
           this.reconnectTimeout = setTimeout(() => this.initWebSocket(), 60000);
         } else {
           this.reconnectAttempts++;
-          if (this.reconnectAttempts >= 3) {
-            logger.warn('TwelveData WebSocket disconnected consecutively 3 times. Free plan might not support live WebSocket for this asset. Pausing WebSocket reconnection attempts for 30 minutes to conserve resources.');
-            this.reconnectTimeout = setTimeout(() => {
-              this.reconnectAttempts = 0;
-              this.initWebSocket();
-            }, 1800000); // 30 minutes
-          } else {
-            const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
-            logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
-            this.reconnectTimeout = setTimeout(() => this.initWebSocket(), backoff);
-          }
+          const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
+          logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
+          this.reconnectTimeout = setTimeout(() => this.initWebSocket(), backoff);
         }
       });
       
@@ -152,12 +144,8 @@ export class TwelveDataProvider implements PriceProvider {
   }
 
   private formatSymbol(symbol: string): string {
-    const norm = symbol.toUpperCase().trim();
-    if (norm === 'XAUUSD') return 'XAU/USD';
-    if (norm === 'DXY' || norm === 'US10Y') {
-        throw new Error(`Symbol ${norm} not supported by TwelveData directly (mapping invalid)`);
-    }
-    return norm;
+    if (symbol === 'XAUUSD') return 'XAU/USD';
+    return symbol;
   }
 
   async getLatestPrice(symbol: string): Promise<MarketSnapshot> {

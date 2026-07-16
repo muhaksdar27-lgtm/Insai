@@ -37,14 +37,9 @@ export class PolygonProvider implements PriceProvider {
       throw new Error('Polygon API key is not configured');
     }
 
-    const norm = symbol.toUpperCase().trim();
-    if (norm === 'DXY' || norm === 'US10Y') {
-        throw new Error(`Symbol ${norm} not supported by Polygon crypto endpoint (mapping invalid)`);
-    }
-
     try {
-      logger.info(`Polygon REST: Fetching live price for ${norm}`);
-      const ticker = norm === 'XAUUSD' ? 'C:XAUUSD' : `C:${norm}`;
+      logger.info(`Polygon REST: Fetching live price for ${symbol}`);
+      const ticker = symbol === 'XAUUSD' ? 'C:XAUUSD' : `C:${symbol}`;
       const res = await fetchWithRetry(`https://api.polygon.io/v2/last/nbbo/${ticker}?apiKey=${this.currentApiKey}`, {
           timeoutMs: 1500,
           retries: 0
@@ -76,18 +71,13 @@ export class PolygonProvider implements PriceProvider {
       throw new Error('Polygon API key is not configured');
     }
     
-    const norm = symbol.toUpperCase().trim();
-    if (norm === 'DXY' || norm === 'US10Y') {
-        throw new Error(`Symbol ${norm} not supported by Polygon crypto endpoint (mapping invalid)`);
-    }
-
     try {
       const { multiplier, timespan } = this.mapTimeframe(timeframe);
       const toDate = new Date();
       const fromDate = new Date(toDate.getTime() - 60 * 24 * 60 * 60 * 1000); 
       const to = toDate.toISOString().split('T')[0];
       const from = fromDate.toISOString().split('T')[0];
-      const ticker = norm === 'XAUUSD' ? 'C:XAUUSD' : `C:${norm}`;
+      const ticker = symbol === 'XAUUSD' ? 'C:XAUUSD' : `C:${symbol}`;
 
       const res = await fetchWithRetry(`https://api.polygon.io/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${key}`, {
           timeoutMs: 1500,
