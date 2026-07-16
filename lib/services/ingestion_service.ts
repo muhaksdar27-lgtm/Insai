@@ -53,7 +53,7 @@ export class IngestionService {
       } catch (e: any) {
         logger.error(`Ingestion polling failed: ${e.message}`);
       }
-    }, 15000);
+    }, 60000);
   }
 
   private async pushToRedis(data: any) {

@@ -121,9 +121,17 @@ export class TwelveDataProvider implements PriceProvider {
           this.reconnectTimeout = setTimeout(() => this.initWebSocket(), 60000);
         } else {
           this.reconnectAttempts++;
-          const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
-          logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
-          this.reconnectTimeout = setTimeout(() => this.initWebSocket(), backoff);
+          if (this.reconnectAttempts >= 3) {
+            logger.warn('TwelveData WebSocket disconnected consecutively 3 times. Free plan might not support live WebSocket for this asset. Pausing WebSocket reconnection attempts for 30 minutes to conserve resources.');
+            this.reconnectTimeout = setTimeout(() => {
+              this.reconnectAttempts = 0;
+              this.initWebSocket();
+            }, 1800000); // 30 minutes
+          } else {
+            const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
+            logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
+            this.reconnectTimeout = setTimeout(() => this.initWebSocket(), backoff);
+          }
         }
       });
       

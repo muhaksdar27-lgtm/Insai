@@ -19,7 +19,7 @@ export class MarketDataService {
 
   // Cache
   private priceCache: Map<string, { data: MarketSnapshot, expiresAt: number }> = new Map();
-  private readonly PRICE_CACHE_TTL_MS = 5000; // 5 seconds for price cache
+  private readonly PRICE_CACHE_TTL_MS = 30000; // 30 seconds for price cache
 
   constructor() {
     this.priceChain = new FallbackChain<PriceProvider>();
@@ -53,7 +53,11 @@ export class MarketDataService {
         cachedData = redisCached;
       }
     } catch (e) {
-      // Fallback to local map
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       const localCached = this.priceCache.get(symbol);
       if (localCached && localCached.expiresAt > now) {
         cachedData = localCached;
@@ -105,7 +109,7 @@ export class MarketDataService {
   }
 
   private candleCache: Map<string, { data: Candle[], expiresAt: number }> = new Map();
-  private readonly CANDLE_CACHE_TTL_MS = 60000; // 60 seconds (1 minute) for candles, M15 doesn't close that fast
+  private readonly CANDLE_CACHE_TTL_MS = 300000; // 5 minutes (300 seconds) for candles, M15 doesn't close that fast
 
   async getCandles(symbol: string, timeframe: string, limit: number = 100): Promise<Candle[]> {
     const cacheKey = `${symbol}-${timeframe}-${limit}`;
@@ -118,6 +122,11 @@ export class MarketDataService {
         cachedData = redisCached.data;
       }
     } catch (e) {
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       const localCached = this.candleCache.get(cacheKey);
       if (localCached && localCached.expiresAt > now) {
         cachedData = localCached.data;
@@ -147,7 +156,7 @@ export class MarketDataService {
   }
 
   private newsCache: { data: NewsEvent[], expiresAt: number } | null = null;
-  private readonly NEWS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private readonly NEWS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
   async getLatestNews(): Promise<NewsEvent[]> {
     const now = Date.now();
@@ -159,6 +168,11 @@ export class MarketDataService {
         cachedData = redisCached.data;
       }
     } catch (e) {
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       if (this.newsCache && this.newsCache.expiresAt > now) {
         cachedData = this.newsCache.data;
       }
@@ -221,7 +235,7 @@ export class MarketDataService {
   }
 
   private calendarCache: { data: CalendarEvent[], expiresAt: number } | null = null;
-  private readonly CALENDAR_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private readonly CALENDAR_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
   async getCalendarEvents(): Promise<CalendarEvent[]> {
     const now = Date.now();
@@ -233,6 +247,11 @@ export class MarketDataService {
         cachedData = redisCached.data;
       }
     } catch (e) {
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       if (this.calendarCache && this.calendarCache.expiresAt > now) {
         cachedData = this.calendarCache.data;
       }

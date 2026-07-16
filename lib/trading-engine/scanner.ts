@@ -14,6 +14,10 @@ export class MarketScanner {
   private lastScanTime: number = 0;
   private marketUpdateHandler: ((msg: any) => Promise<void>) | null = null;
   
+  // High-performance quant tracking to limit redundant full scans
+  private lastScannedPrice: number = 0;
+  private lastScannedCandleBlock: number = 0;
+  
   // Cache strategies to avoid DB bottlenecks in hot path
   private strategiesCache: { activeCount: number, activeIds: string[], expiresAt: number } | null = null;
   private readonly STRATEGIES_CACHE_TTL = 300000; // 5 minutes
@@ -58,7 +62,7 @@ export class MarketScanner {
         this.lastScanTime = now;
         this.scan();
       }
-    }, 5000);
+    }, 15000);
   }
 
   public stop() {
@@ -107,6 +111,10 @@ export class MarketScanner {
           metricsEngine.recordCacheAccess(false);
         }
       } catch (e) {
+        // Ignore error, fallback to local cache
+      }
+
+      if (!cachedData) {
         if (this.strategiesCache && this.strategiesCache.expiresAt > now) {
           cachedData = this.strategiesCache as { activeCount: number, activeIds: string[], expiresAt: number };
           metricsEngine.recordCacheAccess(true);
@@ -156,6 +164,29 @@ export class MarketScanner {
         logger.info('No active strategies, skipping market scan.');
         return;
       }
+      
+      // Get the current M15 candle block (15 minutes = 900000 ms)
+      const currentCandleBlock = Math.floor(Date.now() / 900000) * 900000;
+      
+      // Fetch latest price (leveraging the newly extended 30-sec cache)
+      const latestPriceSnapshot = await getMarketDataService().getLatestPrice("XAUUSD");
+      const currentPrice = latestPriceSnapshot?.price ?? 0;
+      
+      if (!currentPrice) {
+         logger.warn('Market price for XAUUSD is currently unavailable. Skipping scan.');
+         return;
+      }
+      
+      const isNewCandle = currentCandleBlock !== this.lastScannedCandleBlock;
+      const isSignificantPriceChange = Math.abs(currentPrice - this.lastScannedPrice) >= 0.1;
+      
+      if (!isNewCandle && !isSignificantPriceChange && this.lastScannedPrice > 0) {
+         // Skip scan to preserve TwelveData/YahooFinance API quota!
+         return;
+      }
+      
+      this.lastScannedPrice = currentPrice;
+      this.lastScannedCandleBlock = currentCandleBlock;
 
       logger.info('Running market scan for XAUUSD (triggered by real-time WebSocket/throttle)...');
       
