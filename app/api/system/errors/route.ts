@@ -6,9 +6,6 @@ import crypto from 'crypto';
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  if (process.env.NODE_ENV !== 'development') {
-    return NextResponse.json({ success: false, error: { code: 'FORBIDDEN', message: 'Only available in dev mode' } }, { status: 403 });
-  }
   const reqId = req.headers.get('x-request-id') || crypto.randomUUID();
   try {
     const recentErrors = errorTracker.getRecentErrors();

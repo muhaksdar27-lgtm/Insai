@@ -10,7 +10,7 @@ export function useFetch<T>(url: string, initialData: T) {
   const [loading, setLoading] = useState(true);  
   const [error, setError] = useState<string | null>(null);
 
-  const doFetchInternal = async () => {
+  const doFetchInternal = useCallback(async () => {
     let fetchPromise = inflight.get(url);
     if (!fetchPromise) {
       fetchPromise = fetch(url).then(async res => {
@@ -33,7 +33,7 @@ export function useFetch<T>(url: string, initialData: T) {
       });
     }
     return fetchPromise;
-  };
+  }, [url]);
 
   const fetchData = useCallback(async (ignoreCache = false) => {
     if (!ignoreCache) {
@@ -56,7 +56,7 @@ export function useFetch<T>(url: string, initialData: T) {
     } finally {
       setLoading(false);
     }
-  }, [url]);
+  }, [url, doFetchInternal]);
 
   useIsomorphicLayoutEffect(() => {
     let isMounted = true;
@@ -94,7 +94,7 @@ export function useFetch<T>(url: string, initialData: T) {
     return () => {
       isMounted = false;
     };
-  }, [url]);
+  }, [url, doFetchInternal]);
 
   return useMemo(() => ({
     data,
