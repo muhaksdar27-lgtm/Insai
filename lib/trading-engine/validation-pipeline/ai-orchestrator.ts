@@ -66,14 +66,7 @@ export class AIValidationOrchestrator {
     if (this.ai) return this.ai;
     const apiKey = getEnv('GEMINI_API_KEY');
     if (apiKey) {
-      this.ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
+      this.ai = new GoogleGenAI({ apiKey });
       return this.ai;
     }
     return null;
@@ -256,7 +249,7 @@ export class AIValidationOrchestrator {
           const stateSummary = `Strategy: ${strategyId}, Timeframe: ${marketContext?.marketData?.timeframe || 'Unknown'}, Symbol: ${marketContext?.marketData?.symbol || 'Unknown'}, Rules: ${simplifiedResults.map(r => r.rule + "=" + r.status).join(',')}`;
           
           const embedRes = await aiClient.models.embedContent({
-              model: 'gemini-embedding-2-preview',
+              model: 'text-embedding-004',
               contents: stateSummary
           });
           
@@ -338,7 +331,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       };
 
       const response = await aiClient.models.generateContent({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -380,21 +373,15 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       logger.error(`AI Validation Orchestrator failed for ${strategyId} after ${(endTime - startTime).toFixed(2)}ms: ` + error.message);
       getProviderRegistry().reportError('GeminiAI', error.message);
 
-      const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
-
       return {
         strategyName: strategyId,
-        decision: isQuotaExceeded ? 'WAIT' : 'FAILED',
+        decision: 'FAILED',
         checklist: validatorResults,
-        reasoning: isQuotaExceeded 
-          ? 'AI Validation is on hold because the Gemini API free tier quota has been exceeded (20 requests/day). The pipeline will automatically proceed once the quota resets or a paid API key is supplied.'
-          : 'AI Error: ' + error.message,
-        evidence: isQuotaExceeded 
-          ? 'Rate limit encountered on the free tier. Gracefully waiting for reset.'
-          : 'Error connecting to AI validation.',
-        riskNotes: isQuotaExceeded ? 'API Rate Limited' : 'Error',
+        reasoning: 'AI Error: ' + error.message,
+        evidence: 'Error connecting to AI validation.',
+        riskNotes: 'Error',
         missingFactors: ['AI Validation'],
-        recommendedAction: isQuotaExceeded ? 'wait' : 'block',
+        recommendedAction: 'block',
         scores: setupScores
       };
     }

@@ -121,17 +121,9 @@ export class TwelveDataProvider implements PriceProvider {
           this.reconnectTimeout = setTimeout(() => this.initWebSocket(), 60000);
         } else {
           this.reconnectAttempts++;
-          if (this.reconnectAttempts >= 3) {
-            logger.warn('TwelveData WebSocket disconnected consecutively 3 times. Free plan might not support live WebSocket for this asset. Pausing WebSocket reconnection attempts for 30 minutes to conserve resources.');
-            this.reconnectTimeout = setTimeout(() => {
-              this.reconnectAttempts = 0;
-              this.initWebSocket();
-            }, 1800000); // 30 minutes
-          } else {
-            const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
-            logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
-            this.reconnectTimeout = setTimeout(() => this.initWebSocket(), backoff);
-          }
+          const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
+          logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
+          this.reconnectTimeout = setTimeout(() => this.initWebSocket(), backoff);
         }
       });
       
@@ -153,8 +145,6 @@ export class TwelveDataProvider implements PriceProvider {
 
   private formatSymbol(symbol: string): string {
     if (symbol === 'XAUUSD') return 'XAU/USD';
-    if (symbol === 'DXY') return 'DXY';
-    if (symbol === 'US10Y') return 'US10Y';
     return symbol;
   }
 
@@ -202,10 +192,7 @@ export class TwelveDataProvider implements PriceProvider {
         freshness: 'live'
       };
     } catch (e: any) {
-      logger.error(`TwelveData failed to fetch ${symbol} (mapped: ${formattedSymbol}): ${e.message}`);
-      if (symbol === 'XAUUSD') {
-        getProviderRegistry().reportError(this.name, e.message);
-      }
+      getProviderRegistry().reportError(this.name, e.message);
       throw e;
     }
   }
@@ -243,10 +230,7 @@ export class TwelveDataProvider implements PriceProvider {
       // TwelveData returns descending order (newest first). Let's sort to ascending if needed, typically we return oldest to newest in arrays, let's reverse.
       return candles.reverse();
     } catch (e: any) {
-      logger.error(`TwelveData failed to fetch candles for ${symbol} (mapped: ${formattedSymbol}): ${e.message}`);
-      if (symbol === 'XAUUSD') {
-        getProviderRegistry().reportError(this.name, e.message);
-      }
+      getProviderRegistry().reportError(this.name, e.message);
       throw e;
     }
   }
