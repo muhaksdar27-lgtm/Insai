@@ -235,7 +235,7 @@ export class QueueManager {
     try {
       const result = await Promise.race([
           this.client.get(`cache:${key}`),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 1000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 5000))
       ]) as string | null;
       
       if (result) {
@@ -261,7 +261,7 @@ export class QueueManager {
     try {
       const result = await Promise.race([
           this.client.set(`lock:${key}`, '1', 'EX', ttlSeconds, 'NX'),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Lock timeout')), 1000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Lock timeout')), 5000))
       ]);
       return result === 'OK';
     } catch (err: any) {
@@ -278,7 +278,7 @@ export class QueueManager {
     try {
       await Promise.race([
          this.client.del(`lock:${key}`),
-         new Promise((_, reject) => setTimeout(() => reject(new Error('Unlock timeout')), 1000))
+         new Promise((_, reject) => setTimeout(() => reject(new Error('Unlock timeout')), 5000))
       ]);
     } catch (err: any) {
       logger.error(`Failed to release lock for ${key}: ${err.message}`);

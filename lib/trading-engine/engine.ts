@@ -216,6 +216,16 @@ export class TradingEngine {
         if (strategyId === 'strategy-5-smc-sd-confluence') {
              try {
                  logger.info(`Delegating logic to Python Engine for ${strategyId}`);
+                 const pyPort = process.env.PYTHON_PORT || '8181';
+                 const externalUrl = process.env.PYTHON_ENGINE_URL;
+                 if (!externalUrl && process.env.NODE_ENV === 'production') {
+                     logger.warn(`Skipping ${strategyId} because Python Engine is disabled by design in production without URL.`);
+                     this.setupDetector.transitionState(setup.id, 'expired', `Python Engine not configured`);
+                     await this.advanceStateMachine(sm, 'SUPPRESSED', `Python Engine not configured`, setup.id, { context });
+                     return;
+                 }
+                 const pyUrl = externalUrl || `http://127.0.0.1:${pyPort}`;
+
                  const mds = getMarketDataService();
                  const [h1, m15, m5, m1] = await Promise.all([
                      mds.getCandles(context.symbol, 'H1', 100),
@@ -229,8 +239,7 @@ export class TradingEngine {
                      M5: { candles: m5 },
                      M1: { candles: m1 }
                  };
-                 const pyPort = process.env.PYTHON_PORT || '8181';
-                 const pyUrl = process.env.PYTHON_ENGINE_URL || `http://127.0.0.1:${pyPort}`;
+                 
                  const controller = new AbortController();
                  const timeout = setTimeout(() => controller.abort(), 3000);
                  const pyRes = await fetch(`${pyUrl}/v1/strategy/smc-sd-confluence`, {

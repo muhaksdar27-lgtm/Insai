@@ -11,8 +11,16 @@ export class PythonEngineManager {
         }
 
         try {
+            const externalUrl = getEnv("PYTHON_ENGINE_URL");
+            if (!externalUrl && process.env.NODE_ENV === 'production') {
+                const result = { status: 'not_configured', message: 'Python service disabled by design (no URL provided in production)', details: {} };
+                this.lastCheck = now;
+                this.lastResult = result;
+                return result;
+            }
+
             const defaultPyPort = process.env.PYTHON_PORT || '8181';
-            const url = getEnv("PYTHON_ENGINE_URL") || `http://127.0.0.1:${defaultPyPort}`;
+            const url = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
             const res = await fetch(`${url}/health`, { signal: controller.signal });

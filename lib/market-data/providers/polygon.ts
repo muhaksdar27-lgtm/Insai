@@ -37,6 +37,10 @@ export class PolygonProvider implements PriceProvider {
       throw new Error('Polygon API key is not configured');
     }
 
+    if (symbol === 'DXY' || symbol === 'US10Y') {
+        throw new Error(`Symbol ${symbol} not supported by Polygon crypto endpoint`);
+    }
+
     try {
       logger.info(`Polygon REST: Fetching live price for ${symbol}`);
       const ticker = symbol === 'XAUUSD' ? 'C:XAUUSD' : `C:${symbol}`;
@@ -71,6 +75,10 @@ export class PolygonProvider implements PriceProvider {
       throw new Error('Polygon API key is not configured');
     }
     
+    if (symbol === 'DXY' || symbol === 'US10Y') {
+        throw new Error(`Symbol ${symbol} not supported by Polygon crypto endpoint`);
+    }
+
     try {
       const { multiplier, timespan } = this.mapTimeframe(timeframe);
       const toDate = new Date();
