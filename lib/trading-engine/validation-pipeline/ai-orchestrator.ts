@@ -158,22 +158,18 @@ export class AIValidationOrchestrator {
         const { PythonEngineManager } = await import('../../mcp/engines/deployment');
         const pyHealth = await PythonEngineManager.evaluate();
         if (pyHealth.status !== 'active') {
-             if (pyHealth.status === 'not_configured') {
-                 logger.debug(`Python engine not configured, skipping python validation.`);
-             } else {
-                 const waits = validatorResults.filter(v => v.status === 'WAIT').map(v => v.rule);
-                 return {
-                    strategyName: strategyId,
-                    decision: 'WAIT',
-                    checklist: validatorResults,
-                    reasoning: `Python Engine OFFLINE: ${pyHealth.message}. Waiting for Python Engine.`,
-                    evidence: 'System degraded. AI request blocked.',
-                    riskNotes: 'Python Engine Offline',
-                    missingFactors: ['Python Engine', ...waits],
-                    recommendedAction: 'wait',
-                    scores: setupScores
-                 };
-             }
+             const waits = validatorResults.filter(v => v.status === 'WAIT').map(v => v.rule);
+             return {
+                strategyName: strategyId,
+                decision: 'WAIT',
+                checklist: validatorResults,
+                reasoning: `Python Engine OFFLINE: ${pyHealth.message}. Waiting for Python Engine.`,
+                evidence: 'System degraded. AI request blocked.',
+                riskNotes: 'Python Engine Offline',
+                missingFactors: ['Python Engine', ...waits],
+                recommendedAction: 'wait',
+                scores: setupScores
+             };
         } else {
              // Python Engine is online, perform quantitative validation
              const defaultPyPort = process.env.PYTHON_PORT || '8181';
@@ -386,44 +382,19 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
 
       const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
 
-      if (isQuotaExceeded) {
-          logger.warn('AI Quota Exceeded. Falling back to deterministic rule-based decision.');
-          
-          const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-          const totalCount = activeValidators.length;
-          const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-          
-          const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-          
-          let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
-          if (failedCritical) {
-              deterministicDecision = 'REJECTED';
-          } else if (realScore >= 80) { // High threshold for fallback approval
-              deterministicDecision = 'APPROVED';
-          }
-
-          return {
-             strategyName: strategyId,
-             decision: deterministicDecision as AIDecision,
-             checklist: validatorResults,
-             reasoning: `AI Quota Exceeded. Deterministic fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
-             evidence: `Rate limit encountered. Fallback used.`,
-             riskNotes: 'API Rate Limited - Fallback Active',
-             missingFactors: ['AI Validation'],
-             recommendedAction: deterministicDecision === 'APPROVED' ? 'allow_signal' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
-             scores: setupScores
-          };
-      }
-
       return {
         strategyName: strategyId,
-        decision: 'FAILED',
+        decision: isQuotaExceeded ? 'WAIT' : 'FAILED',
         checklist: validatorResults,
-        reasoning: 'AI Error: ' + error.message,
-        evidence: 'Error connecting to AI validation.',
-        riskNotes: 'Error',
+        reasoning: isQuotaExceeded 
+          ? 'AI Validation is on hold because the Gemini API free tier quota has been exceeded (20 requests/day). The pipeline will automatically proceed once the quota resets or a paid API key is supplied.'
+          : 'AI Error: ' + error.message,
+        evidence: isQuotaExceeded 
+          ? 'Rate limit encountered on the free tier. Gracefully waiting for reset.'
+          : 'Error connecting to AI validation.',
+        riskNotes: isQuotaExceeded ? 'API Rate Limited' : 'Error',
         missingFactors: ['AI Validation'],
-        recommendedAction: 'block',
+        recommendedAction: isQuotaExceeded ? 'wait' : 'block',
         scores: setupScores
       };
     }

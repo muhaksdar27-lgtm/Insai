@@ -86,8 +86,8 @@ export class MarketScanner {
        return;
     }
     
-    // Acquire distributed lock for scanning (60 seconds to prevent overlapping scans from same or other instances)
-    const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 60);
+    // Acquire distributed lock for scanning
+    const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 10);
     if (!lockAcquired) {
        logger.debug('Another instance is currently scanning. Skipping.');
        return;

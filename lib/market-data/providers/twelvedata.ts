@@ -153,9 +153,6 @@ export class TwelveDataProvider implements PriceProvider {
 
   private formatSymbol(symbol: string): string {
     if (symbol === 'XAUUSD') return 'XAU/USD';
-    if (symbol === 'DXY' || symbol === 'US10Y') {
-        throw new Error(`Symbol ${symbol} not supported by TwelveData directly`);
-    }
     return symbol;
   }
 

@@ -14,8 +14,8 @@ import crypto from 'crypto';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0';
-const port = 3000;
-const turbopack = false;
+const port = parseInt(process.env.PORT || '3000', 10);
+const turbopack = dev;
 
 let pyProcess: ChildProcess | null = null;
 
