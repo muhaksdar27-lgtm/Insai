@@ -10,6 +10,7 @@ import { getQueueManager } from '@/lib/redis/queue';
 import { healthCheckEngine } from '@/lib/observability/health-check';
 import { validateEnvironment } from '@/lib/security/env-validator';
 import { getIngestionService } from '@/lib/services/ingestion_service';
+import { getEnv, isRailwayProduction } from '@/lib/utils/env';
 import crypto from 'crypto';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -20,15 +21,24 @@ const turbopack = dev;
 let pyProcess: ChildProcess | null = null;
 
 function startPythonEngine() {
-  const externalUrl = process.env.PYTHON_ENGINE_URL;
+  const externalUrl = getEnv('PYTHON_ENGINE_URL');
   const pythonPort = process.env.PYTHON_PORT || '8181';
+  const isRailway = isRailwayProduction();
   
   if (externalUrl) {
     logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
     return;
   }
   
-  logger.info('Starting Python Engine locally...');
+  // In Railway production, do NOT attempt to spawn local Python
+  // Railway is a container platform without build tools, Python venv, etc.
+  if (isRailway) {
+    logger.warn('Running on Railway production. PYTHON_ENGINE_URL is not configured. Python validation disabled.');
+    logger.warn('To enable Python Engine: set PYTHON_ENGINE_URL to an external service, or deploy a separate Python service on Railway.');
+    return;
+  }
+  
+  logger.info('Starting Python Engine locally (development/staging environment)...');
   
   // Nixpacks puts the venv at /app/prod-env, Dockerfile puts it at /app/venv
   const dockerVenv = "/app/venv/bin/python3";
@@ -254,6 +264,7 @@ app.prepare()
 
     server.listen(port, hostname, () => {
       logger.info(`> Ready on http://${hostname}:${port}`);
+      logger.info(`> Environment: ${isRailwayProduction() ? 'Railway Production' : 'Development/Staging'}`);
       
       // Initialize systems asynchronously to avoid blocking startup
       Promise.resolve().then(async () => {
@@ -297,3 +308,4 @@ app.prepare()
     logger.error(`Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
     process.exit(1);
   });
+

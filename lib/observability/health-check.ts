@@ -2,7 +2,7 @@ import { getEnv } from "../utils/env";
 import { logger } from '../utils/logger';
 import { getSupabaseClient } from '../supabase/client';
 
-export type ServiceHealthStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'NOT CONFIGURED' | 'RATE LIMITED' | 'UNAVAILABLE';
+export type ServiceHealthStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'NOT_CONFIGURED' | 'RATE_LIMITED' | 'QUOTA_EXCEEDED' | 'INVALID_KEY' | 'UNAVAILABLE';
 
 export interface ServiceHealth {
   serviceName: string;
@@ -22,14 +22,14 @@ class HealthCheckEngine {
   private services: Record<string, ServiceHealth> = {};
 
   constructor() {
-    this.registerService('Supabase', 'NOT CONFIGURED', 'Pending validation');
-    this.registerService('MarketData', 'NOT CONFIGURED', 'Pending validation');
-    this.registerService('EconomicCalendar', 'NOT CONFIGURED', 'Pending validation');
-    this.registerService('GeminiAI', 'NOT CONFIGURED', 'Pending validation');
-    this.registerService('TelegramBot', 'NOT CONFIGURED', 'Pending validation');
+    this.registerService('Supabase', 'NOT_CONFIGURED', 'Pending validation');
+    this.registerService('MarketData', 'NOT_CONFIGURED', 'Pending validation');
+    this.registerService('EconomicCalendar', 'NOT_CONFIGURED', 'Pending validation');
+    this.registerService('GeminiAI', 'NOT_CONFIGURED', 'Pending validation');
+    this.registerService('TelegramBot', 'NOT_CONFIGURED', 'Pending validation');
     this.registerService('RuleEngine', 'ONLINE');
-    this.registerService('PythonEngine', 'NOT CONFIGURED', 'Checking Python Engine...');
-    this.registerService('Redis', 'NOT CONFIGURED', 'Pending validation');
+    this.registerService('PythonEngine', 'NOT_CONFIGURED', 'Checking Python Engine...');
+    this.registerService('Redis', 'NOT_CONFIGURED', 'Pending validation');
   }
 
   private registerService(serviceName: string, initialStatus: ServiceHealthStatus, message?: string) {
@@ -39,6 +39,10 @@ class HealthCheckEngine {
       lastChecked: new Date().toISOString(),
       message
     };
+  }
+
+  public getServiceHealthByName(serviceName: string): ServiceHealth | undefined {
+    return this.services[serviceName];
   }
 
   public updateServiceHealth(serviceName: string, status: ServiceHealthStatus, latencyMs?: number, message?: string) {
@@ -51,7 +55,7 @@ class HealthCheckEngine {
         message
       };
 
-      if (status === 'UNAVAILABLE' || status === 'OFFLINE' || status === 'DEGRADED' || status === 'RATE LIMITED') {
+      if (status === 'UNAVAILABLE' || status === 'OFFLINE' || status === 'DEGRADED' || status === 'RATE_LIMITED' || status === 'QUOTA_EXCEEDED' || status === 'INVALID_KEY') {
          logger.warn(`Service ${serviceName} is ${status}`, {
             service_name: 'HealthCheckEngine',
             target_service: serviceName,
@@ -72,7 +76,7 @@ class HealthCheckEngine {
         const key = getEnv("SUPABASE_SERVICE_ROLE_KEY");
 
         if (!url || !key) {
-           this.updateServiceHealth('Supabase', 'NOT CONFIGURED', 0, 'Supabase URL or Service Role Key is missing/not configured');
+           this.updateServiceHealth('Supabase', 'NOT_CONFIGURED', 0, 'Supabase URL or Service Role Key is missing/not configured');
         } else {
            const sb = getSupabaseClient().getClient();
            if (sb) {
@@ -92,7 +96,7 @@ class HealthCheckEngine {
                       this.updateServiceHealth('Supabase', 'DEGRADED', Date.now() - start, `Database table missing (needs migration): ${errMsg}`);
                   } else if (errMsg.includes('API key') || errMsg.includes('JWT') || errMsg.includes('Invalid API key') || errCode === '401' || errCode === 'PGRST301') {
                       logger.error(`Supabase connection failed: Invalid API credentials.`);
-                      this.updateServiceHealth('Supabase', 'UNAVAILABLE', Date.now() - start, `Invalid Supabase credentials / API key`);
+                      this.updateServiceHealth('Supabase', 'INVALID_KEY', Date.now() - start, `Invalid Supabase credentials / API key`);
                   } else {
                       logger.error(`Supabase connection error: ${errMsg}`);
                       this.updateServiceHealth('Supabase', 'UNAVAILABLE', Date.now() - start, `Supabase Error: ${errMsg}`);
@@ -101,7 +105,7 @@ class HealthCheckEngine {
                   this.updateServiceHealth('Supabase', 'ONLINE', Date.now() - start);
               }
            } else {
-              this.updateServiceHealth('Supabase', 'NOT CONFIGURED', 0, 'Supabase client failed to initialize');
+              this.updateServiceHealth('Supabase', 'NOT_CONFIGURED', 0, 'Supabase client failed to initialize');
            }
         }
     } catch (error) {
@@ -136,7 +140,7 @@ class HealthCheckEngine {
              } else {
                  lastError = data.error;
              }
-           } catch (e: any) { lastError = e.message; const { getProviderRegistry } = await import("../market-data/provider-registry"); getProviderRegistry().reportError("Polygon.io", lastError); }
+           } catch (e: any) { lastError = e.message; }
            finally { clearTimeout(timeout); }
        }
        
@@ -155,7 +159,7 @@ class HealthCheckEngine {
              } else {
                  lastError = data.message;
              }
-           } catch (e: any) { lastError = e.message; const { getProviderRegistry } = await import("../market-data/provider-registry"); getProviderRegistry().reportError("Polygon.io", lastError); }
+           } catch (e: any) { lastError = e.message; }
            finally { clearTimeout(timeout); }
        }
        
@@ -167,7 +171,7 @@ class HealthCheckEngine {
        } else if (onlineCount > 0) {
            this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, onlineCount > 1 ? 'Hybrid Active' : 'Online');
        } else if (rateLimited) {
-           this.updateServiceHealth('MarketData', 'RATE LIMITED', Date.now() - start, lastError);
+           this.updateServiceHealth('MarketData', 'RATE_LIMITED', Date.now() - start, lastError);
        } else {
            this.updateServiceHealth('MarketData', 'UNAVAILABLE', Date.now() - start, lastError || 'All configured providers failed');
        }
@@ -192,7 +196,7 @@ class HealthCheckEngine {
             this.updateServiceHealth('EconomicCalendar', 'ONLINE', Date.now() - start);
         } else {
             if (res.status === 429) {
-                this.updateServiceHealth('EconomicCalendar', 'RATE LIMITED', Date.now() - start, `HTTP ${res.status}`);
+                this.updateServiceHealth('EconomicCalendar', 'RATE_LIMITED', Date.now() - start, `HTTP ${res.status}`);
             } else {
                 this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', Date.now() - start, `HTTP ${res.status}`);
             }
@@ -201,27 +205,38 @@ class HealthCheckEngine {
         this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', 0, e.message);
     }
 
-    // Check Gemini AI
+    // Check Gemini AI with explicit state distinctions
     try {
         const start = Date.now();
         const geminiKey = getEnv("GEMINI_API_KEY");
-        if (geminiKey) {
+        if (!geminiKey) {
+            this.updateServiceHealth('GeminiAI', 'NOT_CONFIGURED', 0, 'Missing Gemini API Key');
+        } else {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`, { signal: controller.signal });
             clearTimeout(timeout);
             const data = await res.json();
             if (data.error) {
-                if (data.error.code === 429) {
-                    this.updateServiceHealth('GeminiAI', 'RATE LIMITED', Date.now() - start, data.error.message);
+                const errorCode = data.error.code || '';
+                const errorMsg = data.error.message || '';
+                
+                // Distinguish between auth failure, quota, and other errors
+                if (errorCode === 'INVALID_ARGUMENT' || errorMsg.includes('API key') || errorMsg.includes('invalid') || res.status === 400) {
+                    this.updateServiceHealth('GeminiAI', 'INVALID_KEY', Date.now() - start, `Invalid Gemini API Key: ${errorMsg}`);
+                } else if (errorCode === 429 || errorMsg.includes('quota') || errorMsg.toLowerCase().includes('rate limit') || errorMsg.toLowerCase().includes('too many')) {
+                    // Distinguish quota_exceeded from rate limiting
+                    if (errorMsg.toLowerCase().includes('resource')) {
+                        this.updateServiceHealth('GeminiAI', 'QUOTA_EXCEEDED', Date.now() - start, `Gemini API Quota Exceeded (free tier: 20 requests/day)`);
+                    } else {
+                        this.updateServiceHealth('GeminiAI', 'RATE_LIMITED', Date.now() - start, `Gemini API Rate Limited: ${errorMsg}`);
+                    }
                 } else {
-                    this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', Date.now() - start, data.error.message);
+                    this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', Date.now() - start, `Gemini Error: ${errorMsg}`);
                 }
             } else {
                 this.updateServiceHealth('GeminiAI', 'ONLINE', Date.now() - start);
             }
-        } else {
-            this.updateServiceHealth('GeminiAI', 'NOT CONFIGURED', 0, 'Missing Gemini API Key');
         }
     } catch (e: any) {
         this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', 0, e.message);
@@ -239,36 +254,48 @@ class HealthCheckEngine {
             const data = await res.json();
             if (!data.ok) {
                 if (data.error_code === 429) {
-                    this.updateServiceHealth('TelegramBot', 'RATE LIMITED', Date.now() - start, data.description || 'Rate limited');
+                    this.updateServiceHealth('TelegramBot', 'RATE_LIMITED', Date.now() - start, data.description || 'Rate limited');
                 } else {
-                    this.updateServiceHealth('TelegramBot', 'UNAVAILABLE', Date.now() - start, data.description || 'Invalid token');
+                    this.updateServiceHealth('TelegramBot', 'INVALID_KEY', Date.now() - start, data.description || 'Invalid token');
                 }
             } else {
                 this.updateServiceHealth('TelegramBot', 'ONLINE', Date.now() - start);
             }
         } else {
-            this.updateServiceHealth('TelegramBot', 'NOT CONFIGURED', 0, 'Missing Telegram Bot Token');
+            this.updateServiceHealth('TelegramBot', 'NOT_CONFIGURED', 0, 'Missing Telegram Bot Token');
         }
     } catch (e: any) {
         this.updateServiceHealth('TelegramBot', 'UNAVAILABLE', 0, e.message);
     }
 
-    // Check Python Engine
+    // Check Python Engine (with Railway awareness)
     try {
         const start = Date.now();
         const defaultPyPort = process.env.PYTHON_PORT || '8181';
         const pyUrl = getEnv("PYTHON_ENGINE_URL") || `http://127.0.0.1:${defaultPyPort}`;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(`${pyUrl}/health`, { signal: controller.signal });
-        clearTimeout(timeout);
-        if (res.ok) {
-            this.updateServiceHealth('PythonEngine', 'ONLINE', Date.now() - start);
+        
+        // If no explicit PYTHON_ENGINE_URL and running on Railway, mark as NOT_CONFIGURED rather than OFFLINE
+        const { isRailwayProduction } = await import('../utils/env');
+        if (!getEnv("PYTHON_ENGINE_URL") && isRailwayProduction()) {
+            this.updateServiceHealth('PythonEngine', 'NOT_CONFIGURED', 0, 'Railway: Python Engine URL not configured (expected for production)');
         } else {
-            this.updateServiceHealth('PythonEngine', 'OFFLINE', Date.now() - start, `HTTP ${res.status}`);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            const res = await fetch(`${pyUrl}/health`, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (res.ok) {
+                this.updateServiceHealth('PythonEngine', 'ONLINE', Date.now() - start);
+            } else {
+                this.updateServiceHealth('PythonEngine', 'OFFLINE', Date.now() - start, `HTTP ${res.status}`);
+            }
         }
     } catch (e: any) {
-        this.updateServiceHealth('PythonEngine', 'OFFLINE', 0, e.message.includes('missing') ? 'PYTHON_ENGINE_URL is missing' : 'Python service unreachable');
+        const { isRailwayProduction } = await import('../utils/env');
+        if (isRailwayProduction() && !getEnv("PYTHON_ENGINE_URL")) {
+            this.updateServiceHealth('PythonEngine', 'NOT_CONFIGURED', 0, 'Railway: Python Engine URL not configured (expected for production)');
+        } else {
+            this.updateServiceHealth('PythonEngine', 'OFFLINE', 0, e.message);
+        }
     }
 
     // Check Redis
@@ -291,7 +318,7 @@ class HealthCheckEngine {
               this.updateServiceHealth('Redis', 'UNAVAILABLE', Date.now() - start, 'Not connected');
            }
         } else {
-           this.updateServiceHealth('Redis', 'NOT CONFIGURED', 0, 'REDIS_URL not set');
+           this.updateServiceHealth('Redis', 'NOT_CONFIGURED', 0, 'REDIS_URL not set');
         }
     } catch (e: any) {
         this.updateServiceHealth('Redis', 'UNAVAILABLE', 0, e.message);
@@ -309,12 +336,22 @@ class HealthCheckEngine {
         overallStatus = 'UNAVAILABLE';
     } else if (servicesList.some(s => s.status === 'OFFLINE' || s.status === 'UNAVAILABLE')) {
         overallStatus = 'DEGRADED';
-    } else if (servicesList.some(s => s.status === 'RATE LIMITED')) {
-        overallStatus = 'RATE LIMITED';
+    } else if (servicesList.some(s => s.status === 'QUOTA_EXCEEDED')) {
+        overallStatus = 'QUOTA_EXCEEDED';
+    } else if (servicesList.some(s => s.status === 'RATE_LIMITED')) {
+        overallStatus = 'RATE_LIMITED';
+    } else if (servicesList.some(s => s.status === 'INVALID_KEY')) {
+        overallStatus = 'DEGRADED';
     } else if (servicesList.some(s => s.status === 'DEGRADED')) {
         overallStatus = 'DEGRADED';
-    } else if (servicesList.some(s => s.status === 'NOT CONFIGURED')) {
-        overallStatus = 'NOT CONFIGURED';
+    } else if (servicesList.some(s => s.status === 'NOT_CONFIGURED')) {
+        // Only mark as NOT_CONFIGURED if critical services are missing
+        const criticalMissing = servicesList.filter(s => 
+            ['Supabase', 'Redis'].includes(s.serviceName) && s.status === 'NOT_CONFIGURED'
+        );
+        if (criticalMissing.length > 0) {
+            overallStatus = 'NOT_CONFIGURED';
+        }
     }
 
     return {
@@ -326,3 +363,4 @@ class HealthCheckEngine {
 }
 
 export const healthCheckEngine = new HealthCheckEngine();
+

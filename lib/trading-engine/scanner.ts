@@ -7,6 +7,15 @@ import { MarketSnapshot } from '@/types';
 import { metricsEngine } from '../observability/metrics-engine';
 import { errorTracker } from '../observability/error-tracker';
 
+// Default 5 core strategies
+const DEFAULT_STRATEGIES = [
+  'strategy-1-smc',
+  'strategy-2-snd',
+  'strategy-3-scalping',
+  'strategy-4-news',
+  'strategy-5-smc-sd-confluence'
+];
+
 export class MarketScanner {
   private engine: TradingEngine;
   private isRunning: boolean = false;
@@ -80,14 +89,87 @@ export class MarketScanner {
     logger.info('Market Scanner stopped');
   }
 
+  /**
+   * Fetch active strategies from database.
+   * Includes comprehensive error handling and graceful fallback.
+   */
+  private async getActiveStrategies(): Promise<string[]> {
+    const now = Date.now();
+    
+    // Check Redis cache first
+    try {
+      const redisCached = await getQueueManager().getCache<{ activeCount: number, activeIds: string[], expiresAt: number }>('active_strategies_data');
+      if (redisCached && redisCached.expiresAt > now) {
+        metricsEngine.recordCacheAccess(true);
+        logger.info(`Strategies loaded from Redis cache: ${redisCached.activeIds.length} active`);
+        return redisCached.activeIds;
+      }
+    } catch (e) {
+      logger.warn(`Redis cache lookup failed: ${(e as any).message}, falling back to local cache`);
+    }
+
+    // Check local cache second
+    if (this.strategiesCache && this.strategiesCache.expiresAt > now) {
+      metricsEngine.recordCacheAccess(true);
+      logger.info(`Strategies loaded from local cache: ${this.strategiesCache.activeIds.length} active`);
+      return this.strategiesCache.activeIds;
+    }
+
+    metricsEngine.recordCacheAccess(false);
+
+    // Try database
+    try {
+      const { getSupabaseClient } = await import('../supabase/client');
+      const strats = await getSupabaseClient().getStrategies();
+      
+      if (!Array.isArray(strats)) {
+        logger.error(`getStrategies() returned non-array (${typeof strats}). This is a critical bug.`, { result: strats });
+        throw new Error('getStrategies() returned non-array result');
+      }
+      
+      if (strats.length === 0) {
+        logger.warn(`getStrategies() returned empty array. No strategies configured in database. Falling back to DEFAULT_STRATEGIES.`);
+        return DEFAULT_STRATEGIES;
+      }
+
+      const activeStrats = strats.filter(s => s.enabled);
+      if (activeStrats.length === 0) {
+        logger.warn(`Database has ${strats.length} strategies, but NONE are enabled (all disabled=true). Falling back to DEFAULT_STRATEGIES.`);
+        return DEFAULT_STRATEGIES;
+      }
+
+      const activeIds = activeStrats.map(s => s.id);
+      logger.info(`Loaded ${strats.length} strategies from database, ${activeIds.length} are active (enabled=true)`);
+      
+      // Cache the result
+      const cacheEntry = { activeCount: activeIds.length, activeIds, expiresAt: now + this.STRATEGIES_CACHE_TTL };
+      this.strategiesCache = cacheEntry;
+      getQueueManager().setCache('active_strategies_data', cacheEntry, Math.ceil(this.STRATEGIES_CACHE_TTL / 1000)).catch(() => {});
+      
+      return activeIds;
+    } catch (e: any) {
+      logger.error(`Failed to fetch strategies from database: ${e.message}. Falling back to DEFAULT_STRATEGIES.`, { error: e });
+      
+      // In production, always have a fallback
+      return DEFAULT_STRATEGIES;
+    }
+  }
+
   public async scan() {
     if (this.isScanning) {
        logger.debug('Scan already in progress, skipping.');
        return;
     }
     
-    // Acquire distributed lock for scanning
-    const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 10);
+    // Acquire distributed lock for scanning with timeout
+    let lockAcquired = false;
+    try {
+      lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 10);
+    } catch (e: any) {
+      logger.warn(`Failed to acquire scan lock: ${e.message}. Skipping this scan.`);
+      return;
+    }
+
     if (!lockAcquired) {
        logger.debug('Another instance is currently scanning. Skipping.');
        return;
@@ -96,83 +178,39 @@ export class MarketScanner {
     this.isScanning = true;
     const startTime = Date.now();
     try {
-      // 1. Check if any strategies are active before fetching data
-      let activeCount = 0;
+      // 1. Get active strategies (with comprehensive fallback)
       let activeStrategyIds: string[] = [];
-      const now = Date.now();
-      
-      let cachedData = null;
       try {
-        const redisCached = await getQueueManager().getCache<{ activeCount: number, activeIds: string[], expiresAt: number }>('active_strategies_data');
-        if (redisCached && redisCached.expiresAt > now) {
-          cachedData = redisCached;
-          metricsEngine.recordCacheAccess(true);
-        } else {
-          metricsEngine.recordCacheAccess(false);
-        }
-      } catch (e) {
-        // Ignore error, fallback to local cache
+        activeStrategyIds = await this.getActiveStrategies();
+      } catch (e: any) {
+        logger.error(`Critical error fetching strategies: ${e.message}`);
+        activeStrategyIds = DEFAULT_STRATEGIES;
       }
 
-      if (!cachedData) {
-        if (this.strategiesCache && this.strategiesCache.expiresAt > now) {
-          cachedData = this.strategiesCache as { activeCount: number, activeIds: string[], expiresAt: number };
-          metricsEngine.recordCacheAccess(true);
-        }
-      }
-
-      if (cachedData) {
-         activeCount = cachedData.activeCount;
-         activeStrategyIds = cachedData.activeIds || [];
-      } else {
-         try {
-           const { getSupabaseClient } = await import('../supabase/client');
-           const strats = await getSupabaseClient().getStrategies();
-           if (Array.isArray(strats) && strats.length > 0) {
-             const activeStrats = strats.filter(s => s.enabled);
-             activeCount = activeStrats.length;
-             activeStrategyIds = activeStrats.map(s => s.id);
-             logger.info(`Found ${strats.length} strategies, ${activeCount} active.`);
-           } else {
-             activeStrategyIds = [
-               'strategy-1-smc',
-               'strategy-2-snd',
-               'strategy-3-scalping',
-               'strategy-4-news',
-               'strategy-5-smc-sd-confluence'
-             ];
-             activeCount = activeStrategyIds.length;
-             logger.warn(`getStrategies returned empty or non-array. Falling back to default ${activeCount} active strategies.`);
-           }
-         } catch (e: any) {
-           activeStrategyIds = [
-             'strategy-1-smc',
-             'strategy-2-snd',
-             'strategy-3-scalping',
-             'strategy-4-news',
-             'strategy-5-smc-sd-confluence'
-           ];
-           activeCount = activeStrategyIds.length;
-           logger.warn(`Failed to check active strategies. Falling back to default ${activeCount} active strategies. Error: ${e.message}`);
-         }
-         const cacheEntry = { activeCount, activeIds: activeStrategyIds, expiresAt: now + this.STRATEGIES_CACHE_TTL };
-         this.strategiesCache = cacheEntry;
-         getQueueManager().setCache('active_strategies_data', cacheEntry, Math.ceil(this.STRATEGIES_CACHE_TTL / 1000)).catch(() => {});
+      // Sanity check: never allow empty strategy list in production
+      if (activeStrategyIds.length === 0) {
+        logger.error(`Strategy list is empty after all fallbacks! This should never happen. Using DEFAULT_STRATEGIES as last resort.`);
+        activeStrategyIds = DEFAULT_STRATEGIES;
       }
       
-      if (activeCount === 0) {
-        logger.info('No active strategies, skipping market scan.');
-        return;
-      }
+      const activeCount = activeStrategyIds.length;
+      logger.info(`Market scan will process ${activeCount} active strategies: ${activeStrategyIds.join(', ')}`);
       
-      // Get the current M15 candle block (15 minutes = 900000 ms)
+      // 2. Get the current M15 candle block (15 minutes = 900000 ms)
       const currentCandleBlock = Math.floor(Date.now() / 900000) * 900000;
       
-      // Fetch latest price (leveraging the newly extended 30-sec cache)
-      const latestPriceSnapshot = await getMarketDataService().getLatestPrice("XAUUSD");
+      // 3. Fetch latest price (leveraging the newly extended 30-sec cache)
+      let latestPriceSnapshot: MarketSnapshot | null = null;
+      try {
+        latestPriceSnapshot = await getMarketDataService().getLatestPrice("XAUUSD");
+      } catch (e: any) {
+        logger.error(`Failed to fetch latest price for XAUUSD: ${e.message}`);
+        latestPriceSnapshot = null;
+      }
+
       const currentPrice = latestPriceSnapshot?.price ?? 0;
       
-      if (!currentPrice) {
+      if (!currentPrice || currentPrice === 0) {
          logger.warn('Market price for XAUUSD is currently unavailable. Skipping scan.');
          return;
       }
@@ -182,6 +220,7 @@ export class MarketScanner {
       
       if (!isNewCandle && !isSignificantPriceChange && this.lastScannedPrice > 0) {
          // Skip scan to preserve TwelveData/YahooFinance API quota!
+         logger.debug(`Skipping scan: no new candle and price change < $0.10 (price: ${currentPrice})`);
          return;
       }
       
@@ -190,12 +229,12 @@ export class MarketScanner {
 
       logger.info('Running market scan for XAUUSD (triggered by real-time WebSocket/throttle)...');
       
-      // 2. Get Context
+      // 4. Get Context
       const baseContext = await getMarketDataService().getContextData("XAUUSD", "M15");
       const correlationId = crypto.randomUUID();
       const context = { ...baseContext, correlationId };
       
-      // 3. Pass to engine
+      // 5. Pass to engine
       this.engine.processMarketData('XAUUSD', 'M15', context, activeStrategyIds);
       
     } catch (error: any) {
@@ -223,7 +262,13 @@ export class MarketScanner {
     } finally {
       this.isScanning = false;
       metricsEngine.recordScannerDuration(Date.now() - startTime);
-      await getQueueManager().releaseLock('market_scan_xauusd');
+      
+      // Release lock with error handling
+      try {
+        await getQueueManager().releaseLock('market_scan_xauusd');
+      } catch (e: any) {
+        logger.warn(`Failed to release scan lock: ${e.message}`);
+      }
     }
   }
 }
@@ -234,3 +279,4 @@ export function getMarketScanner(): MarketScanner {
   if (!_marketScanner) _marketScanner = new MarketScanner();
   return _marketScanner;
 }
+
