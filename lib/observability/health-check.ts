@@ -2,7 +2,7 @@ import { getEnv } from "../utils/env";
 import { logger } from '../utils/logger';
 import { getSupabaseClient } from '../supabase/client';
 
-export type ServiceHealthStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'NOT CONFIGURED' | 'RATE LIMITED' | 'UNAVAILABLE' | 'QUOTA_EXCEEDED' | 'DISABLED';
+export type ServiceHealthStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'NOT CONFIGURED' | 'RATE LIMITED' | 'UNAVAILABLE';
 
 export interface ServiceHealth {
   serviceName: string;
@@ -212,8 +212,8 @@ class HealthCheckEngine {
             clearTimeout(timeout);
             const data = await res.json();
             if (data.error) {
-                if (data.error.code === 429 || data.error.message.includes('quota') || data.error.status === 'RESOURCE_EXHAUSTED') {
-                    this.updateServiceHealth('GeminiAI', 'QUOTA_EXCEEDED', Date.now() - start, data.error.message);
+                if (data.error.code === 429) {
+                    this.updateServiceHealth('GeminiAI', 'RATE LIMITED', Date.now() - start, data.error.message);
                 } else {
                     this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', Date.now() - start, data.error.message);
                 }
@@ -256,21 +256,16 @@ class HealthCheckEngine {
     // Check Python Engine
     try {
         const start = Date.now();
-        const externalUrl = getEnv("PYTHON_ENGINE_URL");
-        if (!externalUrl && process.env.NODE_ENV === 'production') {
-            this.updateServiceHealth('PythonEngine', 'DISABLED', Date.now() - start, 'Disabled by design (no URL provided in production)');
+        const defaultPyPort = process.env.PYTHON_PORT || '8181';
+        const pyUrl = getEnv("PYTHON_ENGINE_URL") || `http://127.0.0.1:${defaultPyPort}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(`${pyUrl}/health`, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+            this.updateServiceHealth('PythonEngine', 'ONLINE', Date.now() - start);
         } else {
-            const defaultPyPort = process.env.PYTHON_PORT || '8181';
-            const pyUrl = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 3000);
-            const res = await fetch(`${pyUrl}/health`, { signal: controller.signal });
-            clearTimeout(timeout);
-            if (res.ok) {
-                this.updateServiceHealth('PythonEngine', 'ONLINE', Date.now() - start);
-            } else {
-                this.updateServiceHealth('PythonEngine', 'OFFLINE', Date.now() - start, `HTTP ${res.status}`);
-            }
+            this.updateServiceHealth('PythonEngine', 'OFFLINE', Date.now() - start, `HTTP ${res.status}`);
         }
     } catch (e: any) {
         this.updateServiceHealth('PythonEngine', 'OFFLINE', 0, e.message.includes('missing') ? 'PYTHON_ENGINE_URL is missing' : 'Python service unreachable');
