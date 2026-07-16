@@ -111,6 +111,10 @@ export class MarketScanner {
           metricsEngine.recordCacheAccess(false);
         }
       } catch (e) {
+        // Ignore error, fallback to local cache
+      }
+
+      if (!cachedData) {
         if (this.strategiesCache && this.strategiesCache.expiresAt > now) {
           cachedData = this.strategiesCache as { activeCount: number, activeIds: string[], expiresAt: number };
           metricsEngine.recordCacheAccess(true);

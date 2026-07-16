@@ -53,7 +53,11 @@ export class MarketDataService {
         cachedData = redisCached;
       }
     } catch (e) {
-      // Fallback to local map
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       const localCached = this.priceCache.get(symbol);
       if (localCached && localCached.expiresAt > now) {
         cachedData = localCached;
@@ -118,6 +122,11 @@ export class MarketDataService {
         cachedData = redisCached.data;
       }
     } catch (e) {
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       const localCached = this.candleCache.get(cacheKey);
       if (localCached && localCached.expiresAt > now) {
         cachedData = localCached.data;
@@ -159,6 +168,11 @@ export class MarketDataService {
         cachedData = redisCached.data;
       }
     } catch (e) {
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       if (this.newsCache && this.newsCache.expiresAt > now) {
         cachedData = this.newsCache.data;
       }
@@ -233,6 +247,11 @@ export class MarketDataService {
         cachedData = redisCached.data;
       }
     } catch (e) {
+      // Ignore Redis error, fallback to local cache
+    }
+
+    // Fallback to local map if not found in Redis (or Redis failed)
+    if (!cachedData) {
       if (this.calendarCache && this.calendarCache.expiresAt > now) {
         cachedData = this.calendarCache.data;
       }

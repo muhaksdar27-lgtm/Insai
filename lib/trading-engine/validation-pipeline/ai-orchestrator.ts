@@ -380,15 +380,21 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       logger.error(`AI Validation Orchestrator failed for ${strategyId} after ${(endTime - startTime).toFixed(2)}ms: ` + error.message);
       getProviderRegistry().reportError('GeminiAI', error.message);
 
+      const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
+
       return {
         strategyName: strategyId,
-        decision: 'FAILED',
+        decision: isQuotaExceeded ? 'WAIT' : 'FAILED',
         checklist: validatorResults,
-        reasoning: 'AI Error: ' + error.message,
-        evidence: 'Error connecting to AI validation.',
-        riskNotes: 'Error',
+        reasoning: isQuotaExceeded 
+          ? 'AI Validation is on hold because the Gemini API free tier quota has been exceeded (20 requests/day). The pipeline will automatically proceed once the quota resets or a paid API key is supplied.'
+          : 'AI Error: ' + error.message,
+        evidence: isQuotaExceeded 
+          ? 'Rate limit encountered on the free tier. Gracefully waiting for reset.'
+          : 'Error connecting to AI validation.',
+        riskNotes: isQuotaExceeded ? 'API Rate Limited' : 'Error',
         missingFactors: ['AI Validation'],
-        recommendedAction: 'block',
+        recommendedAction: isQuotaExceeded ? 'wait' : 'block',
         scores: setupScores
       };
     }
