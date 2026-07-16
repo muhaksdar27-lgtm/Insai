@@ -12,6 +12,71 @@ import { FallbackChain } from './fallback-chain';
 import { PriceProvider, NewsProvider, CalendarProvider } from './types';
 import { dataValidator } from './data-validator';
 
+/**
+ * Symbol mapping for providers that don't support native symbols.
+ * Maps abstract symbol names to provider-specific formats.
+ */
+const SYMBOL_MAPPING: Record<string, Record<string, string>> = {
+  // DXY: US Dollar Index - not supported by TwelveData
+  'DXY': {
+    'Polygon.io': 'C:DXY',
+    'YahooFinance': 'DXY=F'
+  },
+  // US10Y: US 10-Year Treasury Yield - not supported by TwelveData
+  'US10Y': {
+    'Polygon.io': 'I:US10Y',
+    'YahooFinance': '^TNX'
+  },
+  // XAUUSD: Gold - TwelveData uses XAU/USD
+  'XAUUSD': {
+    'TwelveData': 'XAU/USD',
+    'Polygon.io': 'C:XAUUSD',
+    'YahooFinance': 'GC=F'
+  }
+};
+
+/**
+ * Returns the provider-specific symbol for a given abstract symbol and provider.
+ * If no mapping exists, returns the original symbol.
+ * Logs the mapping decision for debugging.
+ */
+function getProviderSymbol(symbol: string, provider: string): string {
+  const mapping = SYMBOL_MAPPING[symbol];
+  if (!mapping) {
+    // No mapping needed, use symbol as-is
+    return symbol;
+  }
+  
+  const providerSymbol = mapping[provider];
+  if (providerSymbol) {
+    logger.info(`Symbol mapping: ${symbol} -> ${providerSymbol} (provider: ${provider})`);
+    return providerSymbol;
+  }
+  
+  // Mapping exists but this provider is not listed - use original
+  logger.warn(`No symbol mapping for ${symbol} on ${provider}, using as-is`);
+  return symbol;
+}
+
+/**
+ * Determines the best provider for a symbol.
+ * Some symbols are not supported by all providers.
+ */
+function getBestProviderForSymbol(symbol: string): string {
+  const mapping = SYMBOL_MAPPING[symbol];
+  if (!mapping) {
+    return 'TwelveData'; // Default fallback
+  }
+  
+  // Prefer primary providers if symbol is supported
+  const supportedProviders = Object.keys(mapping);
+  if (supportedProviders.includes('TwelveData')) return 'TwelveData';
+  if (supportedProviders.includes('Polygon.io')) return 'Polygon.io';
+  if (supportedProviders.includes('YahooFinance')) return 'YahooFinance';
+  
+  return 'TwelveData'; // Ultimate fallback
+}
+
 export class MarketDataService {
   private priceChain: FallbackChain<PriceProvider>;
   private newsChain: FallbackChain<NewsProvider>;
@@ -71,8 +136,15 @@ export class MarketDataService {
       return { ...cachedData.data, freshness };
     }
 
+    const bestProvider = getBestProviderForSymbol(symbol);
+    logger.info(`Fetching ${symbol} from best provider: ${bestProvider}`);
+
     const snapshot = await this.priceChain.execute(
-      (p) => p.getLatestPrice(symbol),
+      (p) => {
+        const providerName = (p as any).name || 'Unknown';
+        const providerSymbol = getProviderSymbol(symbol, providerName);
+        return p.getLatestPrice(providerSymbol);
+      },
       `getLatestPrice(${symbol})`,
       {
         symbol,
@@ -87,6 +159,9 @@ export class MarketDataService {
         status: 'not_configured'
       } as any
     );
+
+    // Ensure the returned snapshot uses the original symbol (not provider-specific)
+    snapshot.symbol = symbol;
 
     // Gap detection / Freshness check based on the dynamic window
     const snapshotTime = new Date(snapshot.timestamp).getTime();
@@ -137,8 +212,15 @@ export class MarketDataService {
       return cachedData;
     }
 
+    const bestProvider = getBestProviderForSymbol(symbol);
+    logger.info(`Fetching ${symbol} candles from best provider: ${bestProvider}`);
+
     const data = await this.priceChain.execute(
-      (p) => p.getCandles(symbol, timeframe, limit),
+      (p) => {
+        const providerName = (p as any).name || 'Unknown';
+        const providerSymbol = getProviderSymbol(symbol, providerName);
+        return p.getCandles(providerSymbol, timeframe, limit);
+      },
       `getCandles(${symbol}, ${timeframe})`,
       [] as any
     );
@@ -184,7 +266,7 @@ export class MarketDataService {
 
     const executeProvider = async (provider: any) => {
        const health = getProviderRegistry().getProviderHealth(provider.name);
-       if ((health?.healthStatus === 'UNAVAILABLE' || health?.healthStatus === 'RATE LIMITED') && health?.circuitBreakerStatus === 'open') {
+       if ((health?.healthStatus === 'UNAVAILABLE' || health?.healthStatus === 'RATE_LIMITED') && health?.circuitBreakerStatus === 'open') {
           throw new Error(`Circuit breaker open for ${provider.name}`);
        }
        return await provider.getLatestNews();
@@ -286,8 +368,14 @@ export class MarketDataService {
       this.getLatestNews(),
       this.getCalendarEvents(),
       this.getCandles(symbol, timeframe, 250),
-      this.getLatestPrice('DXY', freshnessWindowMs).catch(() => ({ status: 'error', reason: 'Failed to fetch DXY' })),
-      this.getLatestPrice('US10Y', freshnessWindowMs).catch(() => ({ status: 'error', reason: 'Failed to fetch US10Y' }))
+      this.getLatestPrice('DXY', freshnessWindowMs).catch(e => {
+        logger.warn(`Failed to fetch DXY: ${e.message}`);
+        return { status: 'error', reason: 'Failed to fetch DXY', symbol: 'DXY', price: 0 };
+      }),
+      this.getLatestPrice('US10Y', freshnessWindowMs).catch(e => {
+        logger.warn(`Failed to fetch US10Y: ${e.message}`);
+        return { status: 'error', reason: 'Failed to fetch US10Y', symbol: 'US10Y', price: 0 };
+      })
     ]);
     
     // COT Data - Requires CFTC API or Premium Data Provider (e.g., Quandl)
@@ -340,3 +428,4 @@ export function getMarketDataService(): MarketDataService {
   if (!_marketDataService) _marketDataService = new MarketDataService();
   return _marketDataService;
 }
+

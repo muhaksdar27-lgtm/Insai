@@ -53,6 +53,34 @@ const STRATEGY_VALIDATORS: Record<string, string[]> = {
   'strategy-4-news': ['News Validator', 'Liquidity Sweep Validator', 'Market Structure Validator', 'Risk Validator'],
 };
 
+/**
+ * Determines if a Gemini API error is due to quota exhaustion.
+ * Quota exhaustion is NOT the same as rate limiting (429).
+ * Free tier: 20 requests/day limit.
+ */
+function isGeminiQuotaExceeded(error: any): boolean {
+  const message = error.message?.toLowerCase() || '';
+  const code = error.code || '';
+  
+  return (
+    message.includes('resource_exhausted') ||
+    message.includes('quota') ||
+    code === 'RESOURCE_EXHAUSTED' ||
+    (message.includes('429') && message.includes('free'))
+  );
+}
+
+/**
+ * Determines if a Gemini API error is due to rate limiting (too many requests).
+ * This is different from quota exhaustion.
+ */
+function isGeminiRateLimited(error: any): boolean {
+  const message = error.message?.toLowerCase() || '';
+  const code = error.code || '';
+  
+  return code === 429 || message.includes('rate limit');
+}
+
 export class AIValidationOrchestrator {
   private ai: GoogleGenAI | null = null;
   private cache = new Map<string, ValidationPipelineResult>();
@@ -277,34 +305,7 @@ export class AIValidationOrchestrator {
       }
       // --------------------------
 
-      let prompt = `INSAI Analyst. Strategi: ${strategyId} | State: ${state.stateName}.
-TUGAS: Anda adalah Validator AI yang bertugas sebagai penilai probabilistik, BUKAN sekadar pengambil keputusan final.
-
-MARKET CONTEXT (Korelasi & Makro):
-- DXY: ${JSON.stringify(marketContext?.marketData?.correlations?.dxy || 'Not available')}
-- US10Y: ${JSON.stringify(marketContext?.marketData?.correlations?.us10y || 'Not available')}
-- COT Data: ${JSON.stringify(marketContext?.marketData?.correlations?.cotData || 'Not available')}
-- News/Calendar: ${marketContext?.marketData?.calendar ? 'Active events detected' : 'No major events'}
-- Historical Similarity (RAG):
-${similarHistoryText}
-
-Analisis bukti dari Scoring Engine dan konteks makro di atas. Berikan probabilitas (0-100) untuk:
-- Institution Accumulation Probability (institutionalAccumulation)
-- Institution Distribution Probability (institutionalDistribution)
-- Liquidity Sweep Probability (liquiditySweep)
-- Continuation Probability (continuationProbability)
-- Reversal Probability (reversalProbability)
-- Breakout Probability (genuineBreakout)
-- Fake Breakout Probability (fakeBreakout)
-- News Probability (newsIntervention)
-Dan berikan:
-- Confidence Score keseluruhan (0-100)
-- Market Confidence (0-100)
-- Data Quality Score (0-100)
-- Signal Quality Score (0-100)
-
-Sertakan alasan (reasoning) kuat berbasis data (evidence) untuk keputusan Anda.
-VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
+      let prompt = `INSAI Analyst. Strategi: ${strategyId} | State: ${state.stateName}.\nTUGAS: Anda adalah Validator AI yang bertugas sebagai penilai probabilistik, BUKAN sekadar pengambil keputusan final.\n\nMARKET CONTEXT (Korelasi & Makro):\n- DXY: ${JSON.stringify(marketContext?.marketData?.correlations?.dxy || 'Not available')}\n- US10Y: ${JSON.stringify(marketContext?.marketData?.correlations?.us10y || 'Not available')}\n- COT Data: ${JSON.stringify(marketContext?.marketData?.correlations?.cotData || 'Not available')}\n- News/Calendar: ${marketContext?.marketData?.calendar ? 'Active events detected' : 'No major events'}\n- Historical Similarity (RAG):\n${similarHistoryText}\n\nAnalisis bukti dari Scoring Engine dan konteks makro di atas. Berikan probabilitas (0-100) untuk:\n- Institution Accumulation Probability (institutionalAccumulation)\n- Institution Distribution Probability (institutionalDistribution)\n- Liquidity Sweep Probability (liquiditySweep)\n- Continuation Probability (continuationProbability)\n- Reversal Probability (reversalProbability)\n- Breakout Probability (genuineBreakout)\n- Fake Breakout Probability (fakeBreakout)\n- News Probability (newsIntervention)\nDan berikan:\n- Confidence Score keseluruhan (0-100)\n- Market Confidence (0-100)\n- Data Quality Score (0-100)\n- Signal Quality Score (0-100)\n\nSertakan alasan (reasoning) kuat berbasis data (evidence) untuk keputusan Anda.\nVALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
 
       const responseSchema: Schema = {
         type: Type.OBJECT,
@@ -377,26 +378,56 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       return result;
     } catch (error: any) {
       const endTime = performance.now();
-      logger.error(`AI Validation Orchestrator failed for ${strategyId} after ${(endTime - startTime).toFixed(2)}ms: ` + error.message);
+      logger.error(`AI Validation Orchestrator failed for ${strategyId} after ${(endTime - startTime).toFixed(2)}ms: ${error.message}`);
+      
+      // Report to provider registry for health tracking
       getProviderRegistry().reportError('GeminiAI', error.message);
 
-      const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
+      // Distinguish between quota exhaustion and rate limiting
+      const isQuota = isGeminiQuotaExceeded(error);
+      const isRateLimit = isGeminiRateLimited(error);
 
-      return {
-        strategyName: strategyId,
-        decision: isQuotaExceeded ? 'WAIT' : 'FAILED',
-        checklist: validatorResults,
-        reasoning: isQuotaExceeded 
-          ? 'AI Validation is on hold because the Gemini API free tier quota has been exceeded (20 requests/day). The pipeline will automatically proceed once the quota resets or a paid API key is supplied.'
-          : 'AI Error: ' + error.message,
-        evidence: isQuotaExceeded 
-          ? 'Rate limit encountered on the free tier. Gracefully waiting for reset.'
-          : 'Error connecting to AI validation.',
-        riskNotes: isQuotaExceeded ? 'API Rate Limited' : 'Error',
-        missingFactors: ['AI Validation'],
-        recommendedAction: isQuotaExceeded ? 'wait' : 'block',
-        scores: setupScores
-      };
+      if (isQuota) {
+        logger.warn(`Gemini API QUOTA EXCEEDED (free tier: 20 requests/day). Pipeline will wait for quota reset.`);
+        return {
+          strategyName: strategyId,
+          decision: 'WAIT',
+          checklist: validatorResults,
+          reasoning: 'AI Validation quota exceeded (Gemini free tier: 20 requests/day). The pipeline will automatically retry once the quota resets at midnight UTC.',
+          evidence: 'Quota exhaustion detected. Gracefully waiting for reset.',
+          riskNotes: 'API Quota Exceeded',
+          missingFactors: ['AI Validation - Quota'],
+          recommendedAction: 'wait',
+          scores: setupScores
+        };
+      } else if (isRateLimit) {
+        logger.warn(`Gemini API RATE LIMITED. Pipeline will wait before retrying.`);
+        return {
+          strategyName: strategyId,
+          decision: 'WAIT',
+          checklist: validatorResults,
+          reasoning: 'AI Validation is temporarily rate limited. The pipeline will automatically retry after a brief delay.',
+          evidence: 'Rate limit encountered. Gracefully waiting.',
+          riskNotes: 'API Rate Limited',
+          missingFactors: ['AI Validation - Rate Limit'],
+          recommendedAction: 'wait',
+          scores: setupScores
+        };
+      } else {
+        // Other errors
+        return {
+          strategyName: strategyId,
+          decision: 'FAILED',
+          checklist: validatorResults,
+          reasoning: `AI Error: ${error.message}`,
+          evidence: 'Error connecting to AI validation.',
+          riskNotes: 'Error',
+          missingFactors: ['AI Validation'],
+          recommendedAction: 'block',
+          scores: setupScores
+        };
+      }
     }
   }
 }
+

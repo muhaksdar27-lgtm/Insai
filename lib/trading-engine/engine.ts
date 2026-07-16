@@ -7,6 +7,7 @@ import { AIValidationOrchestrator } from './validation-pipeline/ai-orchestrator'
 import { MarketStateEngine } from './market-state-engine';
 import { StateMachine } from './state-machine';
 import { getMarketDataService } from '../market-data/market-data-service';
+import { getProviderRegistry } from '../market-data/provider-registry';
 import crypto from 'crypto';
 
 export class TradingEngine {
@@ -86,6 +87,84 @@ export class TradingEngine {
       } catch (e: any) {
          logger.error(`State machine transition error: ${e.message}`);
       }
+  }
+
+  /**
+   * Determine if we should use fallback rules when AI validation is unavailable.
+   * Fallback is enabled when:
+   * 1. Gemini quota is exceeded (not a permanent failure, temporary)
+   * 2. Gemini is rate limited (temporary)
+   * 3. Network timeout to Gemini (transient error)
+   *
+   * Fallback is disabled when:
+   * 1. Gemini API key is invalid (permanent)
+   * 2. Gemini is unavailable (persistent error)
+   */
+  private shouldUseFallbackRules(validationResult: any): boolean {
+    const decision = validationResult.decision || '';
+    const reasoning = validationResult.reasoning || '';
+    
+    // WAIT decision = temporary issue, use fallback rules
+    if (decision === 'WAIT') {
+      return true;
+    }
+    
+    // FAILED with quota = temporary, use fallback
+    if (decision === 'FAILED' && (reasoning.includes('quota') || reasoning.includes('Rate Limited'))) {
+      return true;
+    }
+    
+    // Permanent issues: blocked, invalid key, unavailable
+    if (decision === 'FAILED' && (reasoning.includes('Invalid') || reasoning.includes('not configured'))) {
+      return false;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Apply deterministic fallback rules when AI validation is unavailable.
+   * This ensures signals can still be generated even if Gemini is down.
+   */
+  private applyFallbackValidation(strategyId: string, ruleResults: Record<string, any>, context: any): { approved: boolean, reason: string } {
+    logger.info(`Applying fallback deterministic rules for ${strategyId} (AI unavailable)`);
+    
+    // FALLBACK: All critical rules must PASS
+    const criticalRules = ['Trend Validator', 'Volatility Validator', 'Risk Validator'];
+    const riskRule = ruleResults['Risk Validator'];
+    const trendRule = ruleResults['Trend Validator'];
+    const volRule = ruleResults['Volatility Validator'];
+    
+    // Check critical rules
+    const allCriticalPass = criticalRules.every(ruleName => {
+      const result = ruleResults[ruleName];
+      return result && result.status === 'valid';
+    });
+    
+    if (!allCriticalPass) {
+      return { 
+        approved: false, 
+        reason: `Fallback rules blocked: Not all critical rules passed. Risk=${riskRule?.status}, Trend=${trendRule?.status}, Vol=${volRule?.status}`
+      };
+    }
+    
+    // At least 60% of all rules must pass for approval
+    const allRules = Object.values(ruleResults).filter(r => r && typeof r === 'object' && 'status' in r);
+    const passCount = allRules.filter(r => r.status === 'valid').length;
+    const passRate = allRules.length > 0 ? (passCount / allRules.length) : 0;
+    
+    if (passRate < 0.6) {
+      return {
+        approved: false,
+        reason: `Fallback rules blocked: Only ${(passRate * 100).toFixed(1)}% of rules passed (< 60% required)`
+      };
+    }
+    
+    logger.info(`Fallback validation APPROVED for ${strategyId}: ${passCount}/${allRules.length} rules passed (${(passRate * 100).toFixed(1)}%)`);
+    return {
+      approved: true,
+      reason: `Fallback deterministic rules approved: ${passCount}/${allRules.length} rules passed (${(passRate * 100).toFixed(1)}%)`
+    };
   }
 
   private async runDetectionCycle(context: RuleEvaluationContext, activeStrategyIds: string[]) {
@@ -293,30 +372,51 @@ export class TradingEngine {
         
         const validationResult = await this.aiValidator.runPipeline(strategyId, aiState as any, ruleResults, context);
 
-        if (validationResult.decision !== 'APPROVED') {
-           logger.warn(`Setup ${setup.id} rejected by AI Validator: ${validationResult.reasoning}`);
-           this.setupDetector.transitionState(setup.id, 'expired', `AI Rejected: ${validationResult.reasoning}`);
-           
-           await this.advanceStateMachine(sm, 'REJECTED', validationResult.reasoning, setup.id, { context, ruleResults, aiDecision: validationResult.decision });
+        // CHECK GEMINI STATUS AND DECIDE ON FALLBACK
+        let isApproved = validationResult.decision === 'APPROVED';
+        let fallbackApplied = false;
+        let finalReason = validationResult.reasoning;
 
-           const suppressedSetup = { ...setup, aiValidation: validationResult, isSuppressed: true, marketStates };
+        if (!isApproved && this.shouldUseFallbackRules(validationResult)) {
+          logger.warn(`AI validation returned ${validationResult.decision}. Checking fallback deterministic rules...`);
+          const fallbackResult = this.applyFallbackValidation(strategyId, ruleResults, context);
+          
+          if (fallbackResult.approved) {
+            isApproved = true;
+            fallbackApplied = true;
+            finalReason = `[FALLBACK] ${fallbackResult.reason}`;
+            logger.info(`✅ Fallback rules APPROVED: ${fallbackResult.reason}`);
+          } else {
+            finalReason = `[FALLBACK BLOCKED] ${fallbackResult.reason}`;
+            logger.warn(`Fallback rules blocked: ${fallbackResult.reason}`);
+          }
+        }
+
+        if (!isApproved) {
+           logger.warn(`Setup ${setup.id} rejected by AI Validator: ${finalReason}`);
+           this.setupDetector.transitionState(setup.id, 'expired', `AI Rejected: ${finalReason}`);
+           
+           await this.advanceStateMachine(sm, 'REJECTED', finalReason, setup.id, { context, ruleResults, aiDecision: validationResult.decision, fallbackApplied });
+
+           const suppressedSetup = { ...setup, aiValidation: validationResult, isSuppressed: true, marketStates, fallbackApplied };
            this.signalPipeline.emitSignal(suppressedSetup as any, context).catch(e => logger.error(`Failed to emit suppressed signal: ${e.message}`));
            return;
         }
         
-        setup = this.setupDetector.transitionState(setup.id, 'ready', 'Setup confirmed, priced, and AI APPROVED');
+        setup = this.setupDetector.transitionState(setup.id, 'ready', `Setup confirmed, priced, and ${fallbackApplied ? 'FALLBACK APPROVED' : 'AI APPROVED'}`);
 
         // Attach AI validation details to setup so the signal pipeline can log them
         (setup as any).aiValidation = validationResult;
         (setup as any).marketStates = marketStates;
+        (setup as any).fallbackApplied = fallbackApplied;
 
         // 5. READY -> SIGNAL
         setup = this.setupDetector.transitionState(setup.id, 'signal', 'Signal emitted');
         
-        await this.advanceStateMachine(sm, 'SIGNAL_ACTIVE', 'Signal generated successfully', setup.id, { context, ruleResults, aiDecision: validationResult.decision });
+        await this.advanceStateMachine(sm, 'SIGNAL_ACTIVE', 'Signal generated successfully', setup.id, { context, ruleResults, aiDecision: validationResult.decision, fallbackApplied });
         
         // Emit the final approved signal and save to DB
-        logger.info(`🚨 SIGNAL GENERATED: ${setup.id} [${setup.direction?.toUpperCase()} ${setup.symbol}] Entry: ${setup.entryPrice}`);
+        logger.info(`🚨 SIGNAL GENERATED: ${setup.id} [${setup.direction?.toUpperCase()} ${setup.symbol}] Entry: ${setup.entryPrice} ${fallbackApplied ? '(FALLBACK RULES)' : '(AI APPROVED)'}`);
         await this.signalPipeline.emitSignal(setup, context).catch(e => logger.error(`Failed to emit signal: ${e.message}`));
 
         // 6. SIGNAL -> ARCHIVED
@@ -337,3 +437,4 @@ export class TradingEngine {
     this.setupDetector.audit();
   }
 }
+
