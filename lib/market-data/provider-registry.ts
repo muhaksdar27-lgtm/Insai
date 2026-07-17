@@ -15,6 +15,7 @@ export class ProviderRegistry {
   };
 
   constructor() {
+    this.registerProvider('Binance', 'price', 'ONLINE');
     this.registerProvider('Polygon.io', 'price', 'NOT CONFIGURED');
     this.registerProvider('TwelveData', 'price', 'NOT CONFIGURED');
     this.registerProvider('YahooFinance', 'price', 'ONLINE');

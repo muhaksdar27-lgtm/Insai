@@ -1,5 +1,6 @@
 import { MarketSnapshot, Candle, NewsEvent, CalendarEvent } from '@/types';
 import { TwelveDataProvider } from './providers/twelvedata';
+import { BinanceProvider } from './providers/binance';
 import { PolygonProvider } from './providers/polygon';
 import { NewsApiProvider } from './providers/newsapi';
 import { YahooFinanceProvider } from './providers/yahoofinance';
@@ -29,9 +30,11 @@ export class MarketDataService {
     // Fallback chain for price
     // 1. TwelveData (Primary)
     this.priceChain.addProvider(new TwelveDataProvider(), 'TwelveData');
-    // 2. Polygon.io (Secondary)
+    // 2. Binance (Secondary to support TwelveData accuracy)
+    this.priceChain.addProvider(new BinanceProvider(), 'Binance');
+    // 3. Polygon.io (Tertiary)
     this.priceChain.addProvider(new PolygonProvider(), 'Polygon.io');
-    // 3. Yahoo Finance (Fallback if all else fails)
+    // 4. Yahoo Finance (Fallback if all else fails)
     this.priceChain.addProvider(new YahooFinanceProvider(), 'YahooFinance');
 
     // Fallback chain for news

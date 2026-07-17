@@ -180,14 +180,15 @@ export class TradingEngine {
             isCandidateValid = false;
         }
 
-        const nextPatternState = sm.getNextExpectedState();
-        if (nextPatternState && nextPatternState.startsWith('WAIT_')) {
+        let nextPatternState = sm.getNextExpectedState();
+        while (nextPatternState && nextPatternState !== 'WAIT_CONFIRMATION' && nextPatternState !== 'WAIT_AI' && nextPatternState.startsWith('WAIT_')) {
              if (!isCandidateValid || !direction) {
                  this.setupDetector.transitionState(setup.id, 'expired', 'Failed candidate pattern matching or direction indeterminate');
                  await this.advanceStateMachine(sm, 'EXPIRED', 'Candidate pattern not found', setup.id, { context });
                  return;
              }
-             await this.advanceStateMachine(sm, nextPatternState, 'Pattern/Structure check passed', setup.id, { context });
+             await this.advanceStateMachine(sm, nextPatternState as any, 'Pattern/Structure check passed', setup.id, { context });
+             nextPatternState = sm.getNextExpectedState();
         }
 
         setup = this.setupDetector.transitionState(setup.id, 'validation', 'Passed candidate pattern matching');
