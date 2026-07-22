@@ -3,7 +3,6 @@ import { parse } from 'url';
 import next from 'next';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
-import fs from 'fs';
 import { logger, requestContext } from '@/lib/utils/logger';
 import { getMarketScanner } from '@/lib/trading-engine/scanner';
 import { getQueueManager } from '@/lib/redis/queue';
@@ -29,8 +28,6 @@ function startPythonEngine() {
   
   
   logger.info('Starting Python Engine locally...');
-  
-  const systemPython = "python3";
   
   try {
     const pyScript = `python3 -m uvicorn main:app --host 0.0.0.0 --port ${pythonPort}`;
