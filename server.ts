@@ -1,0 +1,304 @@
+import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { parse } from 'url';
+import next from 'next';
+import { spawn, ChildProcess } from 'child_process';
+import path from 'path';
+import fs from 'fs';
+import { logger, requestContext } from '@/lib/utils/logger';
+import { getMarketScanner } from '@/lib/trading-engine/scanner';
+import { getQueueManager } from '@/lib/redis/queue';
+import { validateEnvironment } from '@/lib/security/env-validator';
+import { getIngestionService } from '@/lib/services/ingestion_service';
+import crypto from 'crypto';
+
+const dev = process.env.NODE_ENV !== 'production';
+const hostname = '0.0.0.0';
+const port = parseInt(process.env.PORT || "3000", 10);
+const turbopack = false;
+
+let pyProcess: ChildProcess | null = null;
+
+function startPythonEngine() {
+  const externalUrl = process.env.PYTHON_ENGINE_URL;
+  const pythonPort = process.env.PYTHON_PORT || '8181';
+  
+  if (externalUrl) {
+    logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
+    return;
+  }
+  
+  
+  logger.info('Starting Python Engine locally...');
+  
+  // Nixpacks puts the venv at /app/prod-env, Dockerfile puts it at /app/venv
+  const dockerVenv = "/app/venv/bin/python3";
+  const dockerVenv2 = "/app/venv/bin/python";
+  const dockerVenvLocal = path.join(process.cwd(), "venv", "bin", "python3");
+  const dockerVenvLocal2 = path.join(process.cwd(), "venv", "bin", "python");
+  const rootVenv = path.join(process.cwd(), "prod-env", "bin", "python3");
+  const rootVenv2 = path.join(process.cwd(), "prod-env", "bin", "python");
+  const fallbackVenv = "/app/prod-env/bin/python3";
+  const fallbackVenv2 = "/app/prod-env/bin/python";
+  const localVenv = path.join(process.cwd(), "python-engine", "venv", "bin", "python3");
+  const localVenv2 = path.join(process.cwd(), "python-engine", "venv", "bin", "python");
+  const systemPython = "python3";
+  
+  let pythonExec = systemPython;
+  if (fs.existsSync(dockerVenv)) {
+      pythonExec = dockerVenv;
+  } else if (fs.existsSync(dockerVenv2)) {
+      pythonExec = dockerVenv2;
+  } else if (fs.existsSync(dockerVenvLocal)) {
+      pythonExec = dockerVenvLocal;
+  } else if (fs.existsSync(dockerVenvLocal2)) {
+      pythonExec = dockerVenvLocal2;
+  } else if (fs.existsSync(rootVenv)) {
+      pythonExec = rootVenv;
+  } else if (fs.existsSync(rootVenv2)) {
+      pythonExec = rootVenv2;
+  } else if (fs.existsSync(fallbackVenv)) {
+      pythonExec = fallbackVenv;
+  } else if (fs.existsSync(fallbackVenv2)) {
+      pythonExec = fallbackVenv2;
+  } else if (fs.existsSync(localVenv)) {
+      pythonExec = localVenv;
+  } else if (fs.existsSync(localVenv2)) {
+      pythonExec = localVenv2;
+  }
+
+  try {
+    if (pythonExec !== systemPython && fs.existsSync(pythonExec)) {
+      try {
+        fs.chmodSync(pythonExec, '755');
+      } catch (e: any) {
+        logger.warn(`Could not chmod python3 executable: ${e.message}`);
+      }
+    }
+    
+    pyProcess = spawn(pythonExec, [
+      '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', pythonPort
+    ], {
+      cwd: path.join(process.cwd(), 'python-engine'),
+      stdio: 'inherit',
+      env: { ...process.env, PYTHON_PORT: pythonPort, PYTHONPATH: '.' }
+    });
+
+    pyProcess.on('error', (err: any) => {
+      logger.error(`Failed to start local Python Engine: ${err.message}. Running in DEGRADED mode.`);
+      pyProcess = null;
+    });
+
+    pyProcess.on('close', (code: any) => {
+      if (isShuttingDown) return;
+      if (code !== 0 && code !== null) {
+        logger.error(`Local Python Engine exited unexpectedly with code ${code}. Running in DEGRADED mode.`);
+      } else {
+        logger.info('Local Python Engine exited normally.');
+      }
+      pyProcess = null;
+    });
+  } catch (err: any) {
+    logger.error(`Failed to spawn Python Engine: ${err.message}. Running in DEGRADED mode.`);
+    pyProcess = null;
+  }
+}
+
+let isReady = false;
+let isShuttingDown = false;
+let isAppPrepared = false;
+const app = next({ dev, hostname, port, turbopack });
+const handle = app.getRequestHandler();
+
+const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const correlationId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+  req.headers['x-request-id'] = correlationId;
+  res.setHeader('X-Request-ID', correlationId);
+
+  requestContext.run({ correlationId }, () => {
+    try {
+      const parsedUrl = parse(req.url!, true);
+      const { pathname } = parsedUrl;
+      
+      // Request timeout to prevent hanging connections (skip for SSE)
+      if (pathname !== '/api/stream') {
+        req.setTimeout(30000, () => {
+          logger.warn(`Request timeout: ${req.url}`);
+          if (!res.headersSent) {
+            res.writeHead(408, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Request Timeout' }));
+          } else {
+            req.destroy();
+          }
+        });
+
+        res.setTimeout(30000, () => {
+          logger.warn(`Response timeout: ${req.url}`);
+          if (!res.headersSent) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Service Unavailable' }));
+          } else {
+            req.destroy();
+          }
+        });
+      } else {
+        req.setTimeout(0);
+        res.setTimeout(0);
+      }
+
+      // Health checks endpoints (before Next.js handle)
+      if (pathname === '/health/liveness') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+        return;
+      }
+      
+      if (pathname === '/health/readiness') {
+        if (isShuttingDown) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'not_ready', isShuttingDown, timestamp: new Date().toISOString() }));
+          return;
+        }
+        if (!isReady) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'starting', timestamp: new Date().toISOString() }));
+          return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ready', timestamp: new Date().toISOString() }));
+        return;
+      }
+
+      if (isShuttingDown) {
+        res.writeHead(503, { 'Content-Type': 'application/json', 'Connection': 'close' });
+        res.end(JSON.stringify({ error: 'Server is shutting down' }));
+        return;
+      }
+
+      if (!isAppPrepared) {
+        res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '5' });
+        res.end(JSON.stringify({ error: 'Server is starting...' }));
+        return;
+      }
+
+      // Pass to Next.js
+      handle(req, res, parsedUrl).catch((err: any) => {
+        logger.error(`Error handling ${req.url}: ${err.message}`, { stack: err.stack });
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal Server Error' }));
+        }
+      });
+    } catch (err: any) {
+      logger.error(`Server catch block error handling ${req.url}: ${err.message}`, { stack: err.stack });
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal Server Error' }));
+      }
+    }
+  });
+});
+
+// Setup graceful shutdown
+const gracefulShutdown = async (signal: string) => {
+  if (isShuttingDown) return;
+  logger.info(`Received ${signal}. Starting graceful shutdown...`);
+  isShuttingDown = true;
+  
+  // Cleanup Python Process
+  if (pyProcess && !pyProcess.killed) {
+    logger.info('Shutting down local Python Engine...');
+    pyProcess.kill('SIGTERM');
+  }
+
+  // Stop scanner
+  try {
+    const scanner = getMarketScanner();
+    if (scanner) {
+      scanner.stop();
+    }
+  } catch (e: any) {
+    logger.warn(`Error stopping scanner during shutdown: ${e.message}`);
+  }
+
+  // Close Redis Queue
+  try {
+    await getQueueManager().close();
+  } catch (e: any) {
+    logger.warn(`Error stopping queue during shutdown: ${e.message}`);
+  }
+
+  // Give existing connections up to 5 seconds to finish
+  const shutdownTimeout = setTimeout(() => {
+    logger.warn('Forcing server shutdown after timeout');
+    process.exit(1);
+  }, 5000);
+
+  server.close(() => {
+    logger.info('Server successfully closed.');
+    clearTimeout(shutdownTimeout);
+    process.exit(0);
+  });
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+server.on('error', (err: NodeJS.ErrnoException) => {
+  logger.error(`Server error: ${err.message}`, { stack: err.stack });
+  if (err.code === 'EADDRINUSE') {
+    logger.error(`Port ${port} is already in use`);
+    process.exit(1);
+  }
+});
+
+server.listen(port, hostname, () => {
+  logger.info(`> Listening on http://${hostname}:${port} (Next.js preparing...)`);
+  
+  app.prepare()
+    .then(() => {
+      isAppPrepared = true;
+      logger.info(`> Next.js prepared successfully`);
+      
+      // Initialize systems asynchronously to avoid blocking startup
+      Promise.resolve().then(async () => {
+        try {
+          try {
+            validateEnvironment();
+          } catch (envErr: any) {
+            logger.error(`Environment validation failed: ${envErr.message}`);
+            process.exit(1);
+          }
+
+          startPythonEngine();
+          logger.info('Services initialized asynchronously.');
+          
+          try {
+            getMarketScanner().start().catch(err => logger.error(`marketScanner error: ${err.message}`));
+          } catch (e: any) {
+            logger.error(`Failed to start market scanner: ${e.message}`);
+          }
+          
+          try {
+             getIngestionService().start('XAUUSD');
+          } catch (e: any) {
+             logger.error(`Failed to start Ingestion Service: ${e.message}`);
+          }
+          
+          // Wait for a brief moment for async startups like Redis to connect before declaring ready
+          setTimeout(() => {
+             isReady = true;
+             logger.info('Server marked as ready for healthchecks.');
+          }, 3000);
+          
+        } catch (initErr: any) {
+          logger.error(`Critical error during backend initialization: ${initErr.message}`);
+          isReady = true; // Still true so health check can report UNAVAILABLE
+        }
+      });
+    })
+    .catch((err: any) => {
+      logger.error(`Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
+      process.exit(1);
+    });
+});
