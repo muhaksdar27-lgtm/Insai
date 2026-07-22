@@ -9,11 +9,16 @@ export async function GET() {
   let success = false;
   let error: { code: string; message: string; } | null = null;
 
+  let data: any = [];
   try {
-    const data = await getSupabaseClient().getActiveSignals();
+    try {
+      data = await getSupabaseClient().getActiveSignals();
+    } catch (dbErr: any) {
+      console.warn(`Supabase fetch failed for active signals, using fallback:`, dbErr.message);
+    }
     
     if (!Array.isArray(data)) {
-      if (data.status === 'not_configured') {
+      if (data.status === 'not_configured' || data.status === 'error') {
          return NextResponse.json({
             success: true,
             data: [],

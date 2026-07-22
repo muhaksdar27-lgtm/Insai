@@ -260,7 +260,6 @@ export class StateMachine {
     }
     
     const isTerm = ['FINISHED', 'REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(newState);
-    const nextStep = getNextStep(this.strategyId, newState);
     
     const result: StrategyState = {
       stateName: this.currentState,
@@ -269,7 +268,7 @@ export class StateMachine {
       signalKey: this.currentSignalKey,
       currentStatus: isTerm ? (newState === 'REJECTED' ? 'rejected' : newState === 'EXPIRED' ? 'expired' : 'active') : 'active',
       reason,
-      nextExpectedState: nextStep ? nextStep.id as StateName : null,
+      nextExpectedState: getNextStep(this.strategyId, this.currentState)?.id as StateName || null,
       context
     };
     
@@ -278,8 +277,7 @@ export class StateMachine {
   }
 
   public getNextExpectedState(): StateName | null {
-    const nextStep = getNextStep(this.strategyId, this.currentState);
-    return nextStep ? nextStep.id as StateName : null;
+    return getNextStep(this.strategyId, this.currentState)?.id as StateName || null;
   }
 
   private generateSignalKey(_context?: any): string {
@@ -288,10 +286,11 @@ export class StateMachine {
   }
 
   public transition(newState: StateName, reason: string, signalKey?: string, context?: any): StrategyState {
-    const nextStep = getNextStep(this.strategyId, this.currentState);
     const isTerm = ['FINISHED', 'REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(newState);
     
-    const isValidTransition = (nextStep && nextStep.id === newState) || isTerm;
+    // Allow transitioning to any valid state in the flow to support generic engine advancing
+    const isStateInFlow = getStep(this.strategyId, newState) !== undefined;
+    const isValidTransition = isStateInFlow || isTerm;
     
     if (isValidTransition) {
       this.currentState = newState;

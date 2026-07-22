@@ -29,7 +29,12 @@ export async function GET(
        status: 'active'
     };
 
-    const stateData = await getSupabaseClient().getStrategyState(id);
+    let stateData = null;
+    try {
+      stateData = await getSupabaseClient().getStrategyState(id);
+    } catch (dbErr: any) {
+      console.warn(`Supabase fetch failed for ${id}, using fallback:`, dbErr.message);
+    }
     
     const { normalizeStrategyFromDB } = require('@/lib/trading-engine/strategy-normalize');
     

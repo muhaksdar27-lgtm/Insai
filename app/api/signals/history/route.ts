@@ -7,10 +7,10 @@ import crypto from 'crypto';
 
 export async function GET() {
   try {
-    const data = await getSupabaseClient().getHistoricalSignals();
+    let data: any = []; try { data = await getSupabaseClient().getHistoricalSignals(); } catch (dbErr: any) { console.warn("Supabase fetch failed for history signals, using fallback:", dbErr.message); }
     
     if (!Array.isArray(data)) {
-        if (data.status === 'not_configured') {
+        if (data.status === 'not_configured' || data.status === 'error') {
            const emptyResponse: ApiResponse<any> = {
               success: true,
               data: [],
