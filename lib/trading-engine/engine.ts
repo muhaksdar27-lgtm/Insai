@@ -198,10 +198,6 @@ export class TradingEngine {
     }
 
     // Pre-calculate common rules to avoid duplicate validation across strategies
-    
-
-    
-
     let commonPyData: any = {};
     try {
         logger.info(`Delegating technical analysis to Python Engine for ${context.symbol}`);
@@ -259,15 +255,18 @@ export class TradingEngine {
         }
         // --- FETCH TECHNICAL ANALYSIS FROM PYTHON ---
         let pyData: any = commonPyData;
-        try {
-        } catch (e: any) {
-if (e.message.includes('Market Data Error')) {
-                logger.error(`Data Error for ${strategyId}: ${e.message}`);
-                this.setupDetector.transitionState(setup.id, 'expired', `Data Error: ${e.message}`);
-                await this.advanceStateMachine(sm, STEPS.SUPPRESSED, `Data Error: ${e.message}`, setup.id, context, { marketStates });
+        
+        if (!pyData || Object.keys(pyData).length === 0) {
+            logger.warn(`Python Engine delegation failed or no data for ${strategyId}`);
+        }
+        
+        // Handle any errors that might be flagged by Python
+        if (pyData && pyData.error) {
+            if (pyData.error.includes('Market Data Error')) {
+                logger.error(`Data Error for ${strategyId}: ${pyData.error}`);
+                this.setupDetector.transitionState(setup.id, 'expired', `Data Error: ${pyData.error}`);
+                await this.advanceStateMachine(sm, STEPS.SUPPRESSED, `Data Error: ${pyData.error}`, setup.id, context, { marketStates });
                 return;
-            } else {
-                logger.warn(`Python Engine delegation failed for ${strategyId}: ${e.message}`);
             }
         }
 

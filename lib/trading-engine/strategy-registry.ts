@@ -66,15 +66,15 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         uiLabels: {},
         priority: 5,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData) => {
+        extractCandidateRules: (_context, pyData = {}) => {
             const rules = {
                 rule_pair_xauusd: { status: 'valid', evidence: { pair: _context.symbol } },
                 rule_session_london: { status: 'valid', evidence: { note: 'Session checking implemented downstream' } },
-                rule_h1_trend: { status: pyData.trend_h1 !== 'neutral' ? 'valid' : 'invalid', evidence: { trend: pyData.trend_h1 } },
-                rule_asia_liquidity_sweep: { status: pyData.liq_sweep_bull || pyData.liq_sweep_bear ? 'valid' : 'invalid', evidence: { bull: pyData.liq_sweep_bull, bear: pyData.liq_sweep_bear } },
-                rule_choch_confirmation: { status: pyData.choch_bull || pyData.choch_bear ? 'valid' : 'invalid', evidence: { bull: pyData.choch_bull, bear: pyData.choch_bear } },
-                rule_ob_fvg_entry: { status: pyData.ob_fvg_bull || pyData.ob_fvg_bear ? 'valid' : 'invalid', evidence: { present: true } },
-                rule_atr_sl_buffer: { status: pyData.atr > 0 ? 'valid' : 'invalid', evidence: { atr: pyData.atr } },
+                rule_h1_trend: { status: (pyData.trend_h1 && pyData.trend_h1 !== 'neutral') ? 'valid' : 'invalid', evidence: { trend: pyData.trend_h1 || 'neutral' } },
+                rule_asia_liquidity_sweep: { status: (pyData.liq_sweep_bull || pyData.liq_sweep_bear) ? 'valid' : 'invalid', evidence: { bull: !!pyData.liq_sweep_bull, bear: !!pyData.liq_sweep_bear } },
+                rule_choch_confirmation: { status: (pyData.choch_bull || pyData.choch_bear) ? 'valid' : 'invalid', evidence: { bull: !!pyData.choch_bull, bear: !!pyData.choch_bear } },
+                rule_ob_fvg_entry: { status: (pyData.ob_fvg_bull || pyData.ob_fvg_bear) ? 'valid' : 'invalid', evidence: { present: !!(pyData.ob_fvg_bull || pyData.ob_fvg_bear) } },
+                rule_atr_sl_buffer: { status: (pyData.atr > 0) ? 'valid' : 'invalid', evidence: { atr: pyData.atr || 0 } },
                 rule_ai_validation: { status: 'valid', evidence: { note: 'Pending AI Gate' } }
             };
             const { score, isCandidateValid } = calculateConfluence(rules);
@@ -100,14 +100,14 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         uiLabels: {},
         priority: 4,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData) => {
+        extractCandidateRules: (_context, pyData = {}) => {
             const rules = {
                 rule_pair_xauusd: { status: 'valid', evidence: { pair: _context.symbol } },
-                rule_ma_trend: { status: pyData.trend_h1 !== 'neutral' ? 'valid' : 'invalid', evidence: { trend: pyData.trend_h1 } },
-                rule_sd_zone_touch: { status: pyData.sd_zone_active ? 'valid' : 'invalid', evidence: { active: pyData.sd_zone_active } },
-                rule_engulfing_confirm: { status: pyData.engulfing_bull || pyData.engulfing_bear ? 'valid' : 'invalid', evidence: { bull: pyData.engulfing_bull, bear: pyData.engulfing_bear } },
-                rule_spread_check: { status: pyData.spread_acceptable ? 'valid' : 'invalid', evidence: { acceptable: pyData.spread_acceptable } },
-                rule_atr_sl_buffer: { status: pyData.atr > 0 ? 'valid' : 'invalid', evidence: { atr: pyData.atr } },
+                rule_ma_trend: { status: (pyData.trend_h1 && pyData.trend_h1 !== 'neutral') ? 'valid' : 'invalid', evidence: { trend: pyData.trend_h1 || 'neutral' } },
+                rule_sd_zone_touch: { status: pyData.sd_zone_active ? 'valid' : 'invalid', evidence: { active: !!pyData.sd_zone_active } },
+                rule_engulfing_confirm: { status: (pyData.engulfing_bull || pyData.engulfing_bear) ? 'valid' : 'invalid', evidence: { bull: !!pyData.engulfing_bull, bear: !!pyData.engulfing_bear } },
+                rule_spread_check: { status: pyData.spread_acceptable ? 'valid' : 'invalid', evidence: { acceptable: !!pyData.spread_acceptable } },
+                rule_atr_sl_buffer: { status: (pyData.atr > 0) ? 'valid' : 'invalid', evidence: { atr: pyData.atr || 0 } },
                 rule_ai_validation: { status: 'valid', evidence: { note: 'Pending AI Gate' } }
             };
             const { score, isCandidateValid } = calculateConfluence(rules);
@@ -132,15 +132,15 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         uiLabels: {},
         priority: 3,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData) => {
+        extractCandidateRules: (_context, pyData = {}) => {
             const rules = {
-                rule_h1_trend: { status: pyData.trend_h1 !== 'neutral' ? 'valid' : 'invalid', evidence: { trend: pyData.trend_h1 } },
+                rule_h1_trend: { status: (pyData.trend_h1 && pyData.trend_h1 !== 'neutral') ? 'valid' : 'invalid', evidence: { trend: pyData.trend_h1 || 'neutral' } },
                 rule_m15_retracement: { status: 'valid', evidence: { note: 'Pending Confirmation' } },
-                rule_liquidity_sweep: { status: pyData.liq_sweep_bull || pyData.liq_sweep_bear ? 'valid' : 'invalid', evidence: { bull: pyData.liq_sweep_bull, bear: pyData.liq_sweep_bear } },
-                rule_m1_double_top_bottom: { status: pyData.double_top || pyData.double_bottom ? 'valid' : 'invalid', evidence: { top: pyData.double_top, bottom: pyData.double_bottom } },
+                rule_liquidity_sweep: { status: (pyData.liq_sweep_bull || pyData.liq_sweep_bear) ? 'valid' : 'invalid', evidence: { bull: !!pyData.liq_sweep_bull, bear: !!pyData.liq_sweep_bear } },
+                rule_m1_double_top_bottom: { status: (pyData.double_top || pyData.double_bottom) ? 'valid' : 'invalid', evidence: { top: !!pyData.double_top, bottom: !!pyData.double_bottom } },
                 rule_neckline_break: { status: 'valid', evidence: { note: 'Pending Confirmation' } },
                 rule_rr_min_1_3: { status: 'valid', evidence: { note: 'Calculated post-entry' } },
-                rule_news_filter: { status: !pyData.news_high_impact_active ? 'valid' : 'invalid', evidence: { news_active: pyData.news_high_impact_active } }
+                rule_news_filter: { status: !pyData.news_high_impact_active ? 'valid' : 'invalid', evidence: { news_active: !!pyData.news_high_impact_active } }
             };
             const { score, isCandidateValid } = calculateConfluence(rules);
             let direction: 'buy' | 'sell' = pyData.double_bottom ? 'buy' : 'sell';
@@ -164,13 +164,13 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         uiLabels: {},
         priority: 2,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData) => {
+        extractCandidateRules: (_context, pyData = {}) => {
             const rules = {
                 rule_news_high_impact: { status: 'valid', evidence: { note: 'Pending Confirmation' } }, 
-                rule_spread_wide_filter: { status: pyData.spread_acceptable ? 'valid' : 'invalid', evidence: { acceptable: pyData.spread_acceptable } },
-                rule_liquidity_sweep: { status: pyData.liq_sweep_bull || pyData.liq_sweep_bear ? 'valid' : 'invalid', evidence: { bull: pyData.liq_sweep_bull, bear: pyData.liq_sweep_bear } },
-                rule_rejection_confirmation: { status: pyData.morning_star || pyData.evening_star || pyData.engulfing_bull || pyData.engulfing_bear ? 'valid' : 'invalid', evidence: { detected: true } },
-                rule_bos_reversal: { status: pyData.bos_bull || pyData.bos_bear ? 'valid' : 'invalid', evidence: { detected: true } },
+                rule_spread_wide_filter: { status: pyData.spread_acceptable ? 'valid' : 'invalid', evidence: { acceptable: !!pyData.spread_acceptable } },
+                rule_liquidity_sweep: { status: (pyData.liq_sweep_bull || pyData.liq_sweep_bear) ? 'valid' : 'invalid', evidence: { bull: !!pyData.liq_sweep_bull, bear: !!pyData.liq_sweep_bear } },
+                rule_rejection_confirmation: { status: (pyData.morning_star || pyData.evening_star || pyData.engulfing_bull || pyData.engulfing_bear) ? 'valid' : 'invalid', evidence: { detected: !!(pyData.morning_star || pyData.evening_star || pyData.engulfing_bull || pyData.engulfing_bear) } },
+                rule_bos_reversal: { status: (pyData.bos_bull || pyData.bos_bear) ? 'valid' : 'invalid', evidence: { detected: !!(pyData.bos_bull || pyData.bos_bear) } },
                 rule_ai_validation: { status: 'valid', evidence: { note: 'Pending AI Gate' } }
             };
             const { score, isCandidateValid } = calculateConfluence(rules);
@@ -195,12 +195,12 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         uiLabels: {},
         priority: 1,
         isRelevantForStates: () => true,
-        extractCandidateRules: (_context, pyData) => {
+        extractCandidateRules: (_context, pyData = {}) => {
             const rules = {
-                rule_h1_m15_structure: { status: pyData.bos_bull || pyData.bos_bear ? 'valid' : 'invalid', evidence: { bull: pyData.bos_bull, bear: pyData.bos_bear } },
-                rule_zone_overlap_2_of_3: { status: pyData.sd_zone_active ? 'valid' : 'invalid', evidence: { active: pyData.sd_zone_active } },
-                rule_liquidity_sweep: { status: pyData.liq_sweep_bull || pyData.liq_sweep_bear ? 'valid' : 'invalid', evidence: { bull: pyData.liq_sweep_bull, bear: pyData.liq_sweep_bear } },
-                rule_entry_trigger: { status: pyData.morning_star || pyData.evening_star || pyData.engulfing_bull || pyData.engulfing_bear ? 'valid' : 'invalid', evidence: { triggered: true } },
+                rule_h1_m15_structure: { status: (pyData.bos_bull || pyData.bos_bear) ? 'valid' : 'invalid', evidence: { bull: !!pyData.bos_bull, bear: !!pyData.bos_bear } },
+                rule_zone_overlap_2_of_3: { status: pyData.sd_zone_active ? 'valid' : 'invalid', evidence: { active: !!pyData.sd_zone_active } },
+                rule_liquidity_sweep: { status: (pyData.liq_sweep_bull || pyData.liq_sweep_bear) ? 'valid' : 'invalid', evidence: { bull: !!pyData.liq_sweep_bull, bear: !!pyData.liq_sweep_bear } },
+                rule_entry_trigger: { status: (pyData.morning_star || pyData.evening_star || pyData.engulfing_bull || pyData.engulfing_bear) ? 'valid' : 'invalid', evidence: { triggered: !!(pyData.morning_star || pyData.evening_star || pyData.engulfing_bull || pyData.engulfing_bear) } },
                 rule_rr_gate: { status: 'valid', evidence: { note: 'Calculated post-entry' } },
                 rule_ai_validation: { status: 'valid', evidence: { note: 'Pending AI Gate' } }
             };
