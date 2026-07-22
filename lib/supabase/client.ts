@@ -9,7 +9,7 @@ export class SupabaseService {
   
   private failures: number = 0;
   private circuitOpen: boolean = false;
-  private readonly maxFailures = 5;
+  private readonly maxFailures = 20;
 
   public getClient(): SupabaseClient | null {
     const rawSupabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL") || getEnv("SUPABASE_URL") || '';
@@ -31,7 +31,7 @@ export class SupabaseService {
          global: {
            fetch: (url, options) => {
              const controller = new AbortController();
-             const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+             const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
              return fetch(url, { ...options, signal: controller.signal as any })
                .finally(() => clearTimeout(timeoutId));
            }

@@ -30,54 +30,11 @@ function startPythonEngine() {
   
   logger.info('Starting Python Engine locally...');
   
-  // Nixpacks puts the venv at /app/prod-env, Dockerfile puts it at /app/venv
-  const dockerVenv = "/app/venv/bin/python3";
-  const dockerVenv2 = "/app/venv/bin/python";
-  const dockerVenvLocal = path.join(process.cwd(), "venv", "bin", "python3");
-  const dockerVenvLocal2 = path.join(process.cwd(), "venv", "bin", "python");
-  const rootVenv = path.join(process.cwd(), "prod-env", "bin", "python3");
-  const rootVenv2 = path.join(process.cwd(), "prod-env", "bin", "python");
-  const fallbackVenv = "/app/prod-env/bin/python3";
-  const fallbackVenv2 = "/app/prod-env/bin/python";
-  const localVenv = path.join(process.cwd(), "python-engine", "venv", "bin", "python3");
-  const localVenv2 = path.join(process.cwd(), "python-engine", "venv", "bin", "python");
   const systemPython = "python3";
   
-  let pythonExec = systemPython;
-  if (fs.existsSync(dockerVenv)) {
-      pythonExec = dockerVenv;
-  } else if (fs.existsSync(dockerVenv2)) {
-      pythonExec = dockerVenv2;
-  } else if (fs.existsSync(dockerVenvLocal)) {
-      pythonExec = dockerVenvLocal;
-  } else if (fs.existsSync(dockerVenvLocal2)) {
-      pythonExec = dockerVenvLocal2;
-  } else if (fs.existsSync(rootVenv)) {
-      pythonExec = rootVenv;
-  } else if (fs.existsSync(rootVenv2)) {
-      pythonExec = rootVenv2;
-  } else if (fs.existsSync(fallbackVenv)) {
-      pythonExec = fallbackVenv;
-  } else if (fs.existsSync(fallbackVenv2)) {
-      pythonExec = fallbackVenv2;
-  } else if (fs.existsSync(localVenv)) {
-      pythonExec = localVenv;
-  } else if (fs.existsSync(localVenv2)) {
-      pythonExec = localVenv2;
-  }
-
   try {
-    if (pythonExec !== systemPython && fs.existsSync(pythonExec)) {
-      try {
-        fs.chmodSync(pythonExec, '755');
-      } catch (e: any) {
-        logger.warn(`Could not chmod python3 executable: ${e.message}`);
-      }
-    }
-    
-    pyProcess = spawn(pythonExec, [
-      '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', pythonPort
-    ], {
+    const pyScript = `python3 -m uvicorn main:app --host 0.0.0.0 --port ${pythonPort}`;
+    pyProcess = spawn('bash', ['-c', pyScript], {
       cwd: path.join(process.cwd(), 'python-engine'),
       stdio: 'inherit',
       env: { ...process.env, PYTHON_PORT: pythonPort, PYTHONPATH: '.' }

@@ -41,7 +41,7 @@ export class SetupDetector {
     const id = this.generateDeterministicId(strategyId, symbol, timeframe, timestamp);
     
     if (this.activeSetups.has(id)) {
-       throw new SetupLifecycleError(`Setup with id ${id} already exists. Duplicates are not allowed.`);
+       return this.activeSetups.get(id)!;
     }
 
     const setup: Setup = {
@@ -73,6 +73,10 @@ export class SetupDetector {
     }
 
     const currentState = setup.status;
+    if (currentState === newState) {
+        return setup; // Already in this state, skip
+    }
+
     const allowed = this.validTransitions[currentState];
 
     if (!allowed || !allowed.includes(newState)) {
