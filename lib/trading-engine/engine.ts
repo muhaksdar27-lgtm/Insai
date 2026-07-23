@@ -273,7 +273,9 @@ export class TradingEngine {
         await this.syncState(strategyId, STEPS.IDLE, 'active', 'Scanning market...', setup.id, this.buildSetupSnapshot(context, { marketStates, validationSummary: 'Scanning market...' }));
 
         // Advance to Candidate stage
-        setup = this.setupDetector.transitionState(setup.id, 'candidate', 'Evaluating specific strategy rules');
+        if (setup.status === 'scanning') {
+            setup = this.setupDetector.transitionState(setup.id, 'candidate', 'Evaluating specific strategy rules');
+        }
         await this.advanceStateMachine(sm, STEPS.WAIT_CONFIRMATION, 'Evaluating specific strategy rules', setup.id, context, { marketStates });
 
         // Evaluate candidate rules
@@ -288,6 +290,9 @@ export class TradingEngine {
         
         if (!pyData || Object.keys(pyData).length === 0) {
             logger.warn(`Python Engine delegation failed or no data for ${strategyId}`);
+            this.setupDetector.transitionState(setup.id, 'expired', 'Python Engine unreachable');
+            await this.advanceStateMachine(sm, STEPS.SUPPRESSED, 'Python Engine unreachable', setup.id, context, { marketStates });
+            return;
         }
         
         // Handle any errors that might be flagged by Python
