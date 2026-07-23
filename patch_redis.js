@@ -1,4 +1,6 @@
-from typing import Dict, Any, List
+const fs = require('fs');
+
+const pyAnalyzer = `from typing import Dict, Any, List
 import math
 import os
 import json
@@ -164,3 +166,6 @@ class TechnicalAnalyzer:
             self._cache.popitem(last=False)
             
         return result
+`;
+
+fs.writeFileSync('python-engine/analyzer.py', pyAnalyzer);

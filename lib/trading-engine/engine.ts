@@ -8,6 +8,7 @@ import { qualityGate } from './validation-pipeline/quality-gate';
 import { SetupDetector, SetupLifecycleError } from './setup-detector';
 import { SignalPipeline } from './signal-pipeline';
 import { logger } from '../utils/logger';
+import { PyWSClient } from './py-ws-client';
 import { MarketStateEngine } from './market-state-engine';
 import { StateMachine, STEPS } from './state-machine';
 import { getMarketDataService } from '../market-data/market-data-service';
@@ -169,6 +170,29 @@ export class TradingEngine {
   }
 
   private async runDetectionCycle(context: RuleEvaluationContext, activeStrategyIds: string[]) {
+    // 1. Macro News Filter (Ultra-High Accuracy Filtration)
+    const calendarEvents = context.marketData?.calendar || [];
+    const nowTime = new Date().getTime();
+    let hasHighImpactUSDNews = false;
+    for (const evt of calendarEvents) {
+        if (evt.impact === 'high' && (evt.country === 'USD' || evt.currency === 'USD')) {
+            const evtTime = new Date(evt.time || evt.timestamp || nowTime).getTime();
+            const diffMins = Math.abs(evtTime - nowTime) / (1000 * 60);
+            if (diffMins <= 30) {
+                hasHighImpactUSDNews = true;
+                break;
+            }
+        }
+    }
+
+    if (hasHighImpactUSDNews) {
+        logger.warn(`Macro News Filter: High Impact USD News detected within 30 minutes! Entering STANDBY mode.`);
+        for (const stratId of activeStrategyIds) {
+            await this.syncState(stratId, STEPS.SUPPRESSED, 'standby', 'Macro News Filter: Standby mode due to High Impact USD news', null, this.buildSetupSnapshot(context, { validationSummary: 'Standby mode due to High Impact USD news' }));
+        }
+        return;
+    }
+
     // 1. Market State Classification
     const marketStates = this.marketStateEngine.classifyState(context);
     logger.info(`Market States detected: ${marketStates.join(', ')}`);
@@ -215,20 +239,26 @@ export class TradingEngine {
         
         const payload = { H1: { candles: h1 }, M15: { candles: m15, atr: 4.5 }, M5: { candles: m5 }, M1: { candles: m1 } };
         
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        const pyRes = await fetch(`${pyUrl}/v1/analyze`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: controller.signal
-        });
-        clearTimeout(timeout);
-        
-        if (pyRes.ok) {
-            commonPyData = await pyRes.json();
-        } else {
-            logger.warn(`Python Engine returned ${pyRes.status}`);
+        try {
+            const wsClient = PyWSClient.getInstance(pyUrl);
+            commonPyData = await wsClient.analyze(payload);
+        } catch (wsErr: any) {
+            logger.warn(`WebSocket failed, falling back to HTTP: ${wsErr.message}`);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            const pyRes = await fetch(`${pyUrl}/v1/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+            
+            if (pyRes.ok) {
+                commonPyData = await pyRes.json();
+            } else {
+                logger.warn(`Python Engine returned ${pyRes.status}`);
+            }
         }
     } catch (e: any) {
         logger.error(`Failed to reach Python Engine: ${e.message}`);

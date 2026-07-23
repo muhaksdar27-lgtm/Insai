@@ -79,11 +79,12 @@ export class DataValidator {
         // 5. Outlier Harga (Price jumps)
         // e.g. price jumps more than 5% in a single candle for Gold is extremely suspicious
         const priceChangePct = Math.abs((candle.open - prevCandle.close) / prevCandle.close);
-        if (priceChangePct > 0.05) { // 5% jump
+        const atrThreshold = 0.003; // Approximate ATR threshold for XAUUSD
+        if (priceChangePct > atrThreshold) {
           outliers++;
           // Can either flag as invalid or just count it. Let's flag as invalid if jump > 10%
-          if (priceChangePct > 0.1) {
-            return { isValid: false, reason: `Price Outlier Error: Jump > 10% at ${candle.timestamp}` };
+          if (priceChangePct > (atrThreshold * 2)) {
+            return { isValid: false, reason: `Volatility/ATR Error: Abnormal price jump detected at ${candle.timestamp}. Holding signals.` };
           }
         }
       }
