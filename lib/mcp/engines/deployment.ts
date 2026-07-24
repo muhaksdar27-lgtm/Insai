@@ -12,13 +12,6 @@ export class PythonEngineManager {
 
         try {
             const externalUrl = getEnv("PYTHON_ENGINE_URL");
-            
-            if (!externalUrl && process.env.NODE_ENV === 'production') {
-                const result = { status: 'DISABLED_BY_DESIGN', message: 'Disabled in production unless URL provided' };
-                this.lastCheck = now;
-                this.lastResult = result;
-                return result;
-            }
 
             const defaultPyPort = process.env.PYTHON_PORT || '8181';
             const url = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
