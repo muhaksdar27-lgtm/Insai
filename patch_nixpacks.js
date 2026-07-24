@@ -1,4 +1,6 @@
-[phases.setup]
+const fs = require('fs');
+
+const nixpacks = `[phases.setup]
 nixPkgs = ["nodejs_22", "python311", "gcc", "bash", "coreutils"]
 
 [variables]
@@ -23,3 +25,7 @@ cacheDirectories = ["node_modules/.cache", ".next/cache"]
 
 [start]
 cmd = "npm run start"
+`;
+
+fs.writeFileSync('nixpacks.toml', nixpacks);
+console.log("Patched nixpacks.toml successfully");

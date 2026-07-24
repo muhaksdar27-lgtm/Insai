@@ -250,7 +250,7 @@ export class SupabaseService {
         return data || [];
       });
     } catch (err: any) {
-      if (err.message && err.message.includes('schema cache')) {
+      if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
           logger.warn(`Supabase fetch active warn: ${err.message}`);
       } else {
           logger.error(`Supabase fetch active error: ${err.message}`);
@@ -275,7 +275,7 @@ export class SupabaseService {
         return data || [];
       });
     } catch (err: any) {
-      if (err.message && err.message.includes('schema cache')) {
+      if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
           logger.warn(`Supabase fetch history warn: ${err.message}`);
       } else {
           logger.error(`Supabase fetch history error: ${err.message}`);
@@ -302,7 +302,7 @@ export class SupabaseService {
         return data;
       });
     } catch (err: any) {
-      if (err.message && err.message.includes('schema cache')) {
+      if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
           logger.warn(`Supabase fetch strategy state warn: ${err.message} (URL: ${this.currentUrl})`);
       } else {
           logger.error(`Supabase fetch strategy state error: ${err.message} (URL: ${this.currentUrl})`);
@@ -363,7 +363,7 @@ export class SupabaseService {
         }));
       });
     } catch (err: any) {
-      if (err.message && err.message.includes('schema cache')) {
+      if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
           logger.warn(`Supabase fetch strategies warn: ${err.message} (URL: ${this.currentUrl})`);
       } else {
           logger.error(`Supabase fetch strategies error: ${err.message} (URL: ${this.currentUrl})`);

@@ -1,4 +1,4 @@
-import fs from 'fs';
+
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
 import next from 'next';
@@ -31,8 +31,7 @@ function startPythonEngine() {
   logger.info('Starting Python Engine locally...');
   
   try {
-    const pythonExecutable = fs.existsSync('/app/prod-env/bin/python3') ? '/app/prod-env/bin/python3' : 'python3';
-    const pyScript = `${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
+    const pyScript = `python3 -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
     logger.info(`Spawning Python Engine with: ${pyScript}`);
     pyProcess = spawn('bash', ['-c', pyScript], {
       cwd: path.join(process.cwd(), 'python-engine'),
