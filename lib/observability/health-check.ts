@@ -193,9 +193,7 @@ class HealthCheckEngine {
     try {
         const start = Date.now();
         const externalUrl = getEnv("PYTHON_ENGINE_URL");
-        if (!externalUrl && process.env.NODE_ENV === 'production') {
-            this.updateServiceHealth('PythonEngine', 'DISABLED_BY_DESIGN', Date.now() - start, 'Disabled by design (no URL provided in production)');
-        } else {
+        {
             const defaultPyPort = process.env.PYTHON_PORT || '8181';
             const pyUrl = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
             const controller = new AbortController();
