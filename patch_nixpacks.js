@@ -1,7 +1,7 @@
 const fs = require('fs');
 
 const nixpacks = `[phases.setup]
-nixPkgs = ["nodejs_22", "python311", "gcc", "bash", "coreutils"]
+nixPkgs = ["nodejs_22", "python311", "python311Packages.pip", "gcc", "bash", "coreutils"]
 
 [variables]
 PYTHONUNBUFFERED = "1"

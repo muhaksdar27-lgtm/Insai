@@ -1,4 +1,5 @@
-providers = ["node", "python"]
+const fs = require('fs');
+const nixpacks = `providers = ["node", "python"]
 
 [variables]
 PYTHONUNBUFFERED = "1"
@@ -22,3 +23,7 @@ cacheDirectories = ["node_modules/.cache", ".next/cache", "/root/.npm", "/root/.
 
 [start]
 cmd = "npm run start"
+`;
+
+fs.writeFileSync('nixpacks.toml', nixpacks);
+console.log("Patched nixpacks.toml successfully");

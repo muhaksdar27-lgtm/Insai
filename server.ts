@@ -31,7 +31,8 @@ function startPythonEngine() {
   logger.info('Starting Python Engine locally...');
   
   try {
-    const pyScript = `python3 -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
+    const pythonExecutable = process.env.NODE_ENV === 'production' ? '/app/venv/bin/python' : 'python3';
+    const pyScript = `${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
     logger.info(`Spawning Python Engine with: ${pyScript}`);
     pyProcess = spawn('bash', ['-c', pyScript], {
       cwd: path.join(process.cwd(), 'python-engine'),

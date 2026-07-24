@@ -1,4 +1,5 @@
-providers = ["node", "python"]
+const fs = require('fs');
+const nixpacks = `providers = ["node", "python"]
 
 [variables]
 PYTHONUNBUFFERED = "1"
@@ -8,9 +9,9 @@ NODE_ENV = "production"
 [phases.install]
 cmds = [
     "npm install --no-audit --prefer-offline --no-fund --legacy-peer-deps",
-    "python -m venv /app/venv",
-    "/app/venv/bin/pip install --upgrade pip",
-    "/app/venv/bin/pip install -r python-engine/requirements.txt"
+    "python -m venv /opt/venv",
+    "/opt/venv/bin/pip install --upgrade pip",
+    "/opt/venv/bin/pip install -r python-engine/requirements.txt"
 ]
 
 [phases.build]
@@ -22,3 +23,7 @@ cacheDirectories = ["node_modules/.cache", ".next/cache", "/root/.npm", "/root/.
 
 [start]
 cmd = "npm run start"
+`;
+
+fs.writeFileSync('nixpacks.toml', nixpacks);
+console.log("Patched nixpacks.toml successfully");
