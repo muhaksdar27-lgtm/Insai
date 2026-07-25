@@ -1,7 +1,9 @@
 const fs = require('fs');
 
-const nixpacks = `[phases.setup]
-nixPkgs = ["nodejs_22", "python311", "python311Packages.pip", "gcc", "bash", "coreutils"]
+const nixpacks = `providers = ["node"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "python311", "gcc", "bash", "coreutils"]
 
 [variables]
 PYTHONUNBUFFERED = "1"
@@ -11,17 +13,17 @@ NODE_ENV = "production"
 [phases.install]
 cmds = [
     "npm install --no-audit --prefer-offline --no-fund --legacy-peer-deps",
-    "python3 -m pip install --upgrade pip --break-system-packages",
-    "python3 -m pip install -r python-engine/requirements.txt --break-system-packages"
+    "python3 -m venv /app/venv",
+    "/app/venv/bin/pip install --upgrade pip",
+    "/app/venv/bin/pip install -r python-engine/requirements.txt"
 ]
-cacheDirectories = ["/root/.npm", "/root/.cache/pip"]
 
 [phases.build]
 cmds = [
     "npm run build",
     "rm -rf server.pid pyenv python-engine/venv python-engine/__pycache__ patch.sh fix.sh"
 ]
-cacheDirectories = ["node_modules/.cache", ".next/cache"]
+cacheDirectories = ["node_modules/.cache", ".next/cache", "/root/.npm", "/root/.cache/pip"]
 
 [start]
 cmd = "npm run start"

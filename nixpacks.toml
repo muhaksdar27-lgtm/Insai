@@ -1,4 +1,7 @@
-providers = ["node", "python"]
+providers = ["node"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "python311", "gcc", "bash", "coreutils"]
 
 [variables]
 PYTHONUNBUFFERED = "1"
@@ -8,7 +11,7 @@ NODE_ENV = "production"
 [phases.install]
 cmds = [
     "npm install --no-audit --prefer-offline --no-fund --legacy-peer-deps",
-    "python -m venv /app/venv",
+    "python3 -m venv /app/venv",
     "/app/venv/bin/pip install --upgrade pip",
     "/app/venv/bin/pip install -r python-engine/requirements.txt"
 ]
