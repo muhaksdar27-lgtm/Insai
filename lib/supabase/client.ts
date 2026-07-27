@@ -9,7 +9,7 @@ export class SupabaseService {
   
   private failures: number = 0;
   private circuitOpen: boolean = false;
-  private readonly maxFailures = 20;
+  private readonly maxFailures = 3;
 
   public getClient(): SupabaseClient | null {
     const rawSupabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL") || getEnv("SUPABASE_URL") || '';
@@ -33,7 +33,7 @@ export class SupabaseService {
              const controller = new AbortController();
              const timeoutId = setTimeout(() => {
                try { controller.abort(); } catch {}
-             }, 15000); // 15s timeout
+             }, 4000); // 4s timeout
 
              // Omit parent signal listener to decouple DB operations from transient parent request HTTP cancellations
              const fetchOptions = { ...options };
@@ -72,22 +72,18 @@ export class SupabaseService {
         this.failures = 0; // reset on success
         return result;
       } catch (err: any) {
-        const isAbort = err.name === 'AbortError' || err.message?.includes('AbortError') || err.message?.includes('aborted');
         if (err.message === "Supabase circuit breaker is open") throw err;
         
         if (i === retries) {
-          // Do not increment failure counter for simple client AbortErrors
-          if (!isAbort) {
-            this.failures++;
-          }
+          this.failures++;
           if (this.failures >= this.maxFailures && !this.circuitOpen) {
             this.circuitOpen = true;
-            logger.warn(`Supabase circuit breaker opened after ${this.failures} failures. Cooldown for 15s.`);
+            logger.warn(`Supabase circuit breaker opened after ${this.failures} failures. Cooldown for 30s.`);
             setTimeout(() => {
                this.circuitOpen = false;
                this.failures = 0;
                logger.info('Supabase circuit breaker reset to closed');
-            }, 15000); // 15s reset
+            }, 30000); // 30s reset
           }
           throw err;
         }
@@ -347,7 +343,11 @@ export class SupabaseService {
       });
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
-        logger.error(`Supabase insert strategy state error: ${err.message}`);
+        if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
+          logger.warn(`Supabase insert strategy state warn: ${err.message}`);
+        } else {
+          logger.error(`Supabase insert strategy state error: ${err.message}`);
+        }
       }
       return null;
     }
@@ -429,7 +429,13 @@ export class SupabaseService {
         return data;
       });
     } catch (err: any) {
-      logger.error(`Supabase insert audit log error: ${err.message}`);
+      if (!err.message?.includes('circuit breaker')) {
+        if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
+          logger.warn(`Supabase insert audit log warn: ${err.message}`);
+        } else {
+          logger.error(`Supabase insert audit log error: ${err.message}`);
+        }
+      }
       return null;
     }
   }
@@ -462,7 +468,13 @@ export class SupabaseService {
         return data;
       });
     } catch (err: any) {
-      logger.error(`Supabase upsert MCP error: ${err.message}`);
+      if (!err.message?.includes('circuit breaker')) {
+        if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
+          logger.warn(`Supabase upsert MCP warn: ${err.message}`);
+        } else {
+          logger.error(`Supabase upsert MCP error: ${err.message}`);
+        }
+      }
       return null;
     }
   }

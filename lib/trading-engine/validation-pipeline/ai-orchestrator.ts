@@ -301,7 +301,7 @@ export class AIValidationOrchestrator {
           const stateSummary = `Strategy: ${strategyId}, Timeframe: ${marketContext?.marketData?.timeframe || 'Unknown'}, Symbol: ${marketContext?.marketData?.symbol || 'Unknown'}, Rules: ${simplifiedResults.map(r => r.rule + "=" + r.status).join(',')}`;
           
           const embedRes = await aiClient.models.embedContent({
-              model: 'text-embedding-004',
+              model: 'gemini-embedding-2-preview',
               contents: stateSummary
           });
           
@@ -389,7 +389,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       };
 
       const response = await aiClient.models.generateContent({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-3.6-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
@@ -441,8 +441,14 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       
       const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
       
-      let deterministicDecision: 'REJECTED' | 'WAIT' = 'WAIT';
+      let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
       if (failedCritical) {
+          deterministicDecision = 'REJECTED';
+      } else if (realScore >= 70) {
+          deterministicDecision = 'APPROVED';
+      } else if (realScore >= 40) {
+          deterministicDecision = 'WAIT';
+      } else {
           deterministicDecision = 'REJECTED';
       }
 
@@ -454,7 +460,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
          evidence: `Fallback used due to AI error.`,
          riskNotes: isQuotaExceeded ? 'API Rate Limited - Fallback Active' : 'AI Error - Fallback Active',
          missingFactors: ['AI Validation'],
-         recommendedAction: deterministicDecision === 'REJECTED' ? 'block' : 'wait',
+         recommendedAction: deterministicDecision === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
          scores: {}
       };
     }
