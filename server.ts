@@ -32,7 +32,9 @@ function startPythonEngine() {
   
   try {
     const pythonExecutable = process.env.NODE_ENV === 'production' ? '/app/venv/bin/python' : 'python3';
-    const pyScript = `${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
+    const pyScript = process.env.NODE_ENV === 'production'
+      ? `${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`
+      : `bash ./ensure-python.sh && ${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
     logger.info(`Spawning Python Engine with: ${pyScript}`);
     pyProcess = spawn('bash', ['-c', pyScript], {
       cwd: path.join(process.cwd(), 'python-engine'),
@@ -231,7 +233,7 @@ server.listen(port, hostname, () => {
           logger.info('Services initialized asynchronously.');
           
           try {
-            getMarketScanner().start().catch(err => logger.error(`marketScanner error: ${err.message}`));
+            setTimeout(() => { getMarketScanner().start().catch(err => logger.error(`marketScanner error: ${err.message}`)); }, 3000);
           } catch (e: any) {
             logger.error(`Failed to start market scanner: ${e.message}`);
           }

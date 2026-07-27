@@ -1,7 +1,7 @@
 from typing import Tuple, List, Dict, Any
 from strategy_engine import StrategyEngine
 from shared_utilities import get_logger
-from session_analyzer import get_session_info
+from scoring.session_analyzer import get_session_info
 
 logger = get_logger("QuantScorer")
 

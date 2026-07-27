@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Tuple
 from strategy.base_strategy import BaseStrategy, StrategyMetadata
-from session_analyzer import get_session_info
+from scoring.session_analyzer import get_session_info
 
 class SMCStrategy(BaseStrategy):
     @property

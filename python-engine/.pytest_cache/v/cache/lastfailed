@@ -1,0 +1,4 @@
+{
+  "tests/test_api.py::test_strategy_endpoint_not_found": true,
+  "tests/test_api.py::test_strategy_5_endpoint": true
+}

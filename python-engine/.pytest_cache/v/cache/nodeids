@@ -1,0 +1,12 @@
+[
+  "test_hist.py::test",
+  "tests/test_api.py::test_health_endpoint",
+  "tests/test_api.py::test_ready_endpoint",
+  "tests/test_api.py::test_strategy_5_endpoint",
+  "tests/test_api.py::test_strategy_endpoint_not_found",
+  "tests/test_core.py::test_core_engine_analyze_minimal",
+  "tests/test_core.py::test_core_engine_initialization",
+  "tests/test_core_engine.py::test_analyze_empty_data",
+  "tests/test_core_engine.py::test_analyze_trend_and_volatility",
+  "tests/test_core_engine.py::test_cache_key_generation"
+]

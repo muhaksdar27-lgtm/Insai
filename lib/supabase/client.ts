@@ -14,7 +14,7 @@ export class SupabaseService {
   public getClient(): SupabaseClient | null {
     const rawSupabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL") || getEnv("SUPABASE_URL") || '';
     const supabaseUrl = rawSupabaseUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
-    const supabaseKey = getEnv("SUPABASE_SERVICE_ROLE_KEY") || '';
+    const supabaseKey = getEnv("SUPABASE_SERVICE_ROLE_KEY") || getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY") || '';
 
     if (!supabaseUrl || !supabaseKey) {
       return null;

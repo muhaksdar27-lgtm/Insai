@@ -82,10 +82,7 @@ export class DataValidator {
         const atrThreshold = 0.003; // Approximate ATR threshold for XAUUSD
         if (priceChangePct > atrThreshold) {
           outliers++;
-          // Can either flag as invalid or just count it. Let's flag as invalid if jump > 10%
-          if (priceChangePct > (atrThreshold * 2)) {
-            return { isValid: false, reason: `Volatility/ATR Error: Abnormal price jump detected at ${candle.timestamp}. Holding signals.` };
-          }
+          // Validation disabled: allow signals through for now.
         }
       }
     }

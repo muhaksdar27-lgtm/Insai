@@ -241,27 +241,32 @@ export class TradingEngine {
         
         try {
             const wsClient = PyWSClient.getInstance(pyUrl);
-            commonPyData = await wsClient.analyze(payload);
+            commonPyData = await wsClient.analyze(payload); logger.info(`WS returned: ${JSON.stringify(commonPyData)}`);
         } catch (wsErr: any) {
             logger.warn(`WebSocket failed, falling back to HTTP: ${wsErr.message}`);
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 3000);
-            const pyRes = await fetch(`${pyUrl}/v1/analyze`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                signal: controller.signal
-            });
-            clearTimeout(timeout);
-            
-            if (pyRes.ok) {
-                commonPyData = await pyRes.json();
-            } else {
-                logger.warn(`Python Engine returned ${pyRes.status}`);
+            const timeout = setTimeout(() => controller.abort(), 10000);
+            try {
+                const pyRes = await fetch(`${pyUrl}/v1/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    cache: 'no-store',
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+                if (pyRes.ok) {
+                    commonPyData = await pyRes.json();
+                } else {
+                    const txt = await pyRes.text();
+                    logger.warn(`Python Engine returned ${pyRes.status}: ${txt}`);
+                }
+            } catch (err: any) {
+                logger.error(`Failed to reach Python Engine HTTP: ${err.message} cause: ${err.cause?.message || "none"}`);
             }
         }
     } catch (e: any) {
-        logger.error(`Failed to reach Python Engine: ${e.message}`);
+        logger.error(`Critical error during Python Engine delegation: ${e.message}`);
     }
     
     // Process all active strategies concurrently
@@ -289,7 +294,7 @@ export class TradingEngine {
         let pyData: any = commonPyData;
         
         if (!pyData || Object.keys(pyData).length === 0) {
-            logger.warn(`Python Engine delegation failed or no data for ${strategyId}`);
+            logger.warn(`Python Engine delegation failed or no data for ${strategyId}: ${JSON.stringify(pyData)}`);
             this.setupDetector.transitionState(setup.id, 'expired', 'Python Engine unreachable');
             await this.advanceStateMachine(sm, STEPS.SUPPRESSED, 'Python Engine unreachable', setup.id, context, { marketStates });
             return;
@@ -340,7 +345,7 @@ export class TradingEngine {
 
         if (!isCandidateValid) {
             const failReason = failedRule ? `Failed ${failedRule}` : 'Failed candidate evaluation (low confluence or invalid rule)';
-            this.setupDetector.transitionState(setup.id, 'expired', failReason);
+            logger.info(`Setup expired: ${failReason}`); this.setupDetector.transitionState(setup.id, 'expired', failReason);
             await this.advanceStateMachine(sm, STEPS.EXPIRED, failReason, setup.id, context, { marketStates });
             return;
         }
