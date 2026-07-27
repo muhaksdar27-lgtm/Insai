@@ -1,7 +1,21 @@
 from typing import Tuple, List, Dict, Any
+import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 from strategy_engine import StrategyEngine
 from shared_utilities import get_logger
-from scoring.session_analyzer import get_session_info
+
+try:
+    from scoring.session_analyzer import get_session_info
+except ModuleNotFoundError:
+    try:
+        from session_analyzer import get_session_info
+    except ModuleNotFoundError:
+        from .session_analyzer import get_session_info
 
 logger = get_logger("QuantScorer")
 

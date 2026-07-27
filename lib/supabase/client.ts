@@ -52,7 +52,7 @@ export class SupabaseService {
     return this.getClient() !== null && !this.circuitOpen;
   }
 
-  private async withRetry<T>(operation: () => Promise<T>, retries: number = 2): Promise<T> {
+  private async withRetry<T>(operation: () => Promise<T>, retries: number = 1): Promise<T> {
     if (this.circuitOpen) {
       throw new Error("Supabase circuit breaker is open");
     }
@@ -69,7 +69,7 @@ export class SupabaseService {
           this.failures++;
           if (this.failures >= this.maxFailures && !this.circuitOpen) {
             this.circuitOpen = true;
-            logger.error(`Supabase circuit breaker opened after ${this.failures} failures`);
+            logger.warn(`Supabase circuit breaker opened after ${this.failures} failures. Cooldown for 30s.`);
             setTimeout(() => {
                this.circuitOpen = false;
                this.failures = 0;
@@ -79,18 +79,15 @@ export class SupabaseService {
           throw err;
         }
         // exponential backoff
-        await new Promise(res => setTimeout(res, Math.pow(2, i) * 500));
+        await new Promise(res => setTimeout(res, Math.pow(2, i) * 300));
       }
     }
     throw new Error("Unreachable");
   }
 
   public async insertSignal(signal: any) {
-    const supabase = this.getClient();
-    if (!supabase) {
-      logger.warn('Database is not configured. Skipping insertSignal.');
-      return null;
-    }
+    if (!this.isConnected()) return null;
+    const supabase = this.getClient()!;
     try {
       return await this.withRetry(async () => {
         const payload = {
@@ -115,17 +112,16 @@ export class SupabaseService {
         return data;
       });
     } catch (err: any) {
-      logger.error(`Supabase insert error: ${err.message}`);
+      if (!err.message?.includes('circuit breaker')) {
+        logger.error(`Supabase insert error: ${err.message}`);
+      }
       return null;
     }
   }
 
   public async insertSignalEvidence(payload: { signal_key: string, engine_name: string, evidence_type: string, details: any, passed: boolean, reason: any }) {
-    const supabase = this.getClient();
-    if (!supabase) {
-      logger.warn('Database is not configured. Skipping insertSignalEvidence.');
-      return null;
-    }
+    if (!this.isConnected()) return null;
+    const supabase = this.getClient()!;
     try {
       return await this.withRetry(async () => {
         const { data, error } = await supabase
@@ -143,17 +139,16 @@ export class SupabaseService {
         return data;
       });
     } catch (err: any) {
-      logger.error(`Supabase insert signal evidence error: ${err.message}`);
+      if (!err.message?.includes('circuit breaker')) {
+        logger.error(`Supabase insert signal evidence error: ${err.message}`);
+      }
       return null;
     }
   }
 
   public async updateSignalState(signalKey: string, state: any) {
-    const supabase = this.getClient();
-    if (!supabase) {
-      logger.warn('Database is not configured. Skipping updateSignalState.');
-      return null;
-    }
+    if (!this.isConnected()) return null;
+    const supabase = this.getClient()!;
     try {
       return await this.withRetry(async () => {
         const { data, error } = await supabase
@@ -165,14 +160,16 @@ export class SupabaseService {
         return data;
       });
     } catch (err: any) {
-      logger.error(`Supabase update error: ${err.message}`);
+      if (!err.message?.includes('circuit breaker')) {
+        logger.error(`Supabase update error: ${err.message}`);
+      }
       return null;
     }
   }
 
   public async insertAlert(alert: any) {
-    const supabase = this.getClient();
-    if (!supabase) return null;
+    if (!this.isConnected()) return null;
+    const supabase = this.getClient()!;
     try {
       await this.withRetry(async () => {
         await supabase.from('alerts').insert([{
@@ -184,7 +181,9 @@ export class SupabaseService {
         }]);
       });
     } catch (e: any) {
-        logger.error(`Supabase insert alert error: ${e.message}`);
+        if (!e.message?.includes('circuit breaker')) {
+          logger.error(`Supabase insert alert error: ${e.message}`);
+        }
     }
   }
 
@@ -312,11 +311,8 @@ export class SupabaseService {
   }
 
   public async insertStrategyState(payload: any) {
-    const supabase = this.getClient();
-    if (!supabase) {
-      logger.warn('Database is not configured. Skipping insertStrategyState.');
-      return null;
-    }
+    if (!this.isConnected()) return null;
+    const supabase = this.getClient()!;
     try {
       return await this.withRetry(async () => {
         const { data, error } = await supabase
@@ -337,16 +333,18 @@ export class SupabaseService {
         return data;
       });
     } catch (err: any) {
-      logger.error(`Supabase insert strategy state error: ${err.message}`);
+      if (!err.message?.includes('circuit breaker')) {
+        logger.error(`Supabase insert strategy state error: ${err.message}`);
+      }
       return null;
     }
   }
 
   public async getStrategies() {
-    const supabase = this.getClient();
-    if (!supabase) {
-      return { status: 'not_configured', available: false, reason: 'Database is not configured' };
+    if (!this.isConnected()) {
+      return { status: 'not_configured', available: false, reason: 'Database is not configured or circuit open' };
     }
+    const supabase = this.getClient()!;
     try {
       return await this.withRetry(async () => {
         const { data, error } = await supabase
@@ -363,10 +361,12 @@ export class SupabaseService {
         }));
       });
     } catch (err: any) {
-      if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
-          logger.warn(`Supabase fetch strategies warn: ${err.message} (URL: ${this.currentUrl})`);
-      } else {
-          logger.error(`Supabase fetch strategies error: ${err.message} (URL: ${this.currentUrl})`);
+      if (!err.message?.includes('circuit breaker')) {
+        if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
+            logger.warn(`Supabase fetch strategies warn: ${err.message}`);
+        } else {
+            logger.error(`Supabase fetch strategies error: ${err.message}`);
+        }
       }
       return { status: 'error', available: false, reason: err.message };
     }

@@ -1,6 +1,13 @@
+import os
+import sys
 import asyncio
 import time
 import platform
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 from fastapi import APIRouter, HTTPException, Path, WebSocket, WebSocketDisconnect
 import json
 from fastapi.responses import ORJSONResponse

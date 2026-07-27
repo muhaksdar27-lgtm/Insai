@@ -8,32 +8,51 @@ export class PyWSClient {
   private callbacks: Map<string, { resolve: Function, reject: Function, timer: any }> = new Map();
   private reconnectTimer: any = null;
   private connected: boolean = false;
+  private reconnectAttempts: number = 0;
+  private maxBackoffMs: number = 30000;
 
   private constructor(url: string) {
-    // ws://127.0.0.1:8181
     this.url = url.replace('http://', 'ws://').replace('https://', 'wss://');
     this.connect();
   }
 
   public static getInstance(url: string): PyWSClient {
+    const formattedUrl = url.replace('http://', 'ws://').replace('https://', 'wss://');
     if (!PyWSClient.instance) {
-      PyWSClient.instance = new PyWSClient(url);
+      PyWSClient.instance = new PyWSClient(formattedUrl);
+    } else if (PyWSClient.instance.url !== formattedUrl) {
+      PyWSClient.instance.url = formattedUrl;
+      PyWSClient.instance.reconnectAttempts = 0;
+      PyWSClient.instance.connect();
     }
     return PyWSClient.instance;
   }
 
   private connect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.ws) {
+      try {
+        this.ws.removeAllListeners();
+        this.ws.close();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      this.ws = null;
+    }
+
     try {
-      
       this.ws = new WebSocket(`${this.url}/ws/analyze`);
       
       this.ws.on('open', () => {
-        logger.info(`WebSocket connected to Python Engine at ${this.url}`);
-        this.connected = true;
-        if (this.reconnectTimer) {
-          clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = null;
+        if (!this.connected) {
+          logger.info(`WebSocket connected to Python Engine at ${this.url}`);
         }
+        this.connected = true;
+        this.reconnectAttempts = 0;
       });
 
       this.ws.on('message', (data: any) => {
@@ -56,16 +75,29 @@ export class PyWSClient {
       });
 
       this.ws.on('error', (err: any) => {
-        logger.error(`WebSocket error: ${err.message}`);
+        // Only log detailed error on initial attempts or periodically to prevent log spamming
+        if (this.reconnectAttempts <= 1 || this.reconnectAttempts % 10 === 0) {
+          logger.warn(`WebSocket connection issue with Python Engine (${this.url}): ${err.message}`);
+        }
       });
 
       this.ws.on('close', () => {
+        const wasConnected = this.connected;
         this.connected = false;
-        logger.warn('WebSocket disconnected from Python Engine. Reconnecting in 5s...');
-        this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+        this.reconnectAttempts++;
+
+        const backoffMs = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
+        if (wasConnected) {
+          logger.warn(`WebSocket disconnected from Python Engine. Reconnecting in ${(backoffMs / 1000).toFixed(1)}s...`);
+        }
+
+        this.reconnectTimer = setTimeout(() => this.connect(), backoffMs);
       });
     } catch (e: any) {
-      logger.error(`Failed to initialize WebSocket: ${e.message}`);
+      logger.warn(`Failed to initialize WebSocket: ${e.message}`);
+      this.reconnectAttempts++;
+      const backoffMs = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
+      this.reconnectTimer = setTimeout(() => this.connect(), backoffMs);
     }
   }
 
@@ -84,10 +116,16 @@ export class PyWSClient {
       
       this.callbacks.set(correlationId, { resolve, reject, timer });
       
-      this.ws.send(JSON.stringify({
-         correlation_id: correlationId,
-         payload: payload
-      }));
+      try {
+        this.ws.send(JSON.stringify({
+           correlation_id: correlationId,
+           payload: payload
+        }));
+      } catch (err: any) {
+        clearTimeout(timer);
+        this.callbacks.delete(correlationId);
+        reject(err);
+      }
     });
   }
 }

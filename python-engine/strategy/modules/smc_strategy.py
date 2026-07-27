@@ -1,6 +1,12 @@
 from typing import Dict, Any, List, Tuple
 from strategy.base_strategy import BaseStrategy, StrategyMetadata
-from scoring.session_analyzer import get_session_info
+try:
+    from scoring.session_analyzer import get_session_info
+except ModuleNotFoundError:
+    try:
+        from session_analyzer import get_session_info
+    except ModuleNotFoundError:
+        from ...scoring.session_analyzer import get_session_info
 
 class SMCStrategy(BaseStrategy):
     @property

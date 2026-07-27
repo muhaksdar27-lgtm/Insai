@@ -35,11 +35,12 @@ function startPythonEngine() {
     const pyScript = process.env.NODE_ENV === 'production'
       ? `${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`
       : `bash ./ensure-python.sh && ${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
+    const pythonEngineDir = path.join(process.cwd(), 'python-engine');
     logger.info(`Spawning Python Engine with: ${pyScript}`);
     pyProcess = spawn('bash', ['-c', pyScript], {
-      cwd: path.join(process.cwd(), 'python-engine'),
+      cwd: pythonEngineDir,
       stdio: 'inherit',
-      env: { ...process.env, PYTHON_PORT: pythonPort, PYTHONPATH: '.' }
+      env: { ...process.env, PYTHON_PORT: pythonPort, PYTHONPATH: `${pythonEngineDir}:.` }
     });
 
     pyProcess.on('error', (err: any) => {

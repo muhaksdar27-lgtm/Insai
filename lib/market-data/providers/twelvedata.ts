@@ -205,7 +205,9 @@ export class TwelveDataProvider implements PriceProvider {
         freshness: 'live'
       };
     } catch (e: any) {
-      getProviderRegistry().reportError(this.name, e.message);
+      if (!e.message?.includes('not supported by TwelveData')) {
+        getProviderRegistry().reportError(this.name, e.message);
+      }
       throw e;
     }
   }
@@ -216,7 +218,12 @@ export class TwelveDataProvider implements PriceProvider {
       throw new Error('TwelveData API key is not configured');
     }
     
-    const formattedSymbol = this.formatSymbol(symbol);
+    let formattedSymbol: string;
+    try {
+      formattedSymbol = this.formatSymbol(symbol);
+    } catch (e: any) {
+      throw e;
+    }
     
     try {
       const interval = this.mapTimeframe(timeframe);
@@ -240,10 +247,11 @@ export class TwelveDataProvider implements PriceProvider {
         volume: parseFloat(v.volume) || 0
       }));
 
-      // TwelveData returns descending order (newest first). Let's sort to ascending if needed, typically we return oldest to newest in arrays, let's reverse.
       return candles.reverse();
     } catch (e: any) {
-      getProviderRegistry().reportError(this.name, e.message);
+      if (!e.message?.includes('not supported by TwelveData')) {
+        getProviderRegistry().reportError(this.name, e.message);
+      }
       throw e;
     }
   }
