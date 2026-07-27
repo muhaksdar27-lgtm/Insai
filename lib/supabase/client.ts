@@ -30,28 +30,18 @@ export class SupabaseService {
          auth: { persistSession: false },
          global: {
            fetch: (url, options) => {
-             if (options?.signal?.aborted) {
-               return fetch(url, options);
-             }
              const controller = new AbortController();
              const timeoutId = setTimeout(() => {
                try { controller.abort(); } catch {}
              }, 15000); // 15s timeout
-             
-             const onParentAbort = () => {
-               try { controller.abort(); } catch {}
-             };
 
-             if (options?.signal) {
-               options.signal.addEventListener('abort', onParentAbort);
-             }
+             // Omit parent signal listener to decouple DB operations from transient parent request HTTP cancellations
+             const fetchOptions = { ...options };
+             delete fetchOptions.signal;
 
-             return fetch(url, { ...options, signal: controller.signal as any })
+             return fetch(url, { ...fetchOptions, signal: controller.signal as any })
                .finally(() => {
                  clearTimeout(timeoutId);
-                 if (options?.signal) {
-                   options.signal.removeEventListener('abort', onParentAbort);
-                 }
                });
            }
          }

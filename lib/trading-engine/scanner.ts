@@ -84,14 +84,14 @@ export class MarketScanner {
 
   public async scan() {
     if (this.isScanning) {
-       logger.info('Scan already in progress, skipping.');
+       logger.debug('Scan already in progress, skipping.');
        return;
     }
     
     // Acquire distributed lock for scanning (10 seconds to prevent overlapping scans from same or other instances)
     const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 10);
     if (!lockAcquired) {
-       logger.info('Another instance is currently scanning. Skipping.');
+       logger.debug('Another instance is currently scanning. Skipping.');
        return;
     }
     

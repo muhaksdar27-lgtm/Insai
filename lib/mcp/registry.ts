@@ -176,18 +176,19 @@ export class MCPRegistry {
   public async reportConnected(name: string) {
     const mcp = this.mcps.get(name);
     if (mcp) {
+      const statusChanged = mcp.status !== 'ONLINE' || mcp.lastError !== null;
       mcp.status = 'ONLINE';
       mcp.lastCheck = new Date().toISOString();
       mcp.lastError = null;
       logger.info(`MCP ${name} is connected (ONLINE).`);
       
-      if (getSupabaseClient().isConnected()) {
+      if (statusChanged && getSupabaseClient().isConnected()) {
          await getSupabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,
            last_error: mcp.lastError
-         });
+         }).catch(() => {});
       }
     } else {
       logger.warn(`Trying to report connection for unknown MCP: ${name}`);
@@ -197,18 +198,19 @@ export class MCPRegistry {
   public async reportNotConfigured(name: string, reason: string) {
     const mcp = this.mcps.get(name);
     if (mcp) {
+      const statusChanged = mcp.status !== 'NOT CONFIGURED' || mcp.lastError !== reason;
       mcp.status = 'NOT CONFIGURED';
       mcp.lastCheck = new Date().toISOString();
       mcp.lastError = reason;
       logger.warn(`MCP ${name} is NOT CONFIGURED: ${reason}`);
       
-      if (getSupabaseClient().isConnected()) {
+      if (statusChanged && getSupabaseClient().isConnected()) {
          await getSupabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,
            last_error: mcp.lastError
-         });
+         }).catch(() => {});
       }
     }
   }
@@ -216,18 +218,19 @@ export class MCPRegistry {
   public async reportOffline(name: string, reason: string) {
     const mcp = this.mcps.get(name);
     if (mcp) {
+      const statusChanged = mcp.status !== 'OFFLINE' || mcp.lastError !== reason;
       mcp.status = 'OFFLINE';
       mcp.lastCheck = new Date().toISOString();
       mcp.lastError = reason;
       logger.warn(`MCP ${name} is OFFLINE: ${reason}`);
       
-      if (getSupabaseClient().isConnected()) {
+      if (statusChanged && getSupabaseClient().isConnected()) {
          await getSupabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,
            last_error: mcp.lastError
-         });
+         }).catch(() => {});
       }
     }
   }
@@ -235,30 +238,31 @@ export class MCPRegistry {
   public async reportError(name: string, error: string) {
     const mcp = this.mcps.get(name);
     if (mcp) {
+      let newStatus = 'UNAVAILABLE';
       if (error) {
          if (error.toLowerCase().includes('quota') || error.toLowerCase().includes('exhausted')) {
-            mcp.status = 'QUOTA_EXCEEDED';
+            newStatus = 'QUOTA_EXCEEDED';
          } else if (error.includes('429') || error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('too many requests')) {
-            mcp.status = 'RATE LIMITED';
+            newStatus = 'RATE LIMITED';
          } else if (error.includes('401') || error.includes('403') || error.toLowerCase().includes('invalid key') || error.toLowerCase().includes('unauthorized')) {
-            mcp.status = 'INVALID_KEY';
+            newStatus = 'INVALID_KEY';
          } else {
-            mcp.status = 'PROVIDER_ERROR';
+            newStatus = 'PROVIDER_ERROR';
          }
-      } else {
-         mcp.status = 'UNAVAILABLE';
       }
+      const statusChanged = mcp.status !== newStatus || mcp.lastError !== error;
+      mcp.status = newStatus as any;
       mcp.lastCheck = new Date().toISOString();
       mcp.lastError = error;
       logger.error(`MCP ${name} encountered an error: ${error}`);
       
-      if (getSupabaseClient().isConnected()) {
+      if (statusChanged && getSupabaseClient().isConnected()) {
          await getSupabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,
            last_error: mcp.lastError
-         });
+         }).catch(() => {});
       }
     }
   }
