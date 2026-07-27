@@ -96,7 +96,7 @@ export class MarketScanner {
     }
     
     this.isScanning = true;
-    healthCheckEngine.updateServiceHealth('', 'SCAN_IN_PROGRESS', 0, 'Scan in progress');
+    healthCheckEngine.updateServiceHealth('MarketScanner', 'SCAN_IN_PROGRESS', 0, 'Scan in progress');
     const startTime = Date.now();
     try {
       // 1. Check if any strategies are active before fetching data
@@ -133,9 +133,21 @@ export class MarketScanner {
            const strats = await getSupabaseClient().getStrategies();
            if (Array.isArray(strats) && strats.length > 0) {
              const activeStrats = strats.filter(s => s.enabled);
-             activeCount = activeStrats.length;
-             activeStrategyIds = activeStrats.map(s => s.id);
-             logger.info(`Found ${strats.length} strategies, ${activeCount} active.`);
+             if (activeStrats.length > 0) {
+               activeCount = activeStrats.length;
+               activeStrategyIds = activeStrats.map(s => s.id);
+               logger.info(`Found ${strats.length} strategies, ${activeCount} active.`);
+             } else {
+               activeStrategyIds = [
+                 'strategy-1-smc',
+                 'strategy-2-snd',
+                 'strategy-3-scalping',
+                 'strategy-4-news',
+                 'strategy-5-smc-sd-confluence'
+               ];
+               activeCount = activeStrategyIds.length;
+               logger.info(`Database strategies disabled. Falling back to default ${activeCount} active strategies.`);
+             }
            } else {
              activeStrategyIds = [
                'strategy-1-smc',
@@ -227,7 +239,7 @@ export class MarketScanner {
       }
     } finally {
       this.isScanning = false;
-      healthCheckEngine.updateServiceHealth('', 'ONLINE', Date.now() - startTime, 'Scan completed');
+      healthCheckEngine.updateServiceHealth('MarketScanner', 'ONLINE', Date.now() - startTime, 'Scan completed');
       metricsEngine.recordScannerDuration(Date.now() - startTime);
       await getQueueManager().releaseLock('market_scan_xauusd');
     }

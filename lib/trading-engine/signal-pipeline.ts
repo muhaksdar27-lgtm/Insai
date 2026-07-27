@@ -56,6 +56,41 @@ export class SignalPipeline {
            passed: aiValidationData.decision === 'APPROVED',
            reason: 'AI Validation Review'
         }).catch(e => logger.error(`Failed to insert AI evidence: ${e.message}`));
+
+        if (Array.isArray(aiValidationData.checklist)) {
+          for (const item of aiValidationData.checklist) {
+            await getSupabaseClient().insertSignalEvidence({
+               signal_key: setup.id,
+               engine_name: 'validation_pipeline',
+               evidence_type: 'checklist_item',
+               details: {
+                 rule: item.rule,
+                 evidence: item.evidence || item.reason
+               },
+               passed: item.status === 'PASS',
+               reason: item.reason || item.rule
+            }).catch(e => logger.error(`Failed to insert checklist evidence: ${e.message}`));
+          }
+        }
+      }
+
+      // Store candidate rules as checklist_item evidence if present
+      const candidateRules = (setup as any).candidateRules || (setup as any).context?.candidateRules;
+      if (candidateRules && typeof candidateRules === 'object') {
+        for (const [ruleKey, ruleVal] of Object.entries(candidateRules)) {
+          const valObj = ruleVal as any;
+          await getSupabaseClient().insertSignalEvidence({
+             signal_key: setup.id,
+             engine_name: 'validation_pipeline',
+             evidence_type: 'checklist_item',
+             details: {
+               rule: ruleKey,
+               evidence: valObj?.evidence
+             },
+             passed: valObj?.status === 'valid' || valObj?.status === 'PASS',
+             reason: ruleKey
+          }).catch(e => logger.error(`Failed to insert candidate rule evidence: ${e.message}`));
+        }
       }
 
       // Store validation logs as evidence

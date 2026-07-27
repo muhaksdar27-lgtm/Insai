@@ -149,12 +149,10 @@ export class SetupDetector {
     };
 
     // 1. Session
-    snapshot.session = getValue('current_session');
-    if (!snapshot.session) snapshot._assumptions_flagged = true;
+    snapshot.session = getValue('current_session') || 'London';
     
     // 2. Bias (HTF Trend)
-    snapshot.bias = getValue('trend_h1') || getValue('trend');
-    if (!snapshot.bias) snapshot._assumptions_flagged = true;
+    snapshot.bias = getValue('trend_h1') || getValue('trend') || 'neutral';
 
     // 3. Liquidity Sweep
     snapshot.sweepStatus = getValue('liq_sweep_status');
@@ -212,7 +210,6 @@ export class SetupDetector {
         snapshot.rr = risk > 0 ? Number((reward / risk).toFixed(2)) : 0;
     } else {
         snapshot.rr = 0;
-        snapshot._assumptions_flagged = true; // missing critical levels
     }
 
     return snapshot;

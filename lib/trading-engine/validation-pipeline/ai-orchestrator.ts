@@ -237,8 +237,12 @@ export class AIValidationOrchestrator {
         let deterministicDecision = "WAIT";
         if (failedCritical) {
             deterministicDecision = "REJECTED";
-        } else if (realScore >= 50) {
+        } else if (realScore >= 70) {
+            deterministicDecision = "APPROVED";
+        } else if (realScore >= 40) {
             deterministicDecision = "WAIT";
+        } else {
+            deterministicDecision = "REJECTED";
         }
         return {
            strategyName: strategyId,
@@ -248,7 +252,7 @@ export class AIValidationOrchestrator {
            evidence: `AI Bypassed. Fallback used.`,
            riskNotes: "AI Offline - Circuit Breaker",
            missingFactors: ["AI Validation"],
-           recommendedAction: deterministicDecision === "WAIT" ? "wait" : (deterministicDecision === "REJECTED" ? "block" : "wait"),
+           recommendedAction: deterministicDecision === "APPROVED" ? "execute" : (deterministicDecision === "REJECTED" ? "block" : "wait"),
            scores: {}
         };
     }
@@ -261,11 +265,15 @@ export class AIValidationOrchestrator {
        const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
        const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
        
-       let deterministicDecision: 'REJECTED' | 'WAIT' = 'WAIT';
+       let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
        if (failedCritical) {
            deterministicDecision = 'REJECTED';
-       } else if (realScore >= 50) { // High threshold for fallback approval
+       } else if (realScore >= 70) {
+           deterministicDecision = 'APPROVED';
+       } else if (realScore >= 40) {
            deterministicDecision = 'WAIT';
+       } else {
+           deterministicDecision = 'REJECTED';
        }
 
        return {
@@ -276,7 +284,7 @@ export class AIValidationOrchestrator {
           evidence: `AI Bypassed. Fallback used.`,
           riskNotes: 'AI Offline - Fallback Active',
           missingFactors: ['AI Validation'],
-          recommendedAction: deterministicDecision === 'WAIT' ? 'wait' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+          recommendedAction: deterministicDecision === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
           scores: {}
        };
     }

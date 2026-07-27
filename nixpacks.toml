@@ -2,7 +2,7 @@ providers = ["node"]
 
 [phases.setup]
 aptPkgs = ["python3", "python3-venv", "python3-pip", "gcc", "g++", "make"]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22"]
 
 [variables]
 PYTHONUNBUFFERED = "1"

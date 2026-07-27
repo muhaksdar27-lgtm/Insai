@@ -9,6 +9,8 @@ export class PyWSClient {
   private reconnectTimer: any = null;
   private connected: boolean = false;
   private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
+  private cooldownUntil: number = 0;
   private maxBackoffMs: number = 30000;
 
   private constructor(url: string) {
@@ -23,15 +25,30 @@ export class PyWSClient {
     } else if (PyWSClient.instance.url !== formattedUrl) {
       PyWSClient.instance.url = formattedUrl;
       PyWSClient.instance.reconnectAttempts = 0;
+      PyWSClient.instance.cooldownUntil = 0;
       PyWSClient.instance.connect();
     }
     return PyWSClient.instance;
   }
 
   private connect() {
+    if (Date.now() < this.cooldownUntil) {
+      return;
+    }
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.cooldownUntil = Date.now() + 60000; // 60s cooldown
+      logger.warn(`PyWSClient: Reached ${this.maxReconnectAttempts} reconnect failures for ${this.url}. Entering 60s cooldown (HTTP fallback active).`);
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectAttempts = 0;
+        this.connect();
+      }, 60000);
+      return;
     }
 
     if (this.ws) {
@@ -53,6 +70,7 @@ export class PyWSClient {
         }
         this.connected = true;
         this.reconnectAttempts = 0;
+        this.cooldownUntil = 0;
       });
 
       this.ws.on('message', (data: any) => {
@@ -75,8 +93,7 @@ export class PyWSClient {
       });
 
       this.ws.on('error', (err: any) => {
-        // Only log detailed error on initial attempts or periodically to prevent log spamming
-        if (this.reconnectAttempts <= 1 || this.reconnectAttempts % 10 === 0) {
+        if (this.reconnectAttempts === 0) {
           logger.warn(`WebSocket connection issue with Python Engine (${this.url}): ${err.message}`);
         }
       });
@@ -86,24 +103,30 @@ export class PyWSClient {
         this.connected = false;
         this.reconnectAttempts++;
 
-        const backoffMs = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
-        if (wasConnected) {
-          logger.warn(`WebSocket disconnected from Python Engine. Reconnecting in ${(backoffMs / 1000).toFixed(1)}s...`);
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          const backoffMs = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
+          if (wasConnected) {
+            logger.warn(`WebSocket disconnected from Python Engine. Reconnecting in ${(backoffMs / 1000).toFixed(1)}s...`);
+          }
+          this.reconnectTimer = setTimeout(() => this.connect(), backoffMs);
+        } else {
+          this.connect(); // Will trigger cooldown branch
         }
-
-        this.reconnectTimer = setTimeout(() => this.connect(), backoffMs);
       });
     } catch (e: any) {
-      logger.warn(`Failed to initialize WebSocket: ${e.message}`);
       this.reconnectAttempts++;
-      const backoffMs = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
-      this.reconnectTimer = setTimeout(() => this.connect(), backoffMs);
+      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        const backoffMs = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
+        this.reconnectTimer = setTimeout(() => this.connect(), backoffMs);
+      } else {
+        this.connect(); // Will trigger cooldown branch
+      }
     }
   }
 
   public async analyze(payload: any, timeoutMs: number = 3000): Promise<any> {
-    if (!this.connected || !this.ws) {
-       throw new Error("WebSocket not connected");
+    if (Date.now() < this.cooldownUntil || !this.connected || !this.ws) {
+       throw new Error("WebSocket not connected (or in cooldown)");
     }
     const crypto = require('crypto');
     const correlationId = crypto.randomUUID();

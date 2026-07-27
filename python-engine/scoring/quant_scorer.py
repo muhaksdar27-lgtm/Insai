@@ -1,4 +1,4 @@
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, TYPE_CHECKING
 import os
 import sys
 
@@ -6,21 +6,16 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from strategy_engine import StrategyEngine
-from shared_utilities import get_logger
+if TYPE_CHECKING:
+    from strategy_engine import StrategyEngine
 
-try:
-    from scoring.session_analyzer import get_session_info
-except ModuleNotFoundError:
-    try:
-        from session_analyzer import get_session_info
-    except ModuleNotFoundError:
-        from .session_analyzer import get_session_info
+from shared_utilities import get_logger
+from scoring.session_analyzer import get_session_info
 
 logger = get_logger("QuantScorer")
 
 class QuantScorer:
-    def __init__(self, direction: str, entry_price: float, sl_price: float, tp_price: float, analysis: Dict[str, Any], timeframe: str = "15m", strategy_id: str = None, strategy_engine: StrategyEngine = None):
+    def __init__(self, direction: str, entry_price: float, sl_price: float, tp_price: float, analysis: Dict[str, Any], timeframe: str = "15m", strategy_id: str = None, strategy_engine: Any = None):
         self.direction = direction.upper()
         self.entry_price = entry_price
         self.sl_price = sl_price
@@ -32,7 +27,11 @@ class QuantScorer:
         self.z_score = 0.0
         self.rr_ratio = 0.0
         self.strategy_id = strategy_id
-        self.strategy_engine = strategy_engine if strategy_engine else StrategyEngine()
+        if strategy_engine:
+            self.strategy_engine = strategy_engine
+        else:
+            from strategy_engine import StrategyEngine
+            self.strategy_engine = StrategyEngine()
 
     def calculate_metrics(self):
         if self.analysis.get('std_20', 0) > 0:

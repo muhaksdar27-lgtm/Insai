@@ -30,10 +30,29 @@ export class SupabaseService {
          auth: { persistSession: false },
          global: {
            fetch: (url, options) => {
+             if (options?.signal?.aborted) {
+               return fetch(url, options);
+             }
              const controller = new AbortController();
-             const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+             const timeoutId = setTimeout(() => {
+               try { controller.abort(); } catch {}
+             }, 15000); // 15s timeout
+             
+             const onParentAbort = () => {
+               try { controller.abort(); } catch {}
+             };
+
+             if (options?.signal) {
+               options.signal.addEventListener('abort', onParentAbort);
+             }
+
              return fetch(url, { ...options, signal: controller.signal as any })
-               .finally(() => clearTimeout(timeoutId));
+               .finally(() => {
+                 clearTimeout(timeoutId);
+                 if (options?.signal) {
+                   options.signal.removeEventListener('abort', onParentAbort);
+                 }
+               });
            }
          }
       });
@@ -52,7 +71,7 @@ export class SupabaseService {
     return this.getClient() !== null && !this.circuitOpen;
   }
 
-  private async withRetry<T>(operation: () => Promise<T>, retries: number = 1): Promise<T> {
+  private async withRetry<T>(operation: () => Promise<T>, retries: number = 2): Promise<T> {
     if (this.circuitOpen) {
       throw new Error("Supabase circuit breaker is open");
     }
@@ -63,23 +82,27 @@ export class SupabaseService {
         this.failures = 0; // reset on success
         return result;
       } catch (err: any) {
+        const isAbort = err.name === 'AbortError' || err.message?.includes('AbortError') || err.message?.includes('aborted');
         if (err.message === "Supabase circuit breaker is open") throw err;
         
         if (i === retries) {
-          this.failures++;
+          // Do not increment failure counter for simple client AbortErrors
+          if (!isAbort) {
+            this.failures++;
+          }
           if (this.failures >= this.maxFailures && !this.circuitOpen) {
             this.circuitOpen = true;
-            logger.warn(`Supabase circuit breaker opened after ${this.failures} failures. Cooldown for 30s.`);
+            logger.warn(`Supabase circuit breaker opened after ${this.failures} failures. Cooldown for 15s.`);
             setTimeout(() => {
                this.circuitOpen = false;
                this.failures = 0;
-               logger.info('Supabase circuit breaker half-open');
-            }, 30000); // 30s reset
+               logger.info('Supabase circuit breaker reset to closed');
+            }, 15000); // 15s reset
           }
           throw err;
         }
         // exponential backoff
-        await new Promise(res => setTimeout(res, Math.pow(2, i) * 300));
+        await new Promise(res => setTimeout(res, Math.pow(2, i) * 200));
       }
     }
     throw new Error("Unreachable");

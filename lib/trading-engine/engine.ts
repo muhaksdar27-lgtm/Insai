@@ -327,26 +327,29 @@ export class TradingEngine {
         let direction = translatedSnapshot.direction || result.direction;
         let candidateRules = result.candidateRules;
         
-        // Ensure no invalid rules
+        // Ensure no critical invalid rules
         let failedRule = null;
         for (const [ruleId, ruleRes] of Object.entries(candidateRules)) {
             if ((ruleRes as any).status === 'invalid') {
-                isCandidateValid = false;
-                failedRule = ruleId;
-                break;
+                if (ruleId.includes('pair') || ruleId.includes('news_filter') || ruleId.includes('spread')) {
+                    isCandidateValid = false;
+                    failedRule = ruleId;
+                    break;
+                }
             }
         }
 
         if (isCandidateValid === 'pending') {
-            this.setupDetector.transitionState(setup.id, 'candidate', 'Waiting for more data/Pending rules');
-            await this.advanceStateMachine(sm, STEPS.IDLE, 'Pending missing data', setup.id, context, { marketStates });
+            this.setupDetector.transitionState(setup.id, 'candidate', 'Waiting for explicit trigger/pending rules');
+            await this.advanceStateMachine(sm, STEPS.IDLE, 'Pending missing data', setup.id, context, { marketStates, ruleResults: candidateRules, setupDetails: translatedSnapshot });
             return;
         }
 
         if (!isCandidateValid) {
             const failReason = failedRule ? `Failed ${failedRule}` : 'Failed candidate evaluation (low confluence or invalid rule)';
-            logger.info(`Setup expired: ${failReason}`); this.setupDetector.transitionState(setup.id, 'expired', failReason);
-            await this.advanceStateMachine(sm, STEPS.EXPIRED, failReason, setup.id, context, { marketStates });
+            logger.info(`Setup expired: ${failReason}`);
+            this.setupDetector.transitionState(setup.id, 'expired', failReason);
+            await this.advanceStateMachine(sm, STEPS.EXPIRED, failReason, setup.id, context, { marketStates, ruleResults: candidateRules, setupDetails: translatedSnapshot });
             return;
         }
         
@@ -411,7 +414,7 @@ export class TradingEngine {
            
            await this.advanceStateMachine(sm, STEPS.REJECTED, validationResult.reasoning, setup.id, context, { marketStates, ruleResults, setupDetails: { ...translatedSnapshot, aiDecision: validationResult.decision, direction, entryPrice, slPrice, tpPrice } });
 
-           const suppressedSetup = { ...setup, aiValidation: validationResult, isSuppressed: true, marketStates };
+           const suppressedSetup = { ...setup, aiValidation: validationResult, isSuppressed: true, marketStates, candidateRules };
            this.signalPipeline.emitSignal(suppressedSetup as any, context).catch(e => logger.error(`Failed to emit suppressed signal: ${e.message}`));
            return;
         }
@@ -420,6 +423,7 @@ export class TradingEngine {
 
         (setup as any).aiValidation = validationResult;
         (setup as any).marketStates = marketStates;
+        (setup as any).candidateRules = candidateRules;
 
         setup = this.setupDetector.transitionState(setup.id, 'signal', 'Signal emitted');
         

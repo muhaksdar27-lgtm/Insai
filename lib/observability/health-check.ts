@@ -29,7 +29,7 @@ class HealthCheckEngine {
     this.registerService('EconomicCalendar', 'NOT CONFIGURED', 'Pending validation');
     this.registerService('GeminiAI', 'NOT CONFIGURED', 'Pending validation');
     this.registerService('TelegramBot', 'NOT CONFIGURED', 'Pending validation');
-    this.registerService('', 'ONLINE');
+    this.registerService('MarketScanner', 'ONLINE');
     this.registerService('PythonEngine', 'NOT CONFIGURED', 'Checking Python Engine...');
     this.registerService('Redis', 'NOT CONFIGURED', 'Pending validation');
   }

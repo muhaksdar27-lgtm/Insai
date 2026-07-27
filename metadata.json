@@ -1,6 +1,6 @@
 {
-  "name": "Remix: Remix: 13",
-  "description": "INSAI Trading Application",
+  "name": "INSAI Trading Engine",
+  "description": "INSAI Real-time Signal Scanner and Trading Engine",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

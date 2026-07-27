@@ -31,7 +31,8 @@ function startPythonEngine() {
   logger.info('Starting Python Engine locally...');
   
   try {
-    const pythonExecutable = process.env.NODE_ENV === 'production' ? '/app/venv/bin/python' : 'python3';
+    const fs = require('fs');
+    const pythonExecutable = fs.existsSync('/app/venv/bin/python') ? '/app/venv/bin/python' : 'python3';
     const pyScript = process.env.NODE_ENV === 'production'
       ? `${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`
       : `bash ./ensure-python.sh && ${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
