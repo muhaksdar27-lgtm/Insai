@@ -21,7 +21,11 @@ export class SignalPipeline {
     }
 
     try {
-      logger.info(`Pipeline processing final setup signal for ${setup.id}`);
+      logger.info(`Pipeline processing setup signal for ${setup.id}`);
+
+      const aiDecision = (setup as any).aiValidation?.decision || 'WAIT';
+      const isSuppressed = (setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false;
+      const status = isSuppressed ? 'SUPPRESSED' : 'SIGNAL_ACTIVE';
 
       const liveSignal = {
         signalKey: setup.id,
@@ -36,10 +40,10 @@ export class SignalPipeline {
         tp1Price: setup.tpPrice || 0,
         tp2Price: 0,
         tp3Price: 0,
-        aiDecision: (setup as any).aiValidation?.decision || 'WAIT',
+        aiDecision: aiDecision,
         aiReasoning: (setup as any).aiValidation?.reasoning || 'Missing AI Validation Data',
         aiEvidence: (setup as any).aiValidation?.evidence || '',
-        status: ((setup as any).isSuppressed ? 'SUPPRESSED' : 'SIGNAL_ACTIVE') as any,
+        status: status as any,
         createdAt: new Date().toISOString()
       };
 
@@ -110,9 +114,12 @@ export class SignalPipeline {
         });
       }
 
-      getQueueManager().publish('events', { type: 'SIGNAL_PUBLISHED', signalKey: setup.id });
-
-      this.notifyNewSignal(setup, marketContext);
+      if (!isSuppressed) {
+        getQueueManager().publish('events', { type: 'SIGNAL_PUBLISHED', signalKey: setup.id });
+        await this.notifyNewSignal(setup, marketContext);
+      } else {
+        logger.info(`Signal ${setup.id} is suppressed/rejected. Skipping notification and public event stream.`);
+      }
       
       metricsEngine.recordSignalProcessed(false, false);
 
@@ -125,23 +132,42 @@ export class SignalPipeline {
   }
 
   private async notifyNewSignal(setup: Setup, marketContext?: any) {
-    if ((setup as any).isSuppressed) {
-      logger.info(`Notification bypassed for suppressed signal: ${setup.id}`);
+    const aiDecision = (setup as any).aiValidation?.decision;
+    if ((setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false) {
+      logger.info(`Notification bypassed for non-approved signal: ${setup.id}`);
       return;
     }
 
-    const COOLDOWN_SECONDS = 60; // 1 minute cooldown per strategy
-    const dedupKey = `notification_cooldown_${setup.sourceStrategy}`;
+    // 1. Global Cross-Strategy Market Setup Hash Deduplication
+    // Combines symbol, timeframe, direction, entry, and sl to form a deterministic fingerprint
+    const dir = (setup.direction || 'buy').toLowerCase();
+    const entryRounded = Math.round((setup.entryPrice || 0) * 100);
+    const slRounded = Math.round((setup.slPrice || 0) * 100);
+    const setupHash = crypto.createHash('sha256').update(`${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}`).digest('hex').substring(0, 16);
     
-    const isNew = await getQueueManager().deduplicate(dedupKey, COOLDOWN_SECONDS);
-    if (!isNew) {
-      logger.info(`Notification suppressed for ${setup.sourceStrategy} (distributed cooldown active).`);
+    const GLOBAL_COOLDOWN_SECONDS = 300; // 5 minute global cross-strategy cooldown for exact same setup
+    const globalDedupKey = `global_signal_cooldown_${setupHash}`;
+    
+    const isGlobalNew = await getQueueManager().deduplicate(globalDedupKey, GLOBAL_COOLDOWN_SECONDS);
+    if (!isGlobalNew) {
+      logger.info(`Notification suppressed for duplicate setup across strategies (Hash: ${setupHash}, Signal: ${setup.id}).`);
+      return;
+    }
+
+    const STRATEGY_COOLDOWN_SECONDS = 60; // 1 minute per strategy
+    const strategyDedupKey = `notification_cooldown_${setup.sourceStrategy}`;
+    
+    const isStrategyNew = await getQueueManager().deduplicate(strategyDedupKey, STRATEGY_COOLDOWN_SECONDS);
+    if (!isStrategyNew) {
+      logger.info(`Notification suppressed for strategy ${setup.sourceStrategy} (distributed cooldown active).`);
       return;
     }
     
-    logger.info(`Sending notification for new signal: ${setup.id} on strategy ${setup.sourceStrategy}`);
+    logger.info(`Sending notification for APPROVED signal: ${setup.id} on strategy ${setup.sourceStrategy}`);
     
     const chartData = marketContext?.candles?.slice(-50).map((c: any) => c.close) || [];
+    const checklistData = (setup as any).aiValidation?.checklist || [];
+    const reasonText = (setup as any).aiValidation?.reasoning || 'Passed Quality Gate & AI Validation';
     
     // Use NotificationEngine
     notificationEngine.notifyNewSignal({
@@ -149,14 +175,16 @@ export class SignalPipeline {
        correlationId: crypto.randomUUID(),
        strategyName: setup.sourceStrategy,
        symbol: setup.symbol,
-       direction: setup.direction === 'buy' ? 'LONG' : 'SHORT',
+       direction: setup.direction === 'buy' || setup.direction === 'LONG' ? 'LONG' : 'SHORT',
        entry: setup.entryPrice || 0,
        sl: setup.slPrice || 0,
        tp: [setup.tpPrice || 0],
-       checklist: [],
-       reason: 'Setup Deterministic Constraints Met',
+       checklist: checklistData,
+       reason: reasonText,
        timestamp: new Date().toISOString(),
        status: 'queued',
+       qualityGatePassed: true,
+       aiDecision: 'APPROVED',
        chartData
     }).then(() => {
         metricsEngine.recordNotification(true);
