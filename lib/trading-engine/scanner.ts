@@ -40,12 +40,12 @@ export class MarketScanner {
     
     // Subscribe to real-time market updates
     this.marketUpdateHandler = async (msg: any) => {
-      if (!this.isRunning) return;
+      if (!this.isRunning || this.isScanning) return;
       
       const snapshot = msg.payload as MarketSnapshot;
       if (snapshot.symbol === 'XAUUSD') {
         const now = Date.now();
-        if (now - this.lastScanTime > 1000) {
+        if (now - this.lastScanTime > 3000) { // 3s throttle per tick scan
           this.lastScanTime = now;
           this.scan();
         }
@@ -58,9 +58,9 @@ export class MarketScanner {
     
     // Fallback interval (every 15 seconds) in case WebSocket/Redis is down
     this.timer = setInterval(() => {
-      if (!this.isRunning) return;
+      if (!this.isRunning || this.isScanning) return;
       const now = Date.now();
-      if (now - this.lastScanTime > 1000) {
+      if (now - this.lastScanTime > 10000) {
         this.lastScanTime = now;
         this.scan();
       }
@@ -75,7 +75,6 @@ export class MarketScanner {
     }
     
     if (this.marketUpdateHandler) {
-      // getQueueManager().unsubscribe('market-updates', this.marketUpdateHandler); // Stream polling stops when isRunning=false
       this.marketUpdateHandler = null;
     }
 
@@ -84,14 +83,12 @@ export class MarketScanner {
 
   public async scan() {
     if (this.isScanning) {
-       logger.debug('Scan already in progress, skipping.');
        return;
     }
     
     // Acquire distributed lock for scanning (10 seconds to prevent overlapping scans from same or other instances)
     const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 10);
     if (!lockAcquired) {
-       logger.debug('Another instance is currently scanning. Skipping.');
        return;
     }
     

@@ -175,7 +175,7 @@ export class SignalPipeline {
        correlationId: crypto.randomUUID(),
        strategyName: setup.sourceStrategy,
        symbol: setup.symbol,
-       direction: setup.direction === 'buy' || setup.direction === 'LONG' ? 'LONG' : 'SHORT',
+       direction: setup.direction === 'buy' || (setup.direction as string) === 'LONG' ? 'LONG' : 'SHORT',
        entry: setup.entryPrice || 0,
        sl: setup.slPrice || 0,
        tp: [setup.tpPrice || 0],

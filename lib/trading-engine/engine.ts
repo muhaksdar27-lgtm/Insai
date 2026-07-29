@@ -422,6 +422,7 @@ export class TradingEngine {
         setup = this.setupDetector.transitionState(setup.id, 'ready', 'Setup confirmed, priced, and AI APPROVED');
 
         (setup as any).aiValidation = validationResult;
+        (setup as any).qualityGatePassed = true;
         (setup as any).marketStates = marketStates;
         (setup as any).candidateRules = candidateRules;
 
