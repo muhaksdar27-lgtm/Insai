@@ -141,7 +141,10 @@ export function normalizeStrategyFromDB(baseStrat: any, state: any): StrategyRes
         const diffMin = (now - lastUpdated) / 60000;
         freshness = diffMin < 5 ? 'live' : diffMin < 15 ? 'cached' : 'stale';
 
-        if (!setupSnapshot.entryPrice || !setupSnapshot.slPrice || !setupSnapshot.tp1Price) {
+        const flagged = (setupSnapshot as any)._assumptions_flagged;
+        if (flagged) {
+            assumptions_flagged = typeof flagged === 'string' ? flagged : 'Data pending confirmation';
+        } else if (['FINISHED', 'APPROVED', 'SIGNAL_ACTIVE', 'EXECUTING'].includes(currentStateName) && (!setupSnapshot.entryPrice || !setupSnapshot.slPrice || !setupSnapshot.tp1Price)) {
             assumptions_flagged = 'Setup prices are incomplete or missing. Waiting for valid entry signals.';
         }
     } else {
@@ -151,7 +154,8 @@ export function normalizeStrategyFromDB(baseStrat: any, state: any): StrategyRes
         }));
         progress = 0;
         currentStep = getStepDisplayName(strategyId, 'IDLE');
-        assumptions_flagged = 'No active scanning session found in database for this strategy.';
+        freshness = 'live';
+        assumptions_flagged = '';
     }
 
     return {

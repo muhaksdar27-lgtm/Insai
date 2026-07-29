@@ -145,7 +145,7 @@ export function buildRuleResults(strategyId: string, context: any) {
     
     return {
       ruleId: ruleName,
-      status: matchedRule ? (matchedRule.status || (matchedRule.passed ? 'valid' : 'invalid')) : "--",
+      status: matchedRule ? (matchedRule.status || (matchedRule.passed ? 'valid' : 'invalid')) : "pending",
       passed: matchedRule ? (matchedRule.passed || matchedRule.status === 'valid') : false,
       invalidations: matchedRule?.invalidations || [],
       evidence: matchedRule?.evidence || matchedRule?.details || null

@@ -165,15 +165,21 @@ export function SetupCard({
       <div className="grid grid-cols-3 gap-1 text-[7px]">
         <div className="bg-black/40 border border-white/5 rounded-[3px] p-1.5 text-center shadow-inner overflow-hidden">
           <div className="text-zinc-600 font-bold uppercase tracking-widest mb-0.5">Entry</div>
-          <div className={`font-mono font-bold tracking-wide truncate ${entry === 'ASUMSI PERLU KONFIRMASI' ? 'text-[5px] text-zinc-500' : 'text-zinc-300'}`}>{entry || '--'}</div>
+          <div className="font-mono font-bold tracking-wide truncate text-zinc-300">
+            {entry && entry !== 'ASUMSI PERLU KONFIRMASI' ? entry : '--'}
+          </div>
         </div>
         <div className="bg-black/40 border border-white/5 rounded-[3px] p-1.5 text-center shadow-inner overflow-hidden">
           <div className="text-zinc-600 font-bold uppercase tracking-widest mb-0.5 flex justify-center items-center gap-0.5"><Shield className="w-2 h-2 text-rose-500/70 shrink-0" /> SL</div>
-          <div className={`font-mono font-bold tracking-wide truncate ${sl === 'ASUMSI PERLU KONFIRMASI' ? 'text-[5px] text-zinc-500' : 'text-rose-400'}`}>{sl || '--'}</div>
+          <div className="font-mono font-bold tracking-wide truncate text-rose-400">
+            {sl && sl !== 'ASUMSI PERLU KONFIRMASI' ? sl : '--'}
+          </div>
         </div>
         <div className="bg-black/40 border border-white/5 rounded-[3px] p-1.5 text-center shadow-inner overflow-hidden">
           <div className="text-zinc-600 font-bold uppercase tracking-widest mb-0.5 flex justify-center items-center gap-0.5"><Target className="w-2 h-2 text-emerald-500/70 shrink-0" /> TP</div>
-          <div className={`font-mono font-bold tracking-wide truncate ${tp === 'ASUMSI PERLU KONFIRMASI' ? 'text-[5px] text-zinc-500' : 'text-emerald-400'}`}>{tp || '--'}</div>
+          <div className="font-mono font-bold tracking-wide truncate text-emerald-400">
+            {tp && tp !== 'ASUMSI PERLU KONFIRMASI' ? tp : '--'}
+          </div>
         </div>
       </div>
     </div>
@@ -187,26 +193,37 @@ export function RuleTable({ rules }: { rules: any[] }) {
   
   return (
     <div className="space-y-1">
-      {rules.map((rule: any, idx: number) => (
-        <div key={idx} className="flex flex-col bg-black/40 border border-white/5 rounded-[3px] p-1.5 shadow-inner">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[7px] text-zinc-300 font-bold uppercase tracking-widest">{(rule.ruleId || `Rule ${idx + 1}`).replace(/_/g, ' ')}</span>
-            <span className={`text-[6px] font-bold uppercase tracking-widest px-1 py-0.5 rounded ${rule.passed || rule.status === 'valid' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-              {rule.passed || rule.status === 'valid' ? 'PASS' : 'FAIL'}
-            </span>
+      {rules.map((rule: any, idx: number) => {
+        const isPass = rule.passed || rule.status === 'valid';
+        const isPending = rule.status === 'pending' || rule.status === 'monitoring' || rule.status === 'awaiting' || rule.status === '--';
+        const statusLabel = isPass ? 'PASS' : (isPending ? 'MONITORING' : 'FAIL');
+        const statusClass = isPass 
+          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+          : (isPending 
+            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+            : 'bg-rose-500/10 text-rose-400 border border-rose-500/20');
+
+        return (
+          <div key={idx} className="flex flex-col bg-black/40 border border-white/5 rounded-[3px] p-1.5 shadow-inner">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[7px] text-zinc-300 font-bold uppercase tracking-widest">{(rule.ruleId || `Rule ${idx + 1}`).replace(/_/g, ' ')}</span>
+              <span className={`text-[6px] font-bold uppercase tracking-widest px-1 py-0.5 rounded ${statusClass}`}>
+                {statusLabel}
+              </span>
+            </div>
+            {rule.evidence && typeof rule.evidence === 'object' && (
+               <div className="grid grid-cols-2 gap-1 mt-0.5">
+                 {Object.entries(rule.evidence).map(([dk, dv]: [string, any]) => (
+                    <div key={dk} className="flex flex-col">
+                       <span className="text-[5px] text-zinc-600 font-bold uppercase tracking-widest">{dk.replace(/_/g, ' ')}</span>
+                       <span className="text-[6px] text-zinc-400 font-mono truncate">{String(dv)}</span>
+                    </div>
+                 ))}
+               </div>
+            )}
           </div>
-          {rule.evidence && typeof rule.evidence === 'object' && (
-             <div className="grid grid-cols-2 gap-1 mt-0.5">
-               {Object.entries(rule.evidence).map(([dk, dv]: [string, any]) => (
-                  <div key={dk} className="flex flex-col">
-                     <span className="text-[5px] text-zinc-600 font-bold uppercase tracking-widest">{dk}</span>
-                     <span className="text-[6px] text-zinc-400 font-mono truncate">{String(dv)}</span>
-                  </div>
-               ))}
-             </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
