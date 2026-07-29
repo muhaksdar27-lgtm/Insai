@@ -1,4 +1,3 @@
-
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
 import next from 'next';
@@ -9,6 +8,7 @@ import { getMarketScanner } from '@/lib/trading-engine/scanner';
 import { getQueueManager } from '@/lib/redis/queue';
 import { validateEnvironment } from '@/lib/security/env-validator';
 import { getIngestionService } from '@/lib/services/ingestion_service';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import crypto from 'crypto';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -18,20 +18,89 @@ const turbopack = false;
 
 let pyProcess: ChildProcess | null = null;
 
+let isReady = false;
+let isShuttingDown = false;
+let isAppPrepared = false;
+
+// Global unhandled handlers
+process.on('unhandledRejection', (reason) => {
+  try {
+    logger.error('Unhandled Rejection', { reason: reason instanceof Error ? { message: reason.message, stack: (reason as any).stack } : reason });
+  } catch (e) {
+    console.error('Unhandled Rejection', reason);
+  }
+});
+process.on('uncaughtException', (err) => {
+  try {
+    logger.error('Uncaught Exception', { message: err?.message, stack: err?.stack });
+  } catch (e) {
+    console.error('Uncaught Exception', err);
+  }
+  // In many server apps uncaught exceptions are fatal
+  process.exit(1);
+});
+
+function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+
+async function waitForPythonReady(url: string, timeoutMs = 30000, intervalMs = 1000) {
+  const start = Date.now();
+  const probeUrls = [url.replace(/\/$/, '') + '/health', url.replace(/\/$/, '')];
+  while (Date.now() - start < timeoutMs) {
+    for (const u of probeUrls) {
+      try {
+        const controller = new AbortController();
+        const to = setTimeout(() => controller.abort(), 3000);
+        // use global fetch (Node 18+). Cast to any to avoid TS lib mismatch
+        const res = await (globalThis as any).fetch(u, { signal: controller.signal }).catch(() => null);
+        clearTimeout(to);
+        if (res && (res.status === 200 || res.status === 204 || res.status === 404)) {
+          logger.info(`Python engine responded ok at ${u}`);
+          return true;
+        }
+      } catch (err: any) {
+        // ignore, next probe
+      }
+    }
+    await sleep(intervalMs);
+  }
+  return false;
+}
+
+async function waitForSupabaseReady(timeoutMs = 10000, intervalMs = 1000) {
+  const start = Date.now();
+  const supabase = getSupabaseClient();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      if (supabase.isConnected()) {
+        logger.info('Supabase client reports connected');
+        return true;
+      }
+    } catch (e: any) {
+      // ignore and retry
+    }
+    await sleep(intervalMs);
+  }
+  return false;
+}
+
 function startPythonEngine() {
   const pythonPort = process.env.PYTHON_PORT || '8181';
   if (!process.env.PYTHON_ENGINE_URL) {
     process.env.PYTHON_ENGINE_URL = `http://127.0.0.1:${pythonPort}`;
   }
   const externalUrl = process.env.PYTHON_ENGINE_URL;
-  
+
   if (externalUrl && !externalUrl.includes('127.0.0.1') && !externalUrl.includes('localhost')) {
-    logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
+    logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn. Will probe readiness.`);
+    // Background probe for external engine
+    waitForPythonReady(externalUrl).then(ok => {
+      if (!ok) logger.warn(`External Python Engine did not respond within timeout: ${externalUrl}`);
+    });
     return;
   }
-  
+
   logger.info('Starting Python Engine locally...');
-  
+
   try {
     const fs = require('fs');
     const pythonExecutable = fs.existsSync('/app/venv/bin/python') ? '/app/venv/bin/python' : 'python3';
@@ -42,9 +111,12 @@ function startPythonEngine() {
     logger.info(`Spawning Python Engine with: ${pyScript}`);
     pyProcess = spawn('bash', ['-c', pyScript], {
       cwd: pythonEngineDir,
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PYTHON_PORT: pythonPort, PYTHONPATH: `${pythonEngineDir}:.` }
     });
+
+    if (pyProcess.stdout) pyProcess.stdout.on('data', (d) => logger.debug(`[py stdout] ${d.toString()}`));
+    if (pyProcess.stderr) pyProcess.stderr.on('data', (d) => logger.error(`[py stderr] ${d.toString()}`));
 
     pyProcess.on('error', (err: any) => {
       logger.error(`Failed to start local Python Engine: ${err.message}. Running in DEGRADED mode.`);
@@ -60,15 +132,19 @@ function startPythonEngine() {
       }
       pyProcess = null;
     });
+
+    // probe readiness in background
+    const pythonUrl = `http://127.0.0.1:${pythonPort}`;
+    waitForPythonReady(pythonUrl, 30000).then(ok => {
+      if (!ok) logger.warn('Local Python Engine did not respond within 30s; proceeding in DEGRADED mode.');
+      else logger.info('Local Python Engine is healthy.');
+    });
   } catch (err: any) {
     logger.error(`Failed to spawn Python Engine: ${err.message}. Running in DEGRADED mode.`);
     pyProcess = null;
   }
 }
 
-let isReady = false;
-let isShuttingDown = false;
-let isAppPrepared = false;
 const app = next({ dev, hostname, port, turbopack });
 const handle = app.getRequestHandler();
 
@@ -81,7 +157,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     try {
       const parsedUrl = parse(req.url!, true);
       const { pathname } = parsedUrl;
-      
+
       // Request timeout to prevent hanging connections (skip for SSE)
       if (pathname !== '/api/stream') {
         req.setTimeout(30000, () => {
@@ -114,7 +190,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
         return;
       }
-      
+
       if (pathname === '/health/readiness') {
         if (isShuttingDown) {
           res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -167,18 +243,33 @@ const gracefulShutdown = async (signal: string) => {
   if (isShuttingDown) return;
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
   isShuttingDown = true;
-  
+
   // Cleanup Python Process
   if (pyProcess && !pyProcess.killed) {
     logger.info('Shutting down local Python Engine...');
-    pyProcess.kill('SIGTERM');
+    try {
+      pyProcess.kill('SIGTERM');
+    } catch (e) {
+      logger.warn('Error sending SIGTERM to Python Engine', { e });
+    }
+
+    // wait up to 10s for process to exit
+    const end = Date.now() + 10000;
+    while (pyProcess && !pyProcess.killed && Date.now() < end) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(200);
+    }
+    if (pyProcess && !pyProcess.killed) {
+      logger.warn('Python Engine did not stop in time, forcing SIGKILL');
+      try { pyProcess.kill('SIGKILL'); } catch (e) { logger.warn('Error sending SIGKILL', { e }); }
+    }
   }
 
   // Stop scanner
   try {
     const scanner = getMarketScanner();
-    if (scanner) {
-      scanner.stop();
+    if (scanner && typeof scanner.stop === 'function') {
+      await scanner.stop();
     }
   } catch (e: any) {
     logger.warn(`Error stopping scanner during shutdown: ${e.message}`);
@@ -217,45 +308,63 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 
 server.listen(port, hostname, () => {
   logger.info(`> Listening on http://${hostname}:${port} (Next.js preparing...)`);
-  
+
   app.prepare()
     .then(() => {
       isAppPrepared = true;
       logger.info(`> Next.js prepared successfully`);
-      
+
       // Initialize systems asynchronously to avoid blocking startup
       Promise.resolve().then(async () => {
         try {
           startPythonEngine();
+
           try {
             validateEnvironment();
           } catch (envErr: any) {
             logger.error(`Environment validation failed: ${envErr.message}`);
+            // Fatal: keep not ready and exit to avoid running with bad env
+            isReady = false;
             process.exit(1);
           }
-          logger.info('Services initialized asynchronously.');
-          
+
+          // Probe dependencies (Python & Supabase) before marking ready
+          const pythonUrl = process.env.PYTHON_ENGINE_URL || 'http://127.0.0.1:8181';
+          const pythonOk = await waitForPythonReady(pythonUrl, 30000).catch(() => false);
+          const supabaseOk = await waitForSupabaseReady(10000).catch(() => false);
+
+          if (!pythonOk) {
+            logger.warn('Python engine not healthy; continuing in DEGRADED mode (some features may be unavailable)');
+          }
+          if (!supabaseOk) {
+            logger.warn('Supabase not ready; continuing in DEGRADED mode (persistence disabled)');
+          }
+
           try {
+            // Start scanner and ingestion even if deps are degraded; they should handle retries
             setTimeout(() => { getMarketScanner().start().catch(err => logger.error(`marketScanner error: ${err.message}`)); }, 3000);
           } catch (e: any) {
             logger.error(`Failed to start market scanner: ${e.message}`);
           }
-          
+
           try {
              getIngestionService().start('XAUUSD');
           } catch (e: any) {
              logger.error(`Failed to start Ingestion Service: ${e.message}`);
           }
-          
-          // Wait for a brief moment for async startups like Redis to connect before declaring ready
-          setTimeout(() => {
-             isReady = true;
-             logger.info('Server marked as ready for healthchecks.');
-          }, 3000);
-          
+
+          // Mark readiness only if at least core dependencies responded
+          if (pythonOk && supabaseOk) {
+            isReady = true;
+            logger.info('Server marked as ready for healthchecks. All core dependencies responded.');
+          } else {
+            isReady = false;
+            logger.warn('Server NOT marked ready: one or more core dependencies failed readiness checks.');
+          }
+
         } catch (initErr: any) {
           logger.error(`Critical error during backend initialization: ${initErr.message}`);
-          isReady = true; // Still true so health check can report UNAVAILABLE
+          isReady = false; // keep not-ready so health check will fail
         }
       });
     })
