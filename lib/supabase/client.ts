@@ -2,6 +2,7 @@ import { getEnv } from "../utils/env";
 import { logger } from '../utils/logger';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { withTimeout, withRetries } from './request-wrapper';
 
 export class SupabaseService {
   private client: SupabaseClient | null = null;
@@ -35,20 +36,17 @@ export class SupabaseService {
          auth: { persistSession: false },
          global: {
            fetch: (url, options) => {
+             // Use AbortController within withTimeout where possible; keep this simple for compatibility.
              const controller = new AbortController();
              const timeoutId = setTimeout(() => {
                try { controller.abort(); } catch {}
-             }, 12000); // 12s timeout for reliable Supabase REST operations
+             }, 12000); // 12s timeout
 
-             // Omit parent signal listener to decouple DB operations from transient parent request HTTP cancellations
              const fetchOptions = { ...options } as any;
              delete fetchOptions.signal;
 
-             // Use global fetch with an AbortController
              return (globalThis as any).fetch(url, { ...fetchOptions, signal: controller.signal })
-               .finally(() => {
-                 clearTimeout(timeoutId);
-               });
+               .finally(() => clearTimeout(timeoutId));
            }
          }
       });
@@ -56,11 +54,10 @@ export class SupabaseService {
       this.currentKey = supabaseKey;
       this.failures = 0;
       this.circuitOpen = false;
-      logger.info('Supabase client initialized', { url: this.currentUrl });
+      logger.info('Supabase client initialized');
       return this.client;
     } catch (e: any) {
-      // Do not log secrets
-      logger.warn(`Invalid Supabase configuration: ${e.message}. Supabase will be disabled.`);
+      logger.warn(`Invalid Supabase configuration. Supabase will be disabled.`);
       return null;
     }
   }
@@ -69,19 +66,22 @@ export class SupabaseService {
     return this.getClient() !== null && !this.circuitOpen;
   }
 
-  private async withRetry<T>(operation: () => Promise<T>, retries: number = 2): Promise<T> {
+  private async withRetry<T>(operation: () => Promise<T>, retries: number = 2, timeoutMs: number = 8000): Promise<T> {
     if (this.circuitOpen) {
       throw new Error("Supabase circuit breaker is open");
     }
-    
+
+    let lastErr: any;
     for (let i = 0; i <= retries; i++) {
       try {
-        const result = await operation();
+        // use withTimeout to guard long-running ops
+        const result = await withTimeout(() => operation(), timeoutMs);
         this.failures = 0; // reset on success
         return result;
       } catch (err: any) {
+        lastErr = err;
         if (err.message === "Supabase circuit breaker is open") throw err;
-        
+
         if (i === retries) {
           this.failures++;
           if (this.failures >= this.maxFailures && !this.circuitOpen) {
@@ -99,7 +99,7 @@ export class SupabaseService {
         await new Promise(res => setTimeout(res, Math.pow(2, i) * 200));
       }
     }
-    throw new Error("Unreachable");
+    throw lastErr || new Error('Supabase operation failed');
   }
 
   public async insertSignal(signal: any) {
@@ -222,11 +222,11 @@ export class SupabaseService {
     const supabase = this.getClient();
     if (supabase && this.isConnected()) {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await withTimeout(() => supabase
           .from('signals')
           .select('*')
           .eq('signal_key', signalKey)
-          .single();
+          .single(), 5000 as any);
         if (!error && data) {
           signalData = data;
         }
@@ -297,7 +297,7 @@ export class SupabaseService {
         }
           
         return historyRecord;
-      });
+      }, 2, 8000);
     } catch (err: any) {
       logger.error(`Supabase archive to history error: ${err.message}`);
       return historyRecord;
@@ -419,9 +419,9 @@ export class SupabaseService {
         });
       } catch (err: any) {
         if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
-            logger.warn(`Supabase fetch strategy state warn: ${err.message} (URL: ${this.currentUrl})`);
+            logger.warn(`Supabase fetch strategy state warn: ${err.message}`);
         } else {
-            logger.error(`Supabase fetch strategy state error: ${err.message} (URL: ${this.currentUrl})`);
+            logger.error(`Supabase fetch strategy state error: ${err.message}`);
         }
       }
     }
@@ -473,7 +473,7 @@ export class SupabaseService {
           .single();
         if (error) throw error;
         return data;
-      });
+      }, 2, 8000);
       return result || stateObj;
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
@@ -506,7 +506,7 @@ export class SupabaseService {
           parameters: row.config || {},
           enabled: row.enabled
         }));
-      });
+      }, 2, 8000);
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
         if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
@@ -533,7 +533,7 @@ export class SupabaseService {
           .limit(limit);
         if (error) throw error;
         return data || [];
-      });
+      }, 2, 8000);
     } catch (err: any) {
       logger.error(`Supabase fetch audit logs error: ${err.message}`);
       return { status: 'error', available: false, reason: err.message };
@@ -561,7 +561,7 @@ export class SupabaseService {
           .select();
         if (error) throw error;
         return data;
-      });
+      }, 2, 8000);
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
         if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
@@ -600,7 +600,7 @@ export class SupabaseService {
           .single();
         if (error) throw error;
         return data;
-      });
+      }, 2, 8000);
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
         if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
@@ -627,7 +627,7 @@ export class SupabaseService {
           .order('name', { ascending: true });
         if (error) throw error;
         return data || [];
-      });
+      }, 2, 8000);
     } catch (err: any) {
       logger.error(`Supabase fetch MCPs error: ${err.message}`);
       return { status: 'error', available: false, reason: err.message };
@@ -638,13 +638,13 @@ export class SupabaseService {
     const supabase = this.getClient();
     if (!supabase) return [];
     try {
-        const { data, error } = await supabase.rpc('match_history_signals', {
+        const { data, error } = await withTimeout(() => supabase.rpc('match_history_signals', {
             query_embedding: embedding,
             match_threshold: threshold,
             match_count: limit
-          });
+        }), 5000 as any);
         if (error) {
-            logger.warn('Failed to fetch similar history', { error: error.message });
+            logger.warn('Failed to fetch similar history');
             return [];
         }
         return data || [];
