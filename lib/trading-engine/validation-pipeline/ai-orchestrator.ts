@@ -388,6 +388,34 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         required: ['decision', 'evidence', 'reasoning', 'rulesChecked', 'rulesPassed', 'rulesFailed', 'probabilities', 'confidenceScore', 'marketConfidence', 'dataQualityScore', 'signalQualityScore']
       };
 
+      if (getProviderRegistry().isCircuitOpen('GeminiAI')) {
+        logger.warn(`GeminiAI circuit breaker is open. Bypassing Gemini API call for ${strategyId} and using deterministic fallback.`);
+        const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
+        const totalCount = activeRulesCount;
+        const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
+        const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
+        let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
+        if (failedCritical) deterministicDecision = 'REJECTED';
+        else if (realScore >= 70) deterministicDecision = 'APPROVED';
+        else if (realScore >= 40) deterministicDecision = 'WAIT';
+        else deterministicDecision = 'REJECTED';
+
+        const fallbackResult: ValidationPipelineResult = {
+          strategyName: strategyId,
+          decision: deterministicDecision as AIDecision,
+          checklist: validatorResults,
+          reasoning: `Gemini Circuit Breaker Open. Deterministic fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
+          evidence: `Fallback used due to active Gemini circuit breaker.`,
+          riskNotes: 'API Rate Limited - Fallback Active',
+          missingFactors: ['AI Validation'],
+          recommendedAction: deterministicDecision === 'APPROVED' ? 'allow_signal' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+          scores: {}
+        };
+        this.cache.set(cacheKey, fallbackResult);
+        setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+        return fallbackResult;
+      }
+
       const response = await aiClient.models.generateContent({
         model: 'gemini-3.6-flash',
         contents: prompt,
@@ -452,7 +480,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
           deterministicDecision = 'REJECTED';
       }
 
-      return {
+      const fallbackRes: ValidationPipelineResult = {
          strategyName: strategyId,
          decision: deterministicDecision as AIDecision,
          checklist: validatorResults,
@@ -463,6 +491,11 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
          recommendedAction: deterministicDecision === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
          scores: {}
       };
+
+      this.cache.set(cacheKey, fallbackRes);
+      setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+
+      return fallbackRes;
     }
   }
 }

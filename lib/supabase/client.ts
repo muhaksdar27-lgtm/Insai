@@ -9,7 +9,7 @@ export class SupabaseService {
   
   private failures: number = 0;
   private circuitOpen: boolean = false;
-  private readonly maxFailures = 3;
+  private readonly maxFailures = 10;
 
   public getClient(): SupabaseClient | null {
     const rawSupabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL") || getEnv("SUPABASE_URL") || '';
@@ -33,7 +33,7 @@ export class SupabaseService {
              const controller = new AbortController();
              const timeoutId = setTimeout(() => {
                try { controller.abort(); } catch {}
-             }, 4000); // 4s timeout
+             }, 12000); // 12s timeout for reliable Supabase REST operations
 
              // Omit parent signal listener to decouple DB operations from transient parent request HTTP cancellations
              const fetchOptions = { ...options };

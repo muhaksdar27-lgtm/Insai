@@ -19,14 +19,16 @@ const turbopack = false;
 let pyProcess: ChildProcess | null = null;
 
 function startPythonEngine() {
-  const externalUrl = process.env.PYTHON_ENGINE_URL;
   const pythonPort = process.env.PYTHON_PORT || '8181';
+  if (!process.env.PYTHON_ENGINE_URL) {
+    process.env.PYTHON_ENGINE_URL = `http://127.0.0.1:${pythonPort}`;
+  }
+  const externalUrl = process.env.PYTHON_ENGINE_URL;
   
-  if (externalUrl) {
+  if (externalUrl && !externalUrl.includes('127.0.0.1') && !externalUrl.includes('localhost')) {
     logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
     return;
   }
-  
   
   logger.info('Starting Python Engine locally...');
   
@@ -224,14 +226,13 @@ server.listen(port, hostname, () => {
       // Initialize systems asynchronously to avoid blocking startup
       Promise.resolve().then(async () => {
         try {
+          startPythonEngine();
           try {
             validateEnvironment();
           } catch (envErr: any) {
             logger.error(`Environment validation failed: ${envErr.message}`);
             process.exit(1);
           }
-
-          startPythonEngine();
           logger.info('Services initialized asynchronously.');
           
           try {
