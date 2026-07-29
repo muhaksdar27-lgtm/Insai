@@ -1,7 +1,7 @@
 -- Base extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 
 -- Core Tables
 CREATE TABLE IF NOT EXISTS strategies (
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS history (
   correlation_id VARCHAR(255),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   closed_at TIMESTAMPTZ DEFAULT NOW(),
-  embedding vector(768)
+  embedding extensions.vector(768)
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -196,31 +196,79 @@ ALTER TABLE signal_evidence ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE provider_health ENABLE ROW LEVEL SECURITY;
 
--- Service Role full access policies (Engine bypasses RLS using service_role key)
+-- Clean old permissive policies
 DROP POLICY IF EXISTS "Service Role All Access on strategies" ON strategies;
-CREATE POLICY "Service Role All Access on strategies" ON strategies FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on strategy_states" ON strategy_states;
-CREATE POLICY "Service Role All Access on strategy_states" ON strategy_states FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on signals" ON signals;
-CREATE POLICY "Service Role All Access on signals" ON signals FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on history" ON history;
-CREATE POLICY "Service Role All Access on history" ON history FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on market_snapshots" ON market_snapshots;
-CREATE POLICY "Service Role All Access on market_snapshots" ON market_snapshots FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on news_events" ON news_events;
-CREATE POLICY "Service Role All Access on news_events" ON news_events FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on mcp_services" ON mcp_services;
-CREATE POLICY "Service Role All Access on mcp_services" ON mcp_services FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on alerts" ON alerts;
-CREATE POLICY "Service Role All Access on alerts" ON alerts FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on audit_logs" ON audit_logs;
-CREATE POLICY "Service Role All Access on audit_logs" ON audit_logs FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on signal_evidence" ON signal_evidence;
-CREATE POLICY "Service Role All Access on signal_evidence" ON signal_evidence FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on risk_events" ON risk_events;
-CREATE POLICY "Service Role All Access on risk_events" ON risk_events FOR ALL USING (true);
 DROP POLICY IF EXISTS "Service Role All Access on provider_health" ON provider_health;
-CREATE POLICY "Service Role All Access on provider_health" ON provider_health FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Strategies" ON strategies;
+DROP POLICY IF EXISTS "Allow Service Role Full Strategies" ON strategies;
+CREATE POLICY "Allow Public Read Strategies" ON strategies FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Strategies" ON strategies FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Strategy States" ON strategy_states;
+DROP POLICY IF EXISTS "Allow Service Role Full Strategy States" ON strategy_states;
+CREATE POLICY "Allow Public Read Strategy States" ON strategy_states FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Strategy States" ON strategy_states FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Signals" ON signals;
+DROP POLICY IF EXISTS "Allow Service Role Full Signals" ON signals;
+CREATE POLICY "Allow Public Read Signals" ON signals FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Signals" ON signals FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read History" ON history;
+DROP POLICY IF EXISTS "Allow Service Role Full History" ON history;
+CREATE POLICY "Allow Public Read History" ON history FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full History" ON history FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Market Snapshots" ON market_snapshots;
+DROP POLICY IF EXISTS "Allow Service Role Full Market Snapshots" ON market_snapshots;
+CREATE POLICY "Allow Public Read Market Snapshots" ON market_snapshots FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Market Snapshots" ON market_snapshots FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read News Events" ON news_events;
+DROP POLICY IF EXISTS "Allow Service Role Full News Events" ON news_events;
+CREATE POLICY "Allow Public Read News Events" ON news_events FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full News Events" ON news_events FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read MCP Services" ON mcp_services;
+DROP POLICY IF EXISTS "Allow Service Role Full MCP Services" ON mcp_services;
+CREATE POLICY "Allow Public Read MCP Services" ON mcp_services FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full MCP Services" ON mcp_services FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Alerts" ON alerts;
+DROP POLICY IF EXISTS "Allow Service Role Full Alerts" ON alerts;
+CREATE POLICY "Allow Public Read Alerts" ON alerts FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Alerts" ON alerts FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Audit Logs" ON audit_logs;
+DROP POLICY IF EXISTS "Allow Service Role Full Audit Logs" ON audit_logs;
+CREATE POLICY "Allow Public Read Audit Logs" ON audit_logs FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Audit Logs" ON audit_logs FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Signal Evidence" ON signal_evidence;
+DROP POLICY IF EXISTS "Allow Service Role Full Signal Evidence" ON signal_evidence;
+CREATE POLICY "Allow Public Read Signal Evidence" ON signal_evidence FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Signal Evidence" ON signal_evidence FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Risk Events" ON risk_events;
+DROP POLICY IF EXISTS "Allow Service Role Full Risk Events" ON risk_events;
+CREATE POLICY "Allow Public Read Risk Events" ON risk_events FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Risk Events" ON risk_events FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Public Read Provider Health" ON provider_health;
+DROP POLICY IF EXISTS "Allow Service Role Full Provider Health" ON provider_health;
+CREATE POLICY "Allow Public Read Provider Health" ON provider_health FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Allow Service Role Full Provider Health" ON provider_health FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- Added Constraints from PRD
 DO $$ BEGIN
@@ -269,11 +317,11 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_history_outcome') THEN
     ALTER TABLE history ADD CONSTRAINT chk_history_outcome CHECK (outcome IN ('WIN', 'LOSS', 'BREAK_EVEN', 'UNKNOWN'));
   END IF;
-END $$;
+End $$;
 
--- Vector similarity search function
+-- Vector similarity search function with immutable search_path
 CREATE OR REPLACE FUNCTION match_history_signals (
-  query_embedding vector(768),
+  query_embedding extensions.vector(768),
   match_threshold float,
   match_count int
 )
@@ -287,6 +335,7 @@ RETURNS TABLE (
   similarity float
 )
 LANGUAGE plpgsql
+SET search_path = public, extensions
 AS $$
 BEGIN
   RETURN QUERY
@@ -316,3 +365,4 @@ VALUES
 ON CONFLICT (id) DO UPDATE SET 
   status = EXCLUDED.status,
   enabled = EXCLUDED.enabled;
+

@@ -139,7 +139,11 @@ export interface SetupSnapshot {
   marketBias?: string;
   marketStates?: string[];
   validationLogSummary?: string;
-  confirmation?: string;
+  confirmation?: string | boolean;
+  sweepStatus?: string;
+  chochStatus?: string;
+  atr14?: number | string;
+  atrBuffer50Pct?: string;
   aiDecision?: string;
   lastState?: string;
   confidence?: number | string;
