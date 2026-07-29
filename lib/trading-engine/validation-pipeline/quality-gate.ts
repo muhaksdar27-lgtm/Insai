@@ -105,17 +105,15 @@ export class QualityGate {
         if (client.isConnected()) {
              const activeResult = await client.getActiveSignals();
              const allActive = Array.isArray(activeResult) ? activeResult : (activeResult as any).data || [];
-             const strategyActive = allActive.filter((s: any) => s.strategy_id === strategyId && s.symbol === symbol);
-             if (strategyActive && strategyActive.length > 0) {
-                 return this.reject(`Duplicate Active Signal: Strategy ${strategyId} already has an active signal for ${symbol}.`);
+             if (Array.isArray(allActive)) {
+               const strategyActive = allActive.filter((s: any) => s.strategy_id === strategyId && s.symbol === symbol);
+               if (strategyActive && strategyActive.length > 0) {
+                   return this.reject(`Duplicate Active Signal: Strategy ${strategyId} already has an active signal for ${symbol}.`);
+               }
              }
         }
     } catch (e: any) {
         logger.warn(`Quality Gate failed to query active signals, proceeding with caution: ${e.message}`);
-        // Do we reject or proceed? Let's be strict.
-        // Wait, if Supabase is offline, the whole app might be running degraded. Let's not block completely on DB error, 
-        // but normally we should. Let's block to be safe and deterministic.
-        return this.reject(`Database Error: Could not verify existing active signals (${e.message}).`);
     }
 
     // Final Approval

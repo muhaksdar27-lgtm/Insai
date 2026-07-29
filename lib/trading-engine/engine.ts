@@ -414,7 +414,7 @@ export class TradingEngine {
            
            await this.advanceStateMachine(sm, STEPS.REJECTED, validationResult.reasoning, setup.id, context, { marketStates, ruleResults, setupDetails: { ...translatedSnapshot, aiDecision: validationResult.decision, direction, entryPrice, slPrice, tpPrice } });
 
-           const suppressedSetup = { ...setup, aiValidation: validationResult, isSuppressed: true, marketStates, candidateRules };
+           const suppressedSetup = { ...setup, aiValidation: validationResult, isSuppressed: true, qualityGatePassed: false, marketStates, candidateRules };
            this.signalPipeline.emitSignal(suppressedSetup as any, context).catch(e => logger.error(`Failed to emit suppressed signal: ${e.message}`));
            return;
         }

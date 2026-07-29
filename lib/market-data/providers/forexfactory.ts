@@ -52,6 +52,12 @@ export class ForexFactoryProvider implements CalendarProvider {
   async getCalendarEvents(): Promise<CalendarEvent[] & import('@/types').ProviderStatus> {
     const now = Date.now();
     
+    const health = getProviderRegistry().getProviderHealth(this.name);
+    if (health?.circuitBreakerStatus === 'open') {
+      if (this.cachedData) return this.cachedData;
+      return [];
+    }
+
     // Internal cache to prevent spamming if upper layer misses caching
     if (this.cachedData && (now - this.lastFetchTime < this.CACHE_TTL_MS)) {
       return this.cachedData;
@@ -82,6 +88,7 @@ export class ForexFactoryProvider implements CalendarProvider {
         let msg = e.message;
         if (msg === 'Rate Limited' || msg.includes('429')) {
           msg = 'Rate Limited';
+          this.lastFetchTime = Date.now() + 5 * 60 * 1000; // 5 min cooldown on 429
         } else if (msg.includes('fetch failed') || msg.includes('Unavailable')) {
           msg = 'Provider Unavailable';
         }
@@ -93,7 +100,7 @@ export class ForexFactoryProvider implements CalendarProvider {
         }
 
         getProviderRegistry().reportError(this.name, msg);
-        throw new Error(msg);
+        return [];
       } finally {
         this.currentRequest = null;
       }

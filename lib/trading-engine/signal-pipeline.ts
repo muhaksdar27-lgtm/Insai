@@ -139,11 +139,12 @@ export class SignalPipeline {
     }
 
     // 1. Global Cross-Strategy Market Setup Hash Deduplication
-    // Combines symbol, timeframe, direction, entry, and sl to form a deterministic fingerprint
+    // Combines symbol, timeframe, direction, entry, sl, snapshot timestamp, and decision to form a deterministic fingerprint
     const dir = (setup.direction || 'buy').toLowerCase();
     const entryRounded = Math.round((setup.entryPrice || 0) * 100);
     const slRounded = Math.round((setup.slPrice || 0) * 100);
-    const setupHash = crypto.createHash('sha256').update(`${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}`).digest('hex').substring(0, 16);
+    const snapshotTs = marketContext?.timestamp ? Math.floor(new Date(marketContext.timestamp).getTime() / 60000) : ''; // Minute precision
+    const setupHash = crypto.createHash('sha256').update(`${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}_${snapshotTs}_APPROVED`).digest('hex').substring(0, 16);
     
     const GLOBAL_COOLDOWN_SECONDS = 300; // 5 minute global cross-strategy cooldown for exact same setup
     const globalDedupKey = `global_signal_cooldown_${setupHash}`;

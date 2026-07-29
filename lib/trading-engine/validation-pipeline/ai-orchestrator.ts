@@ -388,7 +388,8 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         required: ['decision', 'evidence', 'reasoning', 'rulesChecked', 'rulesPassed', 'rulesFailed', 'probabilities', 'confidenceScore', 'marketConfidence', 'dataQualityScore', 'signalQualityScore']
       };
 
-      if (getProviderRegistry().isCircuitOpen('GeminiAI')) {
+      const geminiHealth = getProviderRegistry().getProviderHealth('GeminiAI');
+      if (geminiHealth?.circuitBreakerStatus === 'open') {
         logger.warn(`GeminiAI circuit breaker is open. Bypassing Gemini API call for ${strategyId} and using deterministic fallback.`);
         const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
         const totalCount = activeRulesCount;
