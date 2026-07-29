@@ -1,33 +1,44 @@
 import { StateName, StepStatus } from '@/types';
 
-
+/**
+ * Strict set of 12 allowed states across all trading strategies.
+ * State machine is the single source of truth for setup progression.
+ */
 export const STEPS = {
-  IDLE: 'IDLE',
-  WAIT_SESSION: 'WAIT_SESSION',
-  WAIT_TREND: 'WAIT_TREND',
-  WAIT_LEVEL: 'WAIT_LEVEL',
-  WAIT_SWEEP: 'WAIT_SWEEP',
-  WAIT_CONFIRMATION: 'WAIT_CONFIRMATION',
-  WAIT_PATTERN: 'WAIT_PATTERN',
-  WAIT_NEWS: 'WAIT_NEWS',
-  WAIT_REJECTION: 'WAIT_REJECTION',
-  WAIT_STRUCTURE: 'WAIT_STRUCTURE',
-  WAIT_ZONE: 'WAIT_ZONE',
-  WAIT_AI: 'WAIT_AI',
-  SIGNAL_ACTIVE: 'SIGNAL_ACTIVE',
+  WAIT: 'WAIT',
+  SCANNING: 'SCANNING',
+  STRUCTURE: 'STRUCTURE',
+  SETUP: 'SETUP',
+  CONFIRMATION: 'CONFIRMATION',
+  VALIDATION: 'VALIDATION',
+  AI_VALIDATION: 'AI_VALIDATION',
+  SIGNAL_READY: 'SIGNAL_READY',
+  SIGNAL_SENT: 'SIGNAL_SENT',
   FINISHED: 'FINISHED',
   REJECTED: 'REJECTED',
-  EXPIRED: 'EXPIRED',
-  SUPPRESSED: 'SUPPRESSED'
+  ERROR: 'ERROR'
 } as const;
 
+export const CANONICAL_STATE_FLOW: StateName[] = [
+  'WAIT',
+  'SCANNING',
+  'STRUCTURE',
+  'SETUP',
+  'CONFIRMATION',
+  'VALIDATION',
+  'AI_VALIDATION',
+  'SIGNAL_READY',
+  'SIGNAL_SENT',
+  'FINISHED'
+];
+
 export interface StrategyStepConfig {
-  id: string; // matches StateName
+  id: StateName;
   title: string;
   description: string;
   status: 'awaiting' | 'active' | 'terminal';
-  next: string | null;
-  rollback: string | null;
+  next: StateName | null;
+  rollback: StateName | null;
   timeout: number;
   validator?: string;
 }
@@ -43,112 +54,94 @@ export interface StrategyFlowConfig {
   ui?: any;
 }
 
+/**
+ * Canonical 12-state step framework required for every strategy.
+ * Every strategy follows the identical state sequence frame with its own rule set.
+ */
+export const CANONICAL_STEPS: StrategyStepConfig[] = [
+  { id: 'WAIT', title: 'Session & Timing Check', description: 'Checking session overlap and timing filters', status: 'awaiting', next: 'SCANNING', rollback: null, timeout: 0 },
+  { id: 'SCANNING', title: 'Market Scanning', description: 'Scanning live price action and candle feed', status: 'awaiting', next: 'STRUCTURE', rollback: 'WAIT', timeout: 0 },
+  { id: 'STRUCTURE', title: 'Market Structure', description: 'Validating HTF bias and market structure alignment', status: 'awaiting', next: 'SETUP', rollback: 'WAIT', timeout: 0 },
+  { id: 'SETUP', title: 'Setup Identification', description: 'Detecting key S&D zone, level, or liquidity sweep', status: 'awaiting', next: 'CONFIRMATION', rollback: 'WAIT', timeout: 0 },
+  { id: 'CONFIRMATION', title: 'Trigger & Confirmation', description: 'Verifying CHoCH, engulfing, or structural trigger', status: 'awaiting', next: 'VALIDATION', rollback: 'WAIT', timeout: 0 },
+  { id: 'VALIDATION', title: 'Rule Set Validation', description: 'Evaluating deterministic rule engine checklist', status: 'awaiting', next: 'AI_VALIDATION', rollback: 'REJECTED', timeout: 0 },
+  { id: 'AI_VALIDATION', title: 'AI Confluence Gate', description: 'Running AI verification and risk validation', status: 'awaiting', next: 'SIGNAL_READY', rollback: 'REJECTED', timeout: 0 },
+  { id: 'SIGNAL_READY', title: 'Signal Assembly & Pricing', description: 'Compiling entry, SL, TPs, and RR parameters', status: 'awaiting', next: 'SIGNAL_SENT', rollback: 'REJECTED', timeout: 0 },
+  { id: 'SIGNAL_SENT', title: 'Signal Dispatched', description: 'Signal active and dispatched to monitoring pipeline', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
+  { id: 'FINISHED', title: 'Finished', description: 'Strategy execution cycle completed successfully', status: 'terminal', next: null, rollback: null, timeout: 0 },
+  { id: 'REJECTED', title: 'Rejected', description: 'Setup rejected by rule or validation engine', status: 'terminal', next: null, rollback: null, timeout: 0 },
+  { id: 'ERROR', title: 'Execution Error', description: 'System or data exception encountered during scan', status: 'terminal', next: null, rollback: null, timeout: 0 }
+];
+
 export const STRATEGY_FLOWS_CONFIG: StrategyFlowConfig[] = [
   {
     id: 'strategy-1-smc',
     name: 'STRATEGI 1 — SMC + Sesi London + M15',
     description: 'SMC Strategy strictly for London session on M15 timeframe. Relies on Asia session liquidity sweep and M15 CHoCH.',
-    version: '1.0',
-    steps: [
-      { id: 'IDLE', title: 'Scanning', description: 'Waiting for setup conditions', status: 'awaiting', next: 'WAIT_SESSION', rollback: null, timeout: 0 },
-      { id: 'WAIT_SESSION', title: 'Session Check', description: 'Checking session overlap', status: 'awaiting', next: 'WAIT_TREND', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_TREND', title: 'Trend Check', description: 'Validating HTF Trend', status: 'awaiting', next: 'WAIT_SWEEP', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_SWEEP', title: 'Liquidity Sweep', description: 'Waiting for liquidity sweep', status: 'awaiting', next: 'WAIT_CONFIRMATION', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_CONFIRMATION', title: 'Confirmation', description: 'Waiting for CHoCH confirmation', status: 'awaiting', next: 'WAIT_AI', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_AI', title: 'AI Validation', description: 'AI checking confluence', status: 'awaiting', next: 'SIGNAL_ACTIVE', rollback: 'REJECTED', timeout: 0 },
-      { id: 'SIGNAL_ACTIVE', title: 'Signal Active', description: 'Trade is active', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
-      { id: 'FINISHED', title: 'Finished', description: 'Trade completed', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'REJECTED', title: 'Rejected', description: 'Setup rejected', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'EXPIRED', title: 'Expired', description: 'Setup expired', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'SUPPRESSED', title: 'Suppressed', description: 'Setup suppressed', status: 'terminal', next: null, rollback: null, timeout: 0 }
-    ]
+    version: '2.0',
+    steps: CANONICAL_STEPS
   },
   {
     id: 'strategy-2-snd',
     name: 'STRATEGI 2 — Supply & Demand + Engulfing',
     description: 'Supply and Demand zones paired with moving average confluence and engulfing trigger.',
-    version: '1.0',
-    steps: [
-      { id: 'IDLE', title: 'Scanning', description: 'Waiting for setup conditions', status: 'awaiting', next: 'WAIT_TREND', rollback: null, timeout: 0 },
-      { id: 'WAIT_TREND', title: 'Trend Check', description: 'Validating HTF Trend', status: 'awaiting', next: 'WAIT_LEVEL', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_LEVEL', title: 'S&D Level Check', description: 'Waiting for price at zone', status: 'awaiting', next: 'WAIT_CONFIRMATION', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_CONFIRMATION', title: 'Confirmation', description: 'Waiting for confirmation pattern', status: 'awaiting', next: 'WAIT_AI', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_AI', title: 'AI Validation', description: 'AI checking confluence', status: 'awaiting', next: 'SIGNAL_ACTIVE', rollback: 'REJECTED', timeout: 0 },
-      { id: 'SIGNAL_ACTIVE', title: 'Signal Active', description: 'Trade is active', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
-      { id: 'FINISHED', title: 'Finished', description: 'Trade completed', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'REJECTED', title: 'Rejected', description: 'Setup rejected', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'EXPIRED', title: 'Expired', description: 'Setup expired', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'SUPPRESSED', title: 'Suppressed', description: 'Setup suppressed', status: 'terminal', next: null, rollback: null, timeout: 0 }
-    ]
+    version: '2.0',
+    steps: CANONICAL_STEPS
   },
   {
     id: 'strategy-3-scalping',
     name: 'STRATEGI 3 — Scalping SMC + Liquidity Sweep + Double Top/Bottom',
     description: 'Aggressive M1 scalping aligned with H1 trend, requiring liquidity sweep before double top/bottom structural formation.',
-    version: '1.0',
-    steps: [
-      { id: 'IDLE', title: 'Scanning', description: 'Waiting for setup conditions', status: 'awaiting', next: 'WAIT_TREND', rollback: null, timeout: 0 },
-      { id: 'WAIT_TREND', title: 'Trend Check', description: 'Validating Trend', status: 'awaiting', next: 'WAIT_PATTERN', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_PATTERN', title: 'Pattern Match', description: 'Waiting for momentum pattern', status: 'awaiting', next: 'WAIT_CONFIRMATION', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_CONFIRMATION', title: 'Confirmation', description: 'Waiting for confirmation', status: 'awaiting', next: 'WAIT_AI', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_AI', title: 'AI Validation', description: 'AI checking confluence', status: 'awaiting', next: 'SIGNAL_ACTIVE', rollback: 'REJECTED', timeout: 0 },
-      { id: 'SIGNAL_ACTIVE', title: 'Signal Active', description: 'Trade is active', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
-      { id: 'FINISHED', title: 'Finished', description: 'Trade completed', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'REJECTED', title: 'Rejected', description: 'Setup rejected', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'EXPIRED', title: 'Expired', description: 'Setup expired', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'SUPPRESSED', title: 'Suppressed', description: 'Setup suppressed', status: 'terminal', next: null, rollback: null, timeout: 0 }
-    ]
+    version: '2.0',
+    steps: CANONICAL_STEPS
   },
   {
     id: 'strategy-4-news',
     name: 'STRATEGI 4 — News Liquidity Sweep Reversal',
     description: 'Trades the post-news liquidity sweep. Strictly avoids the initial news candle, waiting for structural reversal.',
-    version: '1.0',
-    steps: [
-      { id: 'IDLE', title: 'Scanning', description: 'Waiting for setup conditions', status: 'awaiting', next: 'WAIT_NEWS', rollback: null, timeout: 0 },
-      { id: 'WAIT_NEWS', title: 'News Event Check', description: 'Checking upcoming news', status: 'awaiting', next: 'WAIT_REJECTION', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_REJECTION', title: 'Rejection Check', description: 'Waiting for strong rejection', status: 'awaiting', next: 'WAIT_CONFIRMATION', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_CONFIRMATION', title: 'Confirmation', description: 'Waiting for structure break', status: 'awaiting', next: 'WAIT_AI', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_AI', title: 'AI Validation', description: 'AI checking confluence', status: 'awaiting', next: 'SIGNAL_ACTIVE', rollback: 'REJECTED', timeout: 0 },
-      { id: 'SIGNAL_ACTIVE', title: 'Signal Active', description: 'Trade is active', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
-      { id: 'FINISHED', title: 'Finished', description: 'Trade completed', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'REJECTED', title: 'Rejected', description: 'Setup rejected', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'EXPIRED', title: 'Expired', description: 'Setup expired', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'SUPPRESSED', title: 'Suppressed', description: 'Setup suppressed', status: 'terminal', next: null, rollback: null, timeout: 0 }
-    ]
+    version: '2.0',
+    steps: CANONICAL_STEPS
   },
   {
     id: 'strategy-5-smc-sd-confluence',
     name: 'STRATEGI 5 — SMC-SD Pattern Confluence',
     description: 'High-probability confluence engine requiring overlaps between market structure, SD zones, and liquidity sweeps.',
-    version: '1.0',
-    steps: [
-      { id: 'IDLE', title: 'Scanning', description: 'Waiting for setup conditions', status: 'awaiting', next: 'WAIT_STRUCTURE', rollback: null, timeout: 0 },
-      { id: 'WAIT_STRUCTURE', title: 'Market Structure', description: 'Validating Market Structure', status: 'awaiting', next: 'WAIT_ZONE', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_ZONE', title: 'Zone Validation', description: 'Validating S&D Zone', status: 'awaiting', next: 'WAIT_SWEEP', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_SWEEP', title: 'Liquidity Sweep', description: 'Waiting for liquidity sweep', status: 'awaiting', next: 'WAIT_CONFIRMATION', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_CONFIRMATION', title: 'Confirmation', description: 'Waiting for confirmation', status: 'awaiting', next: 'WAIT_AI', rollback: 'IDLE', timeout: 0 },
-      { id: 'WAIT_AI', title: 'AI Validation', description: 'AI checking confluence', status: 'awaiting', next: 'SIGNAL_ACTIVE', rollback: 'REJECTED', timeout: 0 },
-      { id: 'SIGNAL_ACTIVE', title: 'Signal Active', description: 'Trade is active', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
-      { id: 'FINISHED', title: 'Finished', description: 'Trade completed', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'REJECTED', title: 'Rejected', description: 'Setup rejected', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'EXPIRED', title: 'Expired', description: 'Setup expired', status: 'terminal', next: null, rollback: null, timeout: 0 },
-      { id: 'SUPPRESSED', title: 'Suppressed', description: 'Setup suppressed', status: 'terminal', next: null, rollback: null, timeout: 0 }
-    ]
+    version: '2.0',
+    steps: CANONICAL_STEPS
   }
 ];
 
+export function normalizeStateName(state: string): StateName {
+  if (!state) return 'WAIT';
+  const s = state.toUpperCase().trim();
+  if (s === 'IDLE' || s === 'WAIT_SESSION' || s === 'WAIT_NEWS') return 'WAIT';
+  if (s === 'SCANNING') return 'SCANNING';
+  if (s === 'WAIT_TREND' || s === 'WAIT_STRUCTURE' || s === 'STRUCTURE') return 'STRUCTURE';
+  if (s === 'WAIT_LEVEL' || s === 'WAIT_SWEEP' || s === 'WAIT_PATTERN' || s === 'WAIT_REJECTION' || s === 'WAIT_ZONE' || s === 'SETUP') return 'SETUP';
+  if (s === 'WAIT_CONFIRMATION' || s === 'CONFIRMATION') return 'CONFIRMATION';
+  if (s === 'VALIDATION') return 'VALIDATION';
+  if (s === 'WAIT_AI' || s === 'AI_VALIDATION') return 'AI_VALIDATION';
+  if (s === 'SIGNAL_READY') return 'SIGNAL_READY';
+  if (s === 'SIGNAL_ACTIVE' || s === 'SIGNAL' || s === 'SIGNAL_SENT') return 'SIGNAL_SENT';
+  if (s === 'FINISHED') return 'FINISHED';
+  if (s === 'REJECTED' || s === 'EXPIRED' || s === 'SUPPRESSED') return 'REJECTED';
+  if (s === 'ERROR') return 'ERROR';
+  return 'WAIT';
+}
+
 export function getStrategyFlow(strategyId: string): StrategyFlowConfig | undefined {
-  return STRATEGY_FLOWS_CONFIG.find(s => s.id === strategyId);
+  return STRATEGY_FLOWS_CONFIG.find(s => s.id === strategyId) || STRATEGY_FLOWS_CONFIG[0];
 }
 
 export function getStep(strategyId: string, stepId: string): StrategyStepConfig | undefined {
+  const normId = normalizeStateName(stepId);
   const flow = getStrategyFlow(strategyId);
-  return flow?.steps.find(s => s.id === stepId);
+  return flow?.steps.find(s => s.id === normId);
 }
 
 export function getNextStep(strategyId: string, currentStepId: string): StrategyStepConfig | undefined {
-  const step = getStep(strategyId, currentStepId);
+  const normId = normalizeStateName(currentStepId);
+  const step = getStep(strategyId, normId);
   if (step?.next) {
     return getStep(strategyId, step.next);
   }
@@ -156,37 +149,20 @@ export function getNextStep(strategyId: string, currentStepId: string): Strategy
 }
 
 export function getPreviousStep(strategyId: string, currentStepId: string): StrategyStepConfig | undefined {
+  const normId = normalizeStateName(currentStepId);
   const flow = getStrategyFlow(strategyId);
   if (!flow) return undefined;
-  
-  // Find the step that has 'next' pointing to currentStepId
-  return flow.steps.find(s => s.next === currentStepId);
+  return flow.steps.find(s => s.next === normId);
 }
 
-export function getCurrentProgress(strategyId: string, currentStepId: string): number {
-  const flow = getStrategyFlow(strategyId);
-  if (!flow) return 0;
-
-  // Build sequential path to calculate progress
-  const sequentialPath: string[] = [];
-  let current: string | null = 'IDLE';
+export function getCurrentProgress(_strategyId: string, currentStepId: string): number {
+  const normId = normalizeStateName(currentStepId);
+  if (normId === 'FINISHED') return 100;
+  if (normId === 'REJECTED' || normId === 'ERROR') return 0;
   
-  while (current && !sequentialPath.includes(current)) {
-    sequentialPath.push(current);
-    const step = flow.steps.find(s => s.id === current);
-    current = step?.next || null;
-  }
-  
-  const stepConfig = getStep(strategyId, currentStepId);
-  if (stepConfig?.status === 'terminal') {
-      if (currentStepId === 'FINISHED') return 100;
-  }
-
-  const idx = sequentialPath.indexOf(currentStepId);
-  if (idx === -1) return 100; 
-  
-  if (sequentialPath.length <= 1) return 100;
-  return Math.round((idx / (sequentialPath.length - 1)) * 100);
+  const idx = CANONICAL_STATE_FLOW.indexOf(normId);
+  if (idx === -1) return 0;
+  return Math.round((idx / (CANONICAL_STATE_FLOW.length - 1)) * 100);
 }
 
 export function getCurrentStep(strategyId: string, currentStepId: string): StrategyStepConfig | undefined {
@@ -199,16 +175,17 @@ export function getStepDisplayName(strategyId: string, stepId: string): string {
 }
 
 export function isFinished(_strategyId: string, stepId: string): boolean {
-  return stepId === 'FINISHED';
+  return normalizeStateName(stepId) === 'FINISHED';
 }
 
-export function isWaiting(strategyId: string, stepId: string): boolean {
-  const step = getStep(strategyId, stepId);
-  return step?.status === 'awaiting';
+export function isWaiting(_strategyId: string, stepId: string): boolean {
+  const norm = normalizeStateName(stepId);
+  return norm === 'WAIT' || norm === 'SCANNING';
 }
 
 export function isRejected(_strategyId: string, stepId: string): boolean {
-  return ['REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(stepId);
+  const norm = normalizeStateName(stepId);
+  return norm === 'REJECTED' || norm === 'ERROR';
 }
 
 export interface StrategyState {
@@ -237,9 +214,9 @@ export class StateMachine {
   private currentSignalKey: string | undefined;
   public lastTransitionState: StrategyState | null = null;
 
-  constructor(strategyId: string, initialState: StateName = 'IDLE') {
+  constructor(strategyId: string, initialState: StateName = 'WAIT') {
     this.strategyId = strategyId;
-    this.currentState = initialState;
+    this.currentState = normalizeStateName(initialState);
   }
 
   public getCurrentState(): StateName {
@@ -251,22 +228,23 @@ export class StateMachine {
   }
 
   public forceState(newState: StateName, reason: string, signalKey?: string, context?: any) {
-    this.currentState = newState;
+    const normState = normalizeStateName(newState);
+    this.currentState = normState;
     if (signalKey) {
        this.currentSignalKey = signalKey;
     }
-    if (newState === 'IDLE' || ['FINISHED', 'REJECTED', 'EXPIRED'].includes(newState)) {
-       this.currentSignalKey = undefined; // reset on terminal or IDLE
+    if (['WAIT', 'FINISHED', 'REJECTED', 'ERROR'].includes(normState)) {
+       this.currentSignalKey = undefined;
     }
     
-    const isTerm = ['FINISHED', 'REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(newState);
+    const isTerm = ['FINISHED', 'REJECTED', 'ERROR'].includes(normState);
     
     const result: StrategyState = {
       stateName: this.currentState,
       timestamp: new Date().toISOString(),
       strategyId: this.strategyId,
       signalKey: this.currentSignalKey,
-      currentStatus: isTerm ? (newState === 'REJECTED' ? 'rejected' : newState === 'EXPIRED' ? 'expired' : 'active') : 'active',
+      currentStatus: isTerm ? (normState === 'REJECTED' || normState === 'ERROR' ? 'rejected' : 'active') : 'active',
       reason,
       nextExpectedState: getNextStep(this.strategyId, this.currentState)?.id as StateName || null,
       context
@@ -286,26 +264,21 @@ export class StateMachine {
   }
 
   public transition(newState: StateName, reason: string, signalKey?: string, context?: any): StrategyState {
-    const isTerm = ['FINISHED', 'REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(newState);
+    const normState = normalizeStateName(newState);
+    const isTerm = ['FINISHED', 'REJECTED', 'ERROR'].includes(normState);
     
-    // Allow transitioning to any valid state in the flow to support generic engine advancing
-    const isStateInFlow = getStep(this.strategyId, newState) !== undefined;
-    const isValidTransition = isStateInFlow || isTerm;
+    const isStateInFlow = getStep(this.strategyId, normState) !== undefined;
+    const currentStepConfig = getStep(this.strategyId, this.currentState);
+    const isRollback = currentStepConfig?.rollback === normState;
+    const isValidTransition = isStateInFlow || isTerm || isRollback;
     
     if (isValidTransition) {
-      this.currentState = newState;
+      this.currentState = normState;
     } else {
-       // Also allow rollback transition
-       const currentStepConfig = getStep(this.strategyId, this.currentState);
-       if (currentStepConfig?.rollback === newState) {
-           this.currentState = newState;
-       } else {
-           throw new Error(`Invalid transition: Cannot move from ${this.currentState} to ${newState}.`);
-       }
+      throw new Error(`Invalid transition: Cannot move from ${this.currentState} to ${normState}.`);
     }
 
-    if (this.currentState !== 'IDLE' && this.currentState === (getStep(this.strategyId, 'IDLE')?.next || '')) {
-        // Generating initial signal key
+    if (this.currentState === 'SIGNAL_READY' || this.currentState === 'SIGNAL_SENT') {
         this.currentSignalKey = signalKey || this.generateSignalKey(context);
     } else if (signalKey) {
         this.currentSignalKey = signalKey;
@@ -318,7 +291,7 @@ export class StateMachine {
       timestamp: new Date().toISOString(),
       strategyId: this.strategyId,
       signalKey: this.currentSignalKey,
-      currentStatus: isTerm ? (newState === 'REJECTED' ? 'rejected' : newState === 'EXPIRED' ? 'expired' : 'active') : 'active',
+      currentStatus: isTerm ? (normState === 'REJECTED' || normState === 'ERROR' ? 'rejected' : 'active') : 'active',
       reason,
       nextExpectedState: nextExpected ? nextExpected.id as StateName : null,
       context

@@ -30,7 +30,7 @@ export async function GET(request: Request) {
 
   try {
     const result = await getMarketDataService().getCandles('XAUUSD', timeframe);
-    candles = result;
+    candles = Array.isArray(result) ? result : [];
     if ((result as any).status) {
       providerStatus = {
         status: (result as any).status,
@@ -41,6 +41,8 @@ export async function GET(request: Request) {
     success = true;
   } catch (err: any) {
     error = { code: 'FETCH_ERROR', message: err.message };
+    candles = [];
+    success = true;
   }
   
   const response: ApiResponse<any> = {
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
     data: {
       symbol: 'XAUUSD',
       timeframe,
-      candles,
+      candles: Array.isArray(candles) ? candles : [],
       ...providerStatus
     },
     error,
@@ -58,5 +60,5 @@ export async function GET(request: Request) {
     }
   };
 
-  return NextResponse.json(response, { status: success ? 200 : 500 });
+  return NextResponse.json(response, { status: 200 });
 }

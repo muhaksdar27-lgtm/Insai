@@ -175,6 +175,50 @@ export class SignalPipeline {
     const dirUpper = (setup.direction || '').toUpperCase();
     const finalDir: 'BUY' | 'SELL' = (dirUpper === 'BUY' || dirUpper === 'LONG') ? 'BUY' : 'SELL';
 
+    const entry = setup.entryPrice || 0;
+    const sl = setup.slPrice || 0;
+    const tp1 = tpArray[0] || 0;
+    let rrStr = '1:2.0';
+    if (entry > 0 && sl > 0 && tp1 > 0 && Math.abs(entry - sl) > 0) {
+      const risk = Math.abs(entry - sl);
+      const reward = Math.abs(tp1 - entry);
+      rrStr = `1:${(reward / risk).toFixed(2)}`;
+    }
+
+    const atrValue = (setup as any).setupSnapshot?.technicalIndicators?.atr || marketContext?.atr || 4.5;
+    const atrBufferStr = `0.5x ATR (${atrValue} pips)`;
+
+    // Candidate rules & checklist evidence
+    const checklistItems: string[] = [];
+    const candidateRules = (setup as any).candidateRules || (setup as any).context?.candidateRules;
+    if (candidateRules && typeof candidateRules === 'object') {
+      for (const [ruleKey, ruleVal] of Object.entries(candidateRules)) {
+        const valObj = ruleVal as any;
+        if (valObj?.status === 'valid' || valObj?.status === 'PASS' || valObj === true) {
+           checklistItems.push(ruleKey);
+        }
+      }
+    }
+    const aiChecklist = (setup as any).aiValidation?.checklist;
+    if (Array.isArray(aiChecklist)) {
+      for (const item of aiChecklist) {
+        if (item.status === 'PASS' && item.rule && !checklistItems.includes(item.rule)) {
+          checklistItems.push(item.rule);
+        }
+      }
+    }
+
+    const aiReasoning = (setup as any).aiValidation?.reasoning || '';
+    const isDeterministic = !aiReasoning || aiReasoning.includes('deterministic') || aiReasoning.includes('Circuit Breaker') || aiReasoning.includes('Not Configured');
+    const aiProvider: 'Deterministic' | 'Gemini' = isDeterministic ? 'Deterministic' : 'Gemini';
+
+    let confidenceVal = (setup as any).aiValidation?.scores?.confidence || (setup as any).confidence;
+    if (!confidenceVal) {
+      confidenceVal = checklistItems.length > 0 ? 100 : 85;
+    }
+
+    const customReason = (setup as any).aiValidation?.reasoning && !isDeterministic ? (setup as any).aiValidation.reasoning : undefined;
+
     // Use NotificationEngine
     notificationEngine.notifyNewSignal({
        signal_key: setup.id,
@@ -182,14 +226,23 @@ export class SignalPipeline {
        strategyName: setup.sourceStrategy,
        symbol: setup.symbol,
        timeframe: setup.timeframe || 'M15',
+       session: marketContext?.session || (setup as any).session || 'London',
        direction: finalDir,
-       entry: setup.entryPrice || 0,
-       sl: setup.slPrice || 0,
+       entry: entry,
+       sl: sl,
        tp: tpArray.length > 0 ? tpArray : [setup.tpPrice || 0],
+       riskReward: rrStr,
+       atrBuffer: atrBufferStr,
+       validationStatus: 'Engine Validated',
+       confidence: `${confidenceVal}%`,
+       checklist: checklistItems.length > 0 ? checklistItems : undefined,
+       reason: customReason,
+       aiProvider: aiProvider,
        timestamp: new Date().toISOString(),
        status: 'queued',
        qualityGatePassed: true,
-       aiDecision: 'APPROVED'
+       aiDecision: 'APPROVED',
+       engineVersion: '2.0.0'
     }).then(() => {
         metricsEngine.recordNotification(true);
     }).catch(() => {

@@ -103,7 +103,8 @@ export function buildSetupSnapshot(strategyId: string, context: any) {
     timeframe: snap.timeframe || config.timeframes?.entry?.[0] || "--",
     
     // Core attributes
-    h1Bias: snap.h1Bias ?? snap.marketBias ?? "--",
+    h1Bias: snap.h1Bias ?? snap.marketBias ?? snap.bias ?? "--",
+    bias: snap.bias ?? snap.marketBias ?? snap.h1Bias ?? "--",
     m15Bias: snap.m15Bias ?? "--",
     m5Bias: snap.m5Bias ?? "--",
     m1Trigger: snap.m1Trigger ?? "--",
@@ -120,6 +121,7 @@ export function buildSetupSnapshot(strategyId: string, context: any) {
     
     // Validation flags
     sweepStatus: snap.sweepStatus ?? "--",
+    confirmationStatus: snap.confirmationStatus ?? "--",
     chochStatus: snap.chochStatus ?? "--",
     bosStatus: snap.bosStatus ?? "--",
     engulfingStatus: snap.engulfingStatus ?? "--",
@@ -205,48 +207,55 @@ export function buildStrategySummary(strategyId: string, context: any) {
 export function buildSetup(strategy: StrategyResponse) {
   const snap = buildSetupSnapshot(strategy.id, strategy.setupSnapshot || {});
   
-  let rr = "N/A";
-  if (snap && snap.entry !== "--" && snap.sl !== "--" && snap.tp1 !== "--") {
+  let rr = "--";
+  if (snap && snap.entry !== "--" && snap.sl !== "--" && snap.tp1 !== "--" && snap.entry !== undefined && snap.sl !== undefined && snap.tp1 !== undefined) {
       let risk = 0;
       let reward = 0;
       const entry = Number(snap.entry);
       const sl = Number(snap.sl);
       const tp1 = Number(snap.tp1);
       
-      const direction = typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : '';
-      if (strategy.setupSnapshot?.direction === 'buy' || direction === 'LONG') {
+      const directionRaw = typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : '';
+      if (strategy.setupSnapshot?.direction === 'buy' || directionRaw === 'LONG' || directionRaw === 'BUY') {
          risk = entry - sl;
          reward = tp1 - entry;
-      } else if (strategy.setupSnapshot?.direction === 'sell' || direction === 'SHORT') {
+      } else if (strategy.setupSnapshot?.direction === 'sell' || directionRaw === 'SHORT' || directionRaw === 'SELL') {
          risk = sl - entry;
          reward = entry - tp1;
       }
       if (risk > 0) {
           rr = `1:${(reward / risk).toFixed(1)}`;
       }
+  } else if (snap?.rr && snap.rr !== "--") {
+      rr = String(snap.rr);
   }
 
   const formatPrice = (val: any) => {
-      if (val === undefined || val === null || val === '--') return val;
+      if (val === undefined || val === null || val === '--' || val === '') return '--';
       const num = Number(val);
-      return isNaN(num) ? val : num.toFixed(2);
+      return isNaN(num) ? String(val) : num.toFixed(2);
   };
 
   return {
-      pair: snap?.pair || '--',
-      bias: snap?.h1Bias || 'UNKNOWN',
-      session: snap?.session || 'UNKNOWN',
-      direction: typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : 'WAIT',
-      entry: formatPrice(snap?.entry) || '--',
-      sl: formatPrice(snap?.sl) || '--',
-      tp: formatPrice(snap?.tp1) || '--',
-      rr: snap?.rr !== "--" ? snap?.rr : rr,
+      pair: snap?.pair && snap.pair !== "--" ? snap.pair : 'XAUUSD',
+      bias: snap?.h1Bias && snap.h1Bias !== "--" ? snap.h1Bias : (snap?.bias && snap.bias !== "--" ? snap.bias : '--'),
+      session: snap?.session && snap.session !== "--" ? snap.session : '--',
+      direction: (() => {
+        const d = typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : '';
+        if (d === 'LONG' || d === 'BUY') return 'BUY';
+        if (d === 'SHORT' || d === 'SELL') return 'SELL';
+        return d && d !== '--' ? d : '--';
+      })(),
+      entry: formatPrice(snap?.entry),
+      sl: formatPrice(snap?.sl),
+      tp: formatPrice(snap?.tp1),
+      rr: rr,
       validationLogSummary: snap?.validationLogSummary,
-      timeframe: snap?.timeframe,
-      marketBias: snap?.h1Bias,
+      timeframe: snap?.timeframe && snap.timeframe !== "--" ? snap.timeframe : '--',
+      marketBias: snap?.h1Bias && snap.h1Bias !== "--" ? snap.h1Bias : (snap?.bias && snap.bias !== "--" ? snap.bias : '--'),
       atrBuffer: snap?.atrBuffer50Pct || snap?.atr14 || '--',
       sweepStatus: snap?.sweepStatus || '--',
-      confirmationStatus: snap?.chochStatus || snap?.bosStatus || snap?.engulfingStatus || snap?.doubleTopBottomStatus || '--',
+      confirmationStatus: snap?.confirmationStatus || snap?.chochStatus || snap?.bosStatus || snap?.engulfingStatus || snap?.doubleTopBottomStatus || '--',
       confidence: strategy.setupSnapshot?.confidence,
       aiConfidence: strategy.setupSnapshot?.aiConfidence,
       aiReasoning: strategy.setupSnapshot?.aiReasoning,
@@ -255,6 +264,29 @@ export function buildSetup(strategy: StrategyResponse) {
 }
 
 export function buildDashboard(strategy: StrategyResponse): DashboardCard {
+  if (!strategy || !strategy.id) {
+    return {
+      id: 'unknown',
+      name: 'Unknown Strategy',
+      description: '--',
+      currentStep: '--',
+      progress: 0,
+      status: 'error',
+      validationScore: '0/0',
+      passedCount: 0,
+      rulesCount: 0,
+      pair: 'XAUUSD',
+      bias: '--',
+      session: '--',
+      direction: '--',
+      entry: '--',
+      sl: '--',
+      tp: '--',
+      rr: '--',
+      updatedAt: new Date().toISOString()
+    };
+  }
+
   const rules = buildRuleResults(strategy.id, strategy.ruleResults || {});
   const rulesCount = rules.length;
   const passedCount = rules.filter((r: any) => r.passed).length;
@@ -361,7 +393,7 @@ export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]):
       progress: 0,
       setupSnapshot: {},
       ruleResults: {},
-      updatedAt: new Date().toISOString(),
+      updatedAt: null,
       freshness: 'stale'
     };
   });
@@ -369,7 +401,13 @@ export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]):
   return defaultStrategies.map((def: any) => {
     const found = rawStrategies.find(s => s.id === def.id);
     if (found) {
-      return { ...def, ...found, name: def.name, description: def.description };
+      return { 
+        ...def, 
+        ...found, 
+        name: def.name, 
+        description: def.description,
+        updatedAt: found.updatedAt || null
+      };
     }
     return def;
   });

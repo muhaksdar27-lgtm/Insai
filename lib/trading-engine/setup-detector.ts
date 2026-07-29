@@ -130,79 +130,50 @@ export class SetupDetector {
   
   /**
    * Translates raw market data (pyData) into a strategy-specific snapshot.
-   * Recognizes: London session, Asia liquidity sweep, CHoCH, FVG, OB, S&D zone, 
-   * engulfing, double top/bottom, news filter, zone overlap.
+   * Delegates to strategy-specific detectors in StrategyRegistry.
    */
-  public translateMarketDataToSnapshot(_strategyId: string, pyData: any): Record<string, any> {
+  public translateMarketDataToSnapshot(strategyId: string, pyData: any, context?: any): Record<string, any> {
     if (!pyData || Object.keys(pyData).length === 0) {
        return { _assumptions_flagged: true, message: "No data available" };
+    }
+
+    try {
+      const { getStrategyDefinition } = require('./strategy-registry');
+      const stratDef = getStrategyDefinition(strategyId);
+      if (stratDef) {
+        const evalContext = context || {
+          symbol: pyData.symbol || 'XAUUSD',
+          timeframe: pyData.timeframe || 'M15',
+          timestamp: pyData.timestamp || new Date().toISOString()
+        };
+        const result = stratDef.extractCandidateRules(evalContext, pyData);
+        if (result && result.setupSnapshot) {
+           return {
+             _assumptions_flagged: false,
+             ...result.setupSnapshot
+           };
+        }
+      }
+    } catch (e: any) {
+       logger.warn(`Strategy snapshot extraction failed for ${strategyId}: ${e.message}`);
     }
 
     const snapshot: Record<string, any> = {
        _assumptions_flagged: false,
        pair: pyData.symbol || 'XAUUSD',
        timeframe: pyData.timeframe || 'M15',
+       session: pyData.current_session || 'London',
+       bias: pyData.trend_h1 || pyData.trend || 'neutral',
+       sweepStatus: pyData.liq_sweep_status || (pyData.liq_sweep_bull ? "Bullish Sweep" : (pyData.liq_sweep_bear ? "Bearish Sweep" : "None")),
+       confirmationStatus: pyData.confirmation_status || (pyData.choch_bull ? "Bullish CHoCH" : (pyData.choch_bear ? "Bearish CHoCH" : "Pending")),
+       zoneStatus: pyData.zone_status || (pyData.sd_zone_active ? "S&D Active" : "No Zone"),
+       newsStatus: pyData.news_status || (pyData.news_high_impact_active ? "High Impact Active" : "Clear"),
+       confluenceScore: pyData.confluence_score || 0,
+       entry: pyData.entry_price || pyData.current_price,
+       sl: pyData.sl_price,
+       tp: pyData.tp_price || pyData.tp1_price,
+       direction: pyData.signal_direction || pyData.direction || 'unknown'
     };
-
-    const getValue = (key: string, fallback: any = null) => {
-       return pyData[key] !== undefined && pyData[key] !== null ? pyData[key] : fallback;
-    };
-
-    // 1. Session
-    snapshot.session = getValue('current_session') || 'London';
-    
-    // 2. Bias (HTF Trend)
-    snapshot.bias = getValue('trend_h1') || getValue('trend') || 'neutral';
-
-    // 3. Liquidity Sweep
-    snapshot.sweepStatus = getValue('liq_sweep_status');
-    if (!snapshot.sweepStatus) {
-       const sweepBull = getValue('liq_sweep_bull');
-       const sweepBear = getValue('liq_sweep_bear');
-       if (sweepBull) snapshot.sweepStatus = "Bullish Sweep";
-       else if (sweepBear) snapshot.sweepStatus = "Bearish Sweep";
-       else snapshot.sweepStatus = "None";
-    }
-
-    // 4. Confirmation Status (CHoCH / Engulfing / Reversal)
-    snapshot.confirmationStatus = getValue('confirmation_status');
-    if (!snapshot.confirmationStatus) {
-       const chochBull = getValue('choch_bull');
-       const chochBear = getValue('choch_bear');
-       if (chochBull) snapshot.confirmationStatus = "Bullish CHoCH";
-       else if (chochBear) snapshot.confirmationStatus = "Bearish CHoCH";
-       else snapshot.confirmationStatus = "Pending";
-    }
-
-    // 5. Zone Status (OB / FVG / S&D)
-    snapshot.zoneStatus = getValue('zone_status');
-    if (!snapshot.zoneStatus) {
-       const fvg = getValue('ob_fvg_bull') || getValue('ob_fvg_bear');
-       const sdActive = getValue('sd_zone_active');
-       if (fvg) snapshot.zoneStatus = "FVG/OB Present";
-       else if (sdActive) snapshot.zoneStatus = "S&D Active";
-       else snapshot.zoneStatus = "No Zone";
-    }
-
-    // 6. News Status
-    snapshot.newsStatus = getValue('news_status');
-    if (!snapshot.newsStatus) {
-        snapshot.newsStatus = getValue('news_high_impact_active') ? "High Impact Active" : "Clear";
-    }
-
-    // 7. Confluence Score
-    snapshot.confluenceScore = getValue('confluence_score', 0);
-    
-    // 8. Prices (Entry, SL, TP)
-    snapshot.entry = getValue('entry_price') || getValue('current_price');
-    snapshot.sl = getValue('sl_price');
-    snapshot.tp = getValue('tp_price') || getValue('tp1_price');
-    
-    // 9. Direction & RR
-    snapshot.direction = getValue('signal_direction') || getValue('direction');
-    if (!snapshot.direction && snapshot.bias) {
-        snapshot.direction = snapshot.bias === 'bullish' ? 'buy' : (snapshot.bias === 'bearish' ? 'sell' : 'unknown');
-    }
 
     if (snapshot.entry && snapshot.sl && snapshot.tp) {
         const risk = Math.abs(snapshot.entry - snapshot.sl);

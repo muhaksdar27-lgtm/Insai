@@ -1,3 +1,17 @@
+export type StateName = 
+  | 'WAIT'
+  | 'SCANNING'
+  | 'STRUCTURE'
+  | 'SETUP'
+  | 'CONFIRMATION'
+  | 'VALIDATION'
+  | 'AI_VALIDATION'
+  | 'SIGNAL_READY'
+  | 'SIGNAL_SENT'
+  | 'FINISHED'
+  | 'REJECTED'
+  | 'ERROR';
+
 export type TradeStatus = 'OPEN' | 'CLOSED' | 'PENDING' | 'CANCELLED';
 export type TradeDirection = 'BUY' | 'SELL' | 'LONG' | 'SHORT';
 

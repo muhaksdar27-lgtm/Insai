@@ -75,30 +75,33 @@ function createDashboardCard(strategy: StrategyResponse, onClick: () => void, in
 export default function Dashboard() {
   const router = useRouter();
   
-  const { data: marketStatus, loading: loadingMarket, error: errorMarket } = useFetch<any>("/api/market/xauusd/latest", null);
+  const { data: marketStatus, loading: loadingMarket, error: errorMarket, refetch: refetchMarket } = useFetch<any>("/api/market/xauusd/latest", null);
   const { data: overviewStatus, loading: loadingOverview, error: errorOverview, refetch: refetchOverview } = useFetch<any>("/api/system/health", null);
-  const { data: strategies = [], loading: loadingStrategies, error: errorStrategies } = useFetch<any[]>("/api/strategies", []);
+  const { data: strategies = [], loading: loadingStrategies, error: errorStrategies, refetch: refetchStrategies } = useFetch<any[]>("/api/strategies", []);
   const { data: mcpStatus = [] } = useFetch<any[]>("/api/mcp/status", []);
-  const { data: activeSignals = [], loading: loadingSignals, error: errorSignals } = useFetch<any[]>("/api/signals/live", []);
+  const { data: activeSignals = [], loading: loadingSignals, error: errorSignals, refetch: refetchSignals } = useFetch<any[]>("/api/signals/live", []);
   const { data: newsEventsData } = useFetch<any>("/api/news/active", { active_events: [] });
   
-  const [localMarketStatus, setLocalMarketStatus] = useState<any>(null);
   const [ping, setPing] = useState(false);
 
   useEffect(() => {
-    const handleAppUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail?.type === 'MARKET_TICK' && customEvent.detail?.payload) {
-        setLocalMarketStatus(customEvent.detail.payload);
-        setPing(true);
-        setTimeout(() => setPing(false), 300);
-      }
+    const handleAppUpdate = () => {
+      setPing(true);
+      setTimeout(() => setPing(false), 300);
+      refetchMarket();
+      refetchStrategies();
+      refetchSignals();
     };
     window.addEventListener('app-update', handleAppUpdate);
-    return () => window.removeEventListener('app-update', handleAppUpdate);
-  }, []);
+    window.addEventListener('app-refetch', handleAppUpdate);
+    return () => {
+      window.removeEventListener('app-update', handleAppUpdate);
+      window.removeEventListener('app-refetch', handleAppUpdate);
+    };
+  }, [refetchMarket, refetchStrategies, refetchSignals]);
 
-  const currentMarketStatus = localMarketStatus || marketStatus;
+  const currentMarketStatus = marketStatus;
+  const currentSessionName = marketStatus?.session || "---";
   
   const newsEvents = Array.isArray(newsEventsData?.active_events) ? newsEventsData.active_events : [];
   const safeStrategies = getAllStrategiesWithFallback(Array.isArray(strategies) ? strategies : []);
@@ -107,18 +110,6 @@ export default function Dashboard() {
 
   const [selectedStrategy, setSelectedStrategy] = useState<any>(null);
   const [showSessionDrawer, setShowSessionDrawer] = useState(false);
-
-  const [sessionName, setSessionName] = useState("---");
-
-  useEffect(() => {
-    Promise.resolve().then(() => {
-      const currentHour = new Date().getUTCHours();
-      if (currentHour >= 13 && currentHour < 22) setSessionName("New York");
-      else if (currentHour >= 8 && currentHour < 16) setSessionName("London");
-      else if (currentHour >= 0 && currentHour < 9) setSessionName("Tokyo");
-      else setSessionName("Sydney");
-    });
-  }, []);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -238,7 +229,7 @@ export default function Dashboard() {
           </div>
           <div className="relative z-10">
             <div className="text-[9px] font-bold text-zinc-100 tracking-tight">
-              {sessionName}
+              {currentSessionName}
             </div>
             <div className="mt-0.5 flex items-center gap-1">
               <span className="inline-flex items-center px-1 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400">
@@ -313,7 +304,7 @@ export default function Dashboard() {
                   <AlertTriangle className="w-4 h-4 mb-2 opacity-80" />
                   <span className="font-bold">{errorStrategies}</span>
                 </div>
-              ) : strategies.length > 0 ? (
+              ) : safeStrategies.length > 0 ? (
                 safeStrategies.slice(0, 10).map((strategy: StrategyResponse, index: number) => 
                   createDashboardCard(strategy, () => setSelectedStrategy(strategy), index)
                 )
@@ -586,7 +577,7 @@ export default function Dashboard() {
                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-center shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 right-0 -mt-6 -mr-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl"></div>
                   <div className="text-[7px] text-blue-400 uppercase tracking-widest mb-1 font-bold relative z-10">Active Session</div>
-                  <div className="text-sm font-bold text-white tracking-tight relative z-10">{sessionName}</div>
+                  <div className="text-sm font-bold text-white tracking-tight relative z-10">{currentSessionName}</div>
                </div>
 
                <div>
@@ -602,7 +593,7 @@ export default function Dashboard() {
                          <span className="text-[8px] font-bold text-zinc-300 tracking-wide">{s.name}</span>
                          <div className="flex items-center gap-1.5">
                            <span className="text-[8px] text-zinc-500 font-mono font-bold">{s.range}</span>
-                           {s.name === sessionName && (
+                           {s.name === currentSessionName && (
                               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm"></span>
                            )}
                          </div>

@@ -230,53 +230,35 @@ export class AIValidationOrchestrator {
     const aiHealth = getProviderRegistry().getProviderHealth("GeminiAI");
     if (aiHealth && aiHealth.circuitBreakerStatus === "open") {
         logger.warn(`AI Service circuit breaker is open (${aiHealth.healthStatus}). Falling back to deterministic rule-based decision.`);
-        const passedCount = validatorResults.filter(v => v.status === "PASS").length;
-        const totalCount = activeRulesCount;
-        const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
         const failedCritical = validatorResults.some(v => v.isCritical && v.status === "FAIL");
-        let deterministicDecision = "WAIT";
-        if (failedCritical) {
-            deterministicDecision = "REJECTED";
-        } else {
-            deterministicDecision = "WAIT"; // Strictly safe fallback: never auto-approve when AI is offline
-        }
+        const fallbackDecision: AIDecision = failedCritical ? "REJECTED" : "AI OFFLINE";
         return {
            strategyName: strategyId,
-           decision: deterministicDecision as any,
+           decision: fallbackDecision,
            checklist: validatorResults,
-           reasoning: `AI Service Circuit Breaker Open (${aiHealth.healthStatus}). Fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
-           evidence: `AI Bypassed. Fallback used.`,
-           riskNotes: "AI Offline - Circuit Breaker",
+           reasoning: "Validated by deterministic engine.",
+           evidence: "Validated by deterministic engine.",
+           riskNotes: "AI Offline - Circuit Breaker Open",
            missingFactors: ["AI Validation"],
-           recommendedAction: (deterministicDecision as string) === "APPROVED" ? "execute" : (deterministicDecision === "REJECTED" ? "block" : "wait"),
+           recommendedAction: fallbackDecision === "REJECTED" ? "block" : "wait",
            scores: {}
         };
     }
     
     if (!this.isConfigured || !aiClient) {
        logger.warn('AI Service is not configured (Missing API Key). Falling back to deterministic rule-based decision.');
-       
-       const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-       const totalCount = activeRulesCount;
-       const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
        const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-       
-       let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
-       if (failedCritical) {
-           deterministicDecision = 'REJECTED';
-       } else {
-           deterministicDecision = 'WAIT';
-       }
+       const fallbackDecision: AIDecision = failedCritical ? 'REJECTED' : 'AI OFFLINE';
 
        return {
           strategyName: strategyId,
-          decision: deterministicDecision as AIDecision,
+          decision: fallbackDecision,
           checklist: validatorResults,
-          reasoning: `AI Service Not Configured. Deterministic fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
-          evidence: `AI Bypassed. Fallback used.`,
-          riskNotes: 'AI Offline - Fallback Active',
+          reasoning: "Validated by deterministic engine.",
+          evidence: "Validated by deterministic engine.",
+          riskNotes: 'AI Offline - Missing API Key',
           missingFactors: ['AI Validation'],
-          recommendedAction: (deterministicDecision as string) === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'wait',
           scores: {}
        };
     }
@@ -383,23 +365,18 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       const geminiHealth = getProviderRegistry().getProviderHealth('GeminiAI');
       if (geminiHealth?.circuitBreakerStatus === 'open') {
         logger.warn(`GeminiAI circuit breaker is open. Bypassing Gemini API call for ${strategyId} and using deterministic fallback.`);
-        const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-        const totalCount = activeRulesCount;
-        const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
         const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-        let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
-        if (failedCritical) deterministicDecision = 'REJECTED';
-        else deterministicDecision = 'WAIT';
+        const fallbackDecision: AIDecision = failedCritical ? 'REJECTED' : 'AI OFFLINE';
 
         const fallbackResult: ValidationPipelineResult = {
           strategyName: strategyId,
-          decision: deterministicDecision as AIDecision,
+          decision: fallbackDecision,
           checklist: validatorResults,
-          reasoning: `Gemini Circuit Breaker Open. Deterministic fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
-          evidence: `Fallback used due to active Gemini circuit breaker.`,
-          riskNotes: 'API Rate Limited - Fallback Active',
+          reasoning: "Validated by deterministic engine.",
+          evidence: "Validated by deterministic engine.",
+          riskNotes: 'AI Offline - Circuit Breaker Open',
           missingFactors: ['AI Validation'],
-          recommendedAction: (deterministicDecision as string) === 'APPROVED' ? 'allow_signal' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'wait',
           scores: {}
         };
         this.cache.set(cacheKey, fallbackResult);
@@ -454,28 +431,18 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
 
       logger.warn(`AI Validation failed: ${error.message}. Falling back to deterministic rule-based decision.`);
       
-      const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-      const totalCount = activeRulesCount;
-      const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-      
       const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-      
-      let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
-      if (failedCritical) {
-          deterministicDecision = 'REJECTED';
-      } else {
-          deterministicDecision = 'WAIT';
-      }
+      const fallbackDecision: AIDecision = failedCritical ? 'REJECTED' : 'AI OFFLINE';
 
       const fallbackRes: ValidationPipelineResult = {
          strategyName: strategyId,
-         decision: deterministicDecision as AIDecision,
+         decision: fallbackDecision,
          checklist: validatorResults,
-         reasoning: `AI Validation Error (${isQuotaExceeded ? 'Quota Exceeded' : 'General Error'}). Deterministic fallback decision: ${deterministicDecision} (Score: ${realScore}%).`,
-         evidence: `Fallback used due to AI error.`,
-         riskNotes: isQuotaExceeded ? 'API Rate Limited - Fallback Active' : 'AI Error - Fallback Active',
+         reasoning: "Validated by deterministic engine.",
+         evidence: "Validated by deterministic engine.",
+         riskNotes: isQuotaExceeded ? 'AI Offline - Quota Exceeded' : 'AI Offline - System Error',
          missingFactors: ['AI Validation'],
-         recommendedAction: (deterministicDecision as string) === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+         recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'wait',
          scores: {}
       };
 

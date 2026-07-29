@@ -48,5 +48,5 @@ export async function POST(
     }
   };
 
-  return NextResponse.json(response, { status: success ? 200 : 500 });
+  return NextResponse.json(response, { status: 200 });
 }

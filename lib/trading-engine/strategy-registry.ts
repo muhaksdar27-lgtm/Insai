@@ -1,6 +1,12 @@
 import { RuleEvaluationContext } from '@/types';
 import { MarketState } from './market-state-engine';
 
+import { detectStrategy1SMC } from './strategies/strategy-1-smc';
+import { detectStrategy2SND } from './strategies/strategy-2-snd';
+import { detectStrategy3Scalping } from './strategies/strategy-3-scalping';
+import { detectStrategy4News } from './strategies/strategy-4-news';
+import { detectStrategy5Confluence } from './strategies/strategy-5-smc-sd-confluence';
+
 export interface StrategyDefinition {
     id: string;
     name: string;
@@ -25,31 +31,9 @@ export interface StrategyDefinition {
         direction?: 'buy' | 'sell';
         candidateRules: any;
         confluenceScore?: number;
+        confirmationStatus?: string;
+        setupSnapshot?: Record<string, any>;
     };
-}
-
-function calculateConfluence(rulesObj: Record<string, any>): { score: number; isCandidateValid: boolean | 'pending' } {
-    let validCount = 0;
-    let totalCount = 0;
-    let hasCriticalInvalid = false;
-    let hasPending = false;
-
-    for (const [key, result] of Object.entries(rulesObj)) {
-        totalCount++;
-        if (result.status === 'invalid') {
-            if (key.includes('pair') || key.includes('news_filter') || key.includes('spread') || key.includes('session')) {
-                hasCriticalInvalid = true;
-            }
-        }
-        if (result.status === 'pending') hasPending = true;
-        if (result.status === 'valid') validCount++;
-    }
-
-    const score = totalCount > 0 ? (validCount / totalCount) * 100 : 0;
-    if (hasCriticalInvalid) return { score, isCandidateValid: false };
-    if (hasPending) return { score, isCandidateValid: 'pending' };
-    
-    return { score, isCandidateValid: score >= 80 };
 }
 
 export const StrategyRegistry: Record<string, StrategyDefinition> = {
@@ -61,64 +45,24 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         sessionRestriction: ['London'],
         timeframes: { bias: ['H1'], entry: ['M15'] },
         canonicalFlow: 'strategy-1-smc',
-        setupFields: ['bias', 'marketStructure', 'session', 'confirmation'],
+        setupFields: ['h1Trend', 'asiaLiquiditySweep', 'm15Choch', 'obFvgAlignment', 'londonSessionFilter', 'atr14Buffer'],
         validationRules: [
             'rule_pair_xauusd', 'rule_session_london', 'rule_h1_trend', 
             'rule_asia_liquidity_sweep', 'rule_choch_confirmation', 
             'rule_ob_fvg_entry', 'rule_atr_sl_buffer', 'rule_ai_validation'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
-        uiLabels: {},
+        uiLabels: {
+            h1Trend: 'H1 Trend',
+            asiaLiquiditySweep: 'Asia Liquidity Sweep',
+            m15Choch: 'M15 CHoCH',
+            obFvgAlignment: 'OB/FVG Alignment',
+            londonSessionFilter: 'London Session',
+            atr14Buffer: 'ATR SL Buffer'
+        },
         priority: 5,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData = {}) => {
-            const pairMatch = _context.symbol === 'XAUUSD';
-            const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
-            const sweepBull = !!pyData.liq_sweep_bull;
-            const sweepBear = !!pyData.liq_sweep_bear;
-            const chochBull = !!pyData.choch_bull;
-            const chochBear = !!pyData.choch_bear;
-            const obFvgBull = !!pyData.ob_fvg_bull;
-            const obFvgBear = !!pyData.ob_fvg_bear;
-
-            const rules = {
-                rule_pair_xauusd: { 
-                    status: pairMatch ? 'valid' : 'invalid', 
-                    evidence: { symbol: _context.symbol, required: 'XAUUSD', match: pairMatch } 
-                },
-                rule_session_london: { 
-                    status: 'valid', 
-                    evidence: { session: pyData.current_session || 'London', detail: 'London session active or overlapping' } 
-                },
-                rule_h1_trend: { 
-                    status: 'valid', 
-                    evidence: { trend: h1Trend, timeframe: 'H1', bias: h1Trend === 'bearish' ? 'BEARISH' : 'BULLISH' } 
-                },
-                rule_asia_liquidity_sweep: { 
-                    status: (sweepBull || sweepBear) ? 'valid' : 'pending', 
-                    evidence: { bullSweep: sweepBull, bearSweep: sweepBear, details: (sweepBull || sweepBear) ? 'Asia Liquidity Sweep Confirmed' : 'Asia Liquidity Sweep Monitored' } 
-                },
-                rule_choch_confirmation: { 
-                    status: (chochBull || chochBear) ? 'valid' : 'pending', 
-                    evidence: { bullChoch: chochBull, bearChoch: chochBear, details: (chochBull || chochBear) ? 'M15 CHoCH Confirmed' : 'M15 CHoCH Structural Confirmation Monitored' } 
-                },
-                rule_ob_fvg_entry: { 
-                    status: (obFvgBull || obFvgBear) ? 'valid' : 'pending', 
-                    evidence: { obFvgBull, obFvgBear, details: (obFvgBull || obFvgBear) ? 'Order Block / FVG Aligned' : 'Order Block / FVG Alignment Monitored' } 
-                },
-                rule_atr_sl_buffer: { 
-                    status: 'valid', 
-                    evidence: { atr: pyData.atr || 4.5, slBufferPips: (((pyData.atr || 4.5) * 0.5) * 10).toFixed(1) } 
-                },
-                rule_ai_validation: { 
-                    status: 'valid', 
-                    evidence: { note: 'AI Confluence Gate Ready', decision: pyData.aiDecision || 'APPROVED' } 
-                }
-            };
-            const { score, isCandidateValid } = calculateConfluence(rules);
-            let direction: 'buy' | 'sell' = (h1Trend === 'bearish' || chochBear) ? 'sell' : 'buy';
-            return { isCandidateValid, confluenceScore: score, direction, candidateRules: rules };
-        }
+        extractCandidateRules: (context, pyData = {}) => detectStrategy1SMC(context, pyData)
     },
     'strategy-2-snd': {
         id: 'strategy-2-snd',
@@ -128,56 +72,22 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         sessionRestriction: ['Any'],
         timeframes: { bias: ['D1', 'H4', 'H1'], entry: ['H1', 'M15', 'M5'] },
         canonicalFlow: 'strategy-2-snd',
-        setupFields: ['bias', 'marketStructure', 'session', 'confirmation'],
+        setupFields: ['movingAverageTrend', 'supplyDemandZone', 'candlestickEngulfing', 'spreadCheck', 'atrBuffer'],
         validationRules: [
             'rule_pair_xauusd', 'rule_ma_trend', 'rule_sd_zone_touch',
             'rule_engulfing_confirm', 'rule_spread_check', 'rule_atr_sl_buffer', 'rule_ai_validation'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
-        uiLabels: {},
+        uiLabels: {
+            movingAverageTrend: 'MA Trend Alignment',
+            supplyDemandZone: 'Supply & Demand Zone',
+            candlestickEngulfing: 'Engulfing Candlestick Trigger',
+            spreadCheck: 'Spread Gate',
+            atrBuffer: 'ATR SL Buffer'
+        },
         priority: 4,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData = {}) => {
-            const pairMatch = _context.symbol === 'XAUUSD';
-            const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
-            const sdActive = !!pyData.sd_zone_active;
-            const engulfBull = !!pyData.engulfing_bull;
-            const engulfBear = !!pyData.engulfing_bear;
-
-            const rules = {
-                rule_pair_xauusd: { 
-                    status: pairMatch ? 'valid' : 'invalid', 
-                    evidence: { symbol: _context.symbol, required: 'XAUUSD', match: pairMatch } 
-                },
-                rule_ma_trend: { 
-                    status: 'valid', 
-                    evidence: { trend: h1Trend, timeframe: 'H1/H4', detail: 'MA Alignment Valid' } 
-                },
-                rule_sd_zone_touch: { 
-                    status: sdActive ? 'valid' : 'pending', 
-                    evidence: { activeZone: sdActive, detail: sdActive ? 'Price inside Supply/Demand Zone' : 'Monitoring S&D Zone' } 
-                },
-                rule_engulfing_confirm: { 
-                    status: (engulfBull || engulfBear) ? 'valid' : 'pending', 
-                    evidence: { bullEngulf: engulfBull, bearEngulf: engulfBear, detail: 'M15/M5 Engulfing Candlestick Confirmation' } 
-                },
-                rule_spread_check: { 
-                    status: pyData.spread_acceptable !== false ? 'valid' : 'invalid', 
-                    evidence: { acceptable: pyData.spread_acceptable !== false, detail: 'Spread within acceptable thresholds' } 
-                },
-                rule_atr_sl_buffer: { 
-                    status: 'valid', 
-                    evidence: { atr: pyData.atr || 4.5, slBufferPips: (((pyData.atr || 4.5) * 0.5) * 10).toFixed(1) } 
-                },
-                rule_ai_validation: { 
-                    status: 'valid', 
-                    evidence: { note: 'AI Confluence Gate Ready', decision: pyData.aiDecision || 'APPROVED' } 
-                }
-            };
-            const { score, isCandidateValid } = calculateConfluence(rules);
-            let direction: 'buy' | 'sell' = engulfBear ? 'sell' : 'buy';
-            return { isCandidateValid, confluenceScore: score, direction, candidateRules: rules };
-        }
+        extractCandidateRules: (context, pyData = {}) => detectStrategy2SND(context, pyData)
     },
     'strategy-3-scalping': {
         id: 'strategy-3-scalping',
@@ -187,56 +97,23 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         sessionRestriction: ['Any'],
         timeframes: { bias: ['H1'], context: ['M15'], entry: ['M1'] },
         canonicalFlow: 'strategy-3-scalping',
-        setupFields: ['bias', 'marketStructure', 'session', 'confirmation'],
+        setupFields: ['h1Trend', 'm15Retracement', 'scalpLiquiditySweep', 'm1DoubleTopBottom', 'necklineBreakout', 'newsFilter'],
         validationRules: [
             'rule_h1_trend', 'rule_m15_retracement', 'rule_liquidity_sweep',
             'rule_m1_double_top_bottom', 'rule_neckline_break', 'rule_rr_min_1_3', 'rule_news_filter'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
-        uiLabels: {},
+        uiLabels: {
+            h1Trend: 'H1 Trend Alignment',
+            m15Retracement: 'M15 Retracement',
+            scalpLiquiditySweep: 'M1/M5 Scalp Sweep',
+            m1DoubleTopBottom: 'M1 Double Top/Bottom',
+            necklineBreakout: 'Neckline Break',
+            newsFilter: 'News Exclusion Gate'
+        },
         priority: 3,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData = {}) => {
-            const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
-            const sweepBull = !!pyData.liq_sweep_bull;
-            const sweepBear = !!pyData.liq_sweep_bear;
-            const doubleTop = !!pyData.double_top;
-            const doubleBottom = !!pyData.double_bottom;
-
-            const rules = {
-                rule_h1_trend: { 
-                    status: 'valid', 
-                    evidence: { trend: h1Trend, timeframe: 'H1', detail: 'H1 Trend Alignment' } 
-                },
-                rule_m15_retracement: { 
-                    status: 'valid', 
-                    evidence: { detail: 'M15 Retracement into Key Level' } 
-                },
-                rule_liquidity_sweep: { 
-                    status: (sweepBull || sweepBear) ? 'valid' : 'pending', 
-                    evidence: { bullSweep: sweepBull, bearSweep: sweepBear, detail: 'Scalp Liquidity Sweep' } 
-                },
-                rule_m1_double_top_bottom: { 
-                    status: (doubleTop || doubleBottom) ? 'valid' : 'pending', 
-                    evidence: { doubleTop, doubleBottom, detail: 'M1 Structural Pattern Formation' } 
-                },
-                rule_neckline_break: { 
-                    status: 'valid', 
-                    evidence: { detail: 'Neckline Break Confirmation' } 
-                },
-                rule_rr_min_1_3: { 
-                    status: 'valid', 
-                    evidence: { targetRR: '1:3+', detail: 'Risk/Reward Ratio Validated' } 
-                },
-                rule_news_filter: { 
-                    status: !pyData.news_high_impact_active ? 'valid' : 'invalid', 
-                    evidence: { highImpactActive: !!pyData.news_high_impact_active, detail: 'News Window Clear' } 
-                }
-            };
-            const { score, isCandidateValid } = calculateConfluence(rules);
-            let direction: 'buy' | 'sell' = doubleTop ? 'sell' : 'buy';
-            return { isCandidateValid, confluenceScore: score, direction, candidateRules: rules };
-        }
+        extractCandidateRules: (context, pyData = {}) => detectStrategy3Scalping(context, pyData)
     },
     'strategy-4-news': {
         id: 'strategy-4-news',
@@ -246,51 +123,22 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         sessionRestriction: ['News Window'],
         timeframes: { context: ['M15'], bias: ['M5'], entry: ['M1'] },
         canonicalFlow: 'strategy-4-news',
-        setupFields: ['bias', 'marketStructure', 'session', 'confirmation'],
+        setupFields: ['highImpactNewsFilter', 'spreadWideFilter', 'postNewsLiquiditySweep', 'rejectionCandleWick', 'm1BosReversal'],
         validationRules: [
             'rule_news_high_impact', 'rule_spread_wide_filter', 'rule_liquidity_sweep',
             'rule_rejection_confirmation', 'rule_bos_reversal', 'rule_ai_validation'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
-        uiLabels: {},
+        uiLabels: {
+            highImpactNewsFilter: 'High-Impact News Window',
+            spreadWideFilter: 'Post-News Spread Normalization',
+            postNewsLiquiditySweep: 'Post-News Spike Sweep',
+            rejectionCandleWick: 'Wick Rejection Candle',
+            m1BosReversal: 'M1 Reversal BOS'
+        },
         priority: 2,
         isRelevantForStates: (_states) => true,
-        extractCandidateRules: (_context, pyData = {}) => {
-            const sweepBull = !!pyData.liq_sweep_bull;
-            const sweepBear = !!pyData.liq_sweep_bear;
-            const bosBull = !!pyData.bos_bull;
-            const bosBear = !!pyData.bos_bear;
-
-            const rules = {
-                rule_news_high_impact: { 
-                    status: 'valid', 
-                    evidence: { detail: 'Post-News Reaction Window' } 
-                },
-                rule_spread_wide_filter: { 
-                    status: pyData.spread_acceptable !== false ? 'valid' : 'invalid', 
-                    evidence: { acceptable: pyData.spread_acceptable !== false, detail: 'Spread Normalization Checked' } 
-                },
-                rule_liquidity_sweep: { 
-                    status: (sweepBull || sweepBear) ? 'valid' : 'pending', 
-                    evidence: { bullSweep: sweepBull, bearSweep: sweepBear, detail: 'Post-News Spike Liquidity Sweep' } 
-                },
-                rule_rejection_confirmation: { 
-                    status: 'valid', 
-                    evidence: { detail: 'Strong Wick Rejection Candle' } 
-                },
-                rule_bos_reversal: { 
-                    status: (bosBull || bosBear) ? 'valid' : 'pending', 
-                    evidence: { bosBull, bosBear, detail: 'Structure Break in Reversal Direction' } 
-                },
-                rule_ai_validation: { 
-                    status: 'valid', 
-                    evidence: { note: 'AI Confluence Gate Ready', decision: pyData.aiDecision || 'APPROVED' } 
-                }
-            };
-            const { score, isCandidateValid } = calculateConfluence(rules);
-            let direction: 'buy' | 'sell' = sweepBull ? 'buy' : 'sell';
-            return { isCandidateValid, confluenceScore: score, direction, candidateRules: rules };
-        }
+        extractCandidateRules: (context, pyData = {}) => detectStrategy4News(context, pyData)
     },
     'strategy-5-smc-sd-confluence': {
         id: 'strategy-5-smc-sd-confluence',
@@ -300,52 +148,22 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         sessionRestriction: ['Any'],
         timeframes: { bias: ['H1', 'M15'], context: ['M15'], entry: ['M5', 'M1'] },
         canonicalFlow: 'strategy-5-smc-sd-confluence',
-        setupFields: ['bias', 'marketStructure', 'session', 'confirmation'],
+        setupFields: ['h1M15Structure', 'sdZoneOverlap2of3', 'confluenceLiquiditySweep', 'rejectionTrigger', 'minRR2plus'],
         validationRules: [
             'rule_h1_m15_structure', 'rule_zone_overlap_2_of_3', 'rule_liquidity_sweep',
             'rule_entry_trigger', 'rule_rr_gate', 'rule_ai_validation'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
-        uiLabels: {},
+        uiLabels: {
+            h1M15Structure: 'H1/M15 Structure Alignment',
+            sdZoneOverlap2of3: 'S&D / Fib Overlap (2 of 3)',
+            confluenceLiquiditySweep: 'Confluence Level Sweep',
+            rejectionTrigger: 'Rejection Trigger Candle',
+            minRR2plus: 'Min 1:2+ Risk/Reward'
+        },
         priority: 1,
         isRelevantForStates: () => true,
-        extractCandidateRules: (_context, pyData = {}) => {
-            const bosBull = !!pyData.bos_bull;
-            const bosBear = !!pyData.bos_bear;
-            const sdActive = !!pyData.sd_zone_active;
-            const sweepBull = !!pyData.liq_sweep_bull;
-            const sweepBear = !!pyData.liq_sweep_bear;
-
-            const rules = {
-                rule_h1_m15_structure: { 
-                    status: (bosBull || bosBear) ? 'valid' : 'pending', 
-                    evidence: { bosBull, bosBear, detail: 'H1/M15 Structural Alignment' } 
-                },
-                rule_zone_overlap_2_of_3: { 
-                    status: sdActive ? 'valid' : 'pending', 
-                    evidence: { activeZone: sdActive, detail: 'S&D / Fibonacci Zone Confluence Overlap' } 
-                },
-                rule_liquidity_sweep: { 
-                    status: (sweepBull || sweepBear) ? 'valid' : 'pending', 
-                    evidence: { bullSweep: sweepBull, bearSweep: sweepBear, detail: 'Liquidity Sweep at Confluence Level' } 
-                },
-                rule_entry_trigger: { 
-                    status: 'valid', 
-                    evidence: { detail: 'Trigger Candle Rejection Pattern' } 
-                },
-                rule_rr_gate: { 
-                    status: 'valid', 
-                    evidence: { minRR: '1:2+', detail: 'Risk/Reward Ratio Check Passed' } 
-                },
-                rule_ai_validation: { 
-                    status: 'valid', 
-                    evidence: { note: 'AI Confluence Gate Ready', decision: pyData.aiDecision || 'APPROVED' } 
-                }
-            };
-            const { score, isCandidateValid } = calculateConfluence(rules);
-            let direction: 'buy' | 'sell' = pyData.trend_h1 === 'bearish' ? 'sell' : 'buy';
-            return { isCandidateValid, confluenceScore: score, direction, candidateRules: rules };
-        }
+        extractCandidateRules: (context, pyData = {}) => detectStrategy5Confluence(context, pyData)
     }
 };
 

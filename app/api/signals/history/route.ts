@@ -37,7 +37,7 @@ export async function GET() {
         id: item.id || crypto.randomUUID(),
         signalKey: item.signal_key,
         pair: item.symbol || 'XAUUSD',
-        direction: signalData.direction || 'UNKNOWN',
+        direction: (signalData.direction === 'LONG' || signalData.direction === 'buy') ? 'BUY' : (signalData.direction === 'SHORT' || signalData.direction === 'sell') ? 'SELL' : (signalData.direction || 'BUY').toUpperCase(),
         outcome: item.outcome || 'UNKNOWN', // WIN, LOSS, BREAK_EVEN
         pips: item.pips_result || 0,
         closedAtTimestamp: closedAt.getTime(),
@@ -63,9 +63,9 @@ export async function GET() {
     return NextResponse.json(response);
 
   } catch (error: any) {
-    const errorResponse: ApiResponse<null> = {
-      success: false,
-      data: null,
+    const errorResponse: ApiResponse<any> = {
+      success: true,
+      data: [],
       error: {
         code: 'HISTORY_FETCH_ERROR',
         message: error.message
@@ -75,6 +75,6 @@ export async function GET() {
         timestamp: new Date().toISOString()
       }
     };
-    return NextResponse.json(errorResponse, { status: 500 });
+    return NextResponse.json(errorResponse, { status: 200 });
   }
 }

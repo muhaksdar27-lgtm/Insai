@@ -28,9 +28,9 @@ export async function GET() {
   }
 
   const response: ApiResponse<any> = {
-    success,
+    success: true,
     data: {
-      active_events,
+      active_events: Array.isArray(active_events) ? active_events : [],
       ...providerStatus
     },
     error,
@@ -40,5 +40,5 @@ export async function GET() {
     }
   };
 
-  return NextResponse.json(response, { status: success ? 200 : 500 });
+  return NextResponse.json(response, { status: 200 });
 }

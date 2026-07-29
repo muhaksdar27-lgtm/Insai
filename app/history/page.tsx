@@ -214,7 +214,7 @@ export default function History() {
             Try Again
           </button>
         </motion.div>
-      ) : history.length === 0 ? (
+      ) : !history || history.length === 0 ? (
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -320,14 +320,14 @@ export default function History() {
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
                           <span
-                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold uppercase tracking-widest border shadow-sm ${item.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold uppercase tracking-widest border shadow-sm ${item.direction === "BUY" || item.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
                           >
-                            {item.direction === "LONG" ? (
+                            {item.direction === "BUY" || item.direction === "LONG" ? (
                               <ArrowUpRight className="w-2.5 h-2.5" />
                             ) : (
                               <ArrowDownRight className="w-2.5 h-2.5" />
                             )}
-                            {item.direction}
+                            {item.direction === "LONG" ? "BUY" : item.direction === "SHORT" ? "SELL" : item.direction}
                           </span>
                           <span className="text-[8px] font-bold text-zinc-100 tracking-wide">
                             {item.pair}
@@ -419,14 +419,14 @@ export default function History() {
                   <div className="absolute top-0 right-0 -mt-6 -mr-6 w-16 h-16 bg-white/5 rounded-full blur-xl"></div>
                   <div className="flex justify-between items-center mb-1.5 relative z-10">
                     <span
-                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase border shadow-sm ${selectedHistory.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase border shadow-sm ${selectedHistory.direction === "BUY" || selectedHistory.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
                     >
-                      {selectedHistory.direction === "LONG" ? (
+                      {selectedHistory.direction === "BUY" || selectedHistory.direction === "LONG" ? (
                         <ArrowUpRight className="w-2.5 h-2.5" />
                       ) : (
                         <ArrowDownRight className="w-2.5 h-2.5" />
                       )}
-                      {selectedHistory.direction} {selectedHistory.pair}
+                      {(selectedHistory.direction === "LONG" ? "BUY" : selectedHistory.direction === "SHORT" ? "SELL" : selectedHistory.direction)} {selectedHistory.pair}
                     </span>
                     <span
                       className={`px-1.5 py-0.5 rounded text-[6px] font-bold uppercase tracking-widest border shadow-sm ${selectedHistory.outcome === "WIN" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : selectedHistory.outcome === "LOSS" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-white/5 text-zinc-400 border-white/10"}`}

@@ -238,7 +238,7 @@ export function SignalCard({ direction, entry, sl, tp1, tp2, tp3 }: { direction?
         <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[7px] font-bold border uppercase tracking-widest ${isLong ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : isShort ? "text-rose-400 bg-rose-500/10 border-rose-500/20" : "text-zinc-400 bg-zinc-500/10 border-zinc-500/20"}`}>
           {isLong && <TrendingUp className="w-3 h-3" />}
           {isShort && <TrendingDown className="w-3 h-3" />}
-          {direction || "UNKNOWN"}
+          {isLong ? "BUY" : isShort ? "SELL" : (direction || "WAIT")}
         </span>
       </div>
       <div className="grid grid-cols-3 gap-1 mb-1 text-[7px]">

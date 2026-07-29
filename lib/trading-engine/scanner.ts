@@ -51,7 +51,7 @@ export class MarketScanner {
         }
       }
     };
-    getQueueManager().streamSubscribeGroup('market_stream:XAUUSD', 'scanner-group', 'scanner-' + Math.random().toString(36).substring(7), this.marketUpdateHandler as any);
+    getQueueManager().streamSubscribeGroup('market_stream:XAUUSD', 'scanner-group', 'scanner-' + crypto.randomUUID(), this.marketUpdateHandler as any);
     
     // Initial scan
     this.scan();

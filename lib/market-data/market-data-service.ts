@@ -94,6 +94,13 @@ export class MarketDataService {
        snapshot.freshness = 'live';
     }
     
+    const currentHour = new Date().getUTCHours();
+    const session = currentHour >= 13 && currentHour < 22 ? "New York" : currentHour >= 8 && currentHour < 16 ? "London" : currentHour >= 0 && currentHour < 9 ? "Tokyo" : "Sydney";
+    snapshot.session = session;
+    if (!snapshot.bias) {
+      snapshot.bias = "NEUTRAL";
+    }
+
     const cacheEntry = {
       data: snapshot,
       expiresAt: now + this.PRICE_CACHE_TTL_MS

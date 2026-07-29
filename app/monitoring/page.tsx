@@ -392,16 +392,16 @@ export default function Monitoring() {
                                   <RuleTable rules={rulesArray} />
                               </div>
 
-                              {/* AI Validation */}
+                              {/* Validation Engine Result */}
                               {(strategy.aiDecision || setup.confidence || setup.aiConfidence || setup.aiDecision) && (
                                   <div className="flex-shrink-0 mt-2">
                                       <h4 className="text-[8px] font-bold text-zinc-400 mb-1.5 flex items-center gap-1 uppercase tracking-widest">
-                                          <Zap className="w-2.5 h-2.5 text-amber-500" /> AI Validation
+                                          <Zap className="w-2.5 h-2.5 text-amber-500" /> Validation Engine Result
                                       </h4>
                                       <div className={`p-2.5 rounded-[3px] border shadow-sm ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'bg-emerald-500/10 border-emerald-500/20' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'bg-rose-500/10 border-rose-500/20' : 'bg-blue-500/10 border-blue-500/20'}`}>
                                           <div className="flex items-center justify-between mb-1.5">
                                               <span className={`text-[9px] font-black tracking-wider uppercase ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'text-emerald-400' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'text-rose-400' : 'text-blue-400'}`}>
-                                                  Decision: {strategy.aiDecision || setup.aiDecision || 'PENDING'}
+                                                  Engine Result: {strategy.aiDecision || setup.aiDecision || 'PENDING'}
                                               </span>
                                               {(setup.confidence || setup.aiConfidence) && (
                                                   <span className="text-[8px] font-mono font-bold text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 rounded shadow-sm">
@@ -410,7 +410,7 @@ export default function Monitoring() {
                                               )}
                                           </div>
                                           <p className="text-[9px] text-zinc-300 font-medium italic opacity-80">
-                                              AI analysis complete. Check evidence drawer for deep reasoning if rejected.
+                                              Validation complete. Check evidence drawer for deep reasoning if rejected.
                                           </p>
                                       </div>
                                   </div>
@@ -500,12 +500,12 @@ export default function Monitoring() {
                         </div>
 
                         <div>
-                            <h4 className="text-[7px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">AI Reasoning (If available)</h4>
+                            <h4 className="text-[7px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Engine Reasoning</h4>
                             <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-md p-2.5 shadow-sm">
                                 {(drawerData.aiDecision || drawerSetup?.aiDecision) && (
                                     <div className="mb-3 flex flex-wrap items-center gap-2.5 border-b border-zinc-800/80 pb-1.5">
                                         <span className={`text-[10px] font-black tracking-wider uppercase ${(drawerData.aiDecision || drawerSetup?.aiDecision)?.toLowerCase() === 'approved' ? 'text-emerald-400' : (drawerData.aiDecision || drawerSetup?.aiDecision)?.toLowerCase() === 'rejected' ? 'text-rose-400' : 'text-blue-400'}`}>
-                                            Decision: {drawerData.aiDecision || drawerSetup?.aiDecision}
+                                            Engine Result: {drawerData.aiDecision || drawerSetup?.aiDecision}
                                         </span>
                                         {(drawerSetup?.confidence || drawerSetup?.aiConfidence) && (
                                               <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded shadow-sm">

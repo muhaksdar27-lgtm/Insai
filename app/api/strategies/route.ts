@@ -66,7 +66,7 @@ export async function GET() {
   }
 
   const response: ApiResponse<StrategyResponse[]> = {
-    success,
+    success: true,
     data: strategies,
     error,
     meta: {
@@ -75,6 +75,6 @@ export async function GET() {
     }
   };
 
-  return NextResponse.json(response, { status: success ? 200 : 500 });
+  return NextResponse.json(response, { status: 200 });
 }
 

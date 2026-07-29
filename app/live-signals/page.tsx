@@ -81,7 +81,7 @@ export default function LiveSignals() {
             Retry Connection
           </button>
         </motion.div>
-      ) : signals.length === 0 ? (
+      ) : !signals || signals.length === 0 ? (
           <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -117,14 +117,14 @@ export default function LiveSignals() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span
-                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold border uppercase tracking-widest ${signal.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold border uppercase tracking-widest ${signal.direction === "BUY" || signal.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
                     >
-                      {signal.direction === "LONG" ? (
+                      {signal.direction === "BUY" || signal.direction === "LONG" ? (
                         <ArrowUpRight className="w-2.5 h-2.5" />
                       ) : (
                         <ArrowDownRight className="w-2.5 h-2.5" />
                       )}
-                      {signal.direction}
+                      {signal.direction === "LONG" ? "BUY" : signal.direction === "SHORT" ? "SELL" : signal.direction}
                     </span>
                     <span className="text-[8px] font-bold text-zinc-100 tracking-wide">
                       {signal.pair}
@@ -281,14 +281,14 @@ export default function LiveSignals() {
                   <div className="absolute top-0 right-0 -mt-6 -mr-6 w-20 h-20 bg-blue-500/10 rounded-full blur-xl"></div>
                   <div className="flex justify-between items-center mb-1 relative z-10">
                     <span
-                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase border shadow-sm ${selectedSignal.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase border shadow-sm ${selectedSignal.direction === "BUY" || selectedSignal.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
                     >
-                      {selectedSignal.direction === "LONG" ? (
+                      {selectedSignal.direction === "BUY" || selectedSignal.direction === "LONG" ? (
                         <ArrowUpRight className="w-2.5 h-2.5" />
                       ) : (
                         <ArrowDownRight className="w-2.5 h-2.5" />
                       )}
-                      {selectedSignal.direction} {selectedSignal.pair}
+                      {(selectedSignal.direction === "LONG" ? "BUY" : selectedSignal.direction === "SHORT" ? "SELL" : selectedSignal.direction)} {selectedSignal.pair}
                     </span>
                     <span className="text-[6px] font-mono font-bold text-zinc-500 bg-black/40 px-1.5 py-0.5 rounded border border-white/10">
                       {selectedSignal.signalKey}

@@ -231,16 +231,11 @@ export class SupabaseService {
     }
 
     if (!signalData) {
-      signalData = {
-        signal_key: signalKey,
-        strategy_id: 'strategy-1-smc',
-        symbol: 'XAUUSD',
-        direction: 'BUY',
-        entry_price: 2650,
-        sl_price: 2645,
-        tp1_price: 2660,
-        status: finalState
-      };
+      signalData = this.memorySignalsCache.get(signalKey);
+    }
+    if (!signalData) {
+      logger.warn(`Cannot record result: signal ${signalKey} not found in DB or cache`);
+      return null;
     }
 
     signalData.status = finalState;
@@ -364,21 +359,16 @@ export class SupabaseService {
     try {
       const { getStrategyDefinition } = require('../trading-engine/strategy-registry');
       const stratDef = getStrategyDefinition(strategyId);
-      const mockPyData = {
+      const initialPyData = {
         symbol: 'XAUUSD',
         timeframe: 'M15',
-        current_session: 'London',
-        trend_h1: 'bullish',
-        atr: 4.5,
-        current_price: 2650.50,
+        atr: 0,
+        current_price: 0,
         spread_acceptable: true,
-        news_high_impact_active: false,
-        liq_sweep_status: 'Asia Liquidity Sweep Monitored',
-        confirmation_status: 'M15 CHoCH Structural Confirmation',
-        zone_status: 'Order Block / FVG Alignment'
+        news_high_impact_active: false
       };
       if (stratDef && typeof stratDef.extractCandidateRules === 'function') {
-        const res = stratDef.extractCandidateRules({ symbol: 'XAUUSD', timeframe: 'M15' }, mockPyData);
+        const res = stratDef.extractCandidateRules({ symbol: 'XAUUSD', timeframe: 'M15' }, initialPyData);
         candidateRules = res.candidateRules || {};
       }
     } catch (e) {
@@ -392,15 +382,12 @@ export class SupabaseService {
       state_name: 'SCANNING',
       state_status: 'active',
       reason: 'Scanning market...',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: null,
+      updated_at: null,
       payload_json: {
         pair: 'XAUUSD',
         timeframe: 'M15',
-        session: 'London',
-        bias: 'bullish',
-        marketBias: 'bullish',
-        marketStates: ['TRENDING', 'HIGH_VOLATILITY'],
+        marketStates: ['SCANNING'],
         ruleResults: candidateRules,
         validationSummary: 'Scanning market...'
       }

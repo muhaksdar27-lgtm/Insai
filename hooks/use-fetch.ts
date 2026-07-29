@@ -15,15 +15,16 @@ export function useFetch<T>(url: string, initialData: T) {
     if (!fetchPromise) {
       fetchPromise = fetch(url).then(async res => {
         if (res.status === 401) throw new Error("Unauthorized (401)");
-        if (!res.ok) throw new Error(`API Error: ${res.status}`);
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
           const json = await res.json();
-          if (json.success === false && json.error) {
-            throw new Error(json.error.message || "API Error");
+          if (!res.ok || json.success === false) {
+            const errMsg = json.error?.message || json.error || json.message || `API Error: ${res.status}`;
+            throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
           }
-          return json.data !== undefined ? json.data : json;
+          return json.data !== undefined && json.data !== null ? json.data : json;
         } else {
+          if (!res.ok) throw new Error(`API Error: ${res.status}`);
           return await res.text();
         }
       });
@@ -36,7 +37,9 @@ export function useFetch<T>(url: string, initialData: T) {
   }, [url]);
 
   const fetchData = useCallback(async (ignoreCache = false) => {
-    if (!ignoreCache) {
+    if (ignoreCache) {
+      cache.delete(url);
+    } else {
       const cached = cache.get(url);
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         setData(cached.data);

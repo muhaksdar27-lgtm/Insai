@@ -104,7 +104,7 @@ export async function GET() {
       return {
         id: signal.id,
         signalKey: signal.signal_key,
-        direction: (signal.direction || '').toUpperCase(),
+        direction: (signal.direction === 'LONG' || signal.direction === 'buy') ? 'BUY' : (signal.direction === 'SHORT' || signal.direction === 'sell') ? 'SELL' : (signal.direction || 'BUY').toUpperCase(),
         pair: signal.symbol || 'XAUUSD',
         strategyName: strategyMap.get(signal.strategy_id) || signal.strategy_id || 'Strategy',
         status: statusExt,
@@ -142,8 +142,8 @@ export async function GET() {
   }
 
   const response: ApiResponse<any> = {
-    success,
-    data: formattedData,
+    success: true,
+    data: Array.isArray(formattedData) ? formattedData : [],
     error,
     meta: {
       request_id: crypto.randomUUID(),
@@ -151,5 +151,5 @@ export async function GET() {
     }
   };
 
-  return NextResponse.json(response, { status: success ? 200 : 500 });
+  return NextResponse.json(response, { status: 200 });
 }

@@ -4,21 +4,76 @@ import {
   Settings as SettingsIcon,
   Activity,
   Server,
-  ShieldAlert,
   Key,
   Clock,
   CheckCircle2,
   AlertTriangle,
-  XCircle, ServerOff,
+  XCircle,
+  ServerOff,
   FileText,
   X,
   BarChart2,
   Download,
+  RotateCw,
+  Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ClientDate } from "@/components/client-date";
 import { getMcpStatusBadge, formatMcpStatus } from "@/lib/utils";
 import { useFetch } from "@/hooks/use-fetch";
+
+interface EngineCardDef {
+  id: 'backend' | 'python' | 'ai' | 'database' | 'queue' | 'redis';
+  name: string;
+  typeLabel: string;
+  description: string;
+  icon: any;
+}
+
+const ENGINE_DEFINITIONS: EngineCardDef[] = [
+  {
+    id: 'backend',
+    name: 'Backend Engine',
+    typeLabel: 'Node.js Core / Pipeline',
+    description: 'Trading Engine Core, Signal Pipeline & REST API',
+    icon: Server,
+  },
+  {
+    id: 'python',
+    name: 'Python Engine',
+    typeLabel: 'TA-Lib / Structural Scanner',
+    description: 'Order Block, FVG, BOS/CHoCH & Pattern Engine',
+    icon: Activity,
+  },
+  {
+    id: 'ai',
+    name: 'AI Engine',
+    typeLabel: 'Gemini AI / Antigravity Agent',
+    description: 'AI Signal Reasoning, Risk Audit & Deep Research',
+    icon: SettingsIcon,
+  },
+  {
+    id: 'database',
+    name: 'Database Engine',
+    typeLabel: 'Supabase / PostgreSQL',
+    description: 'Persistent Trade History, Metrics & Audit Logs',
+    icon: Server,
+  },
+  {
+    id: 'queue',
+    name: 'Queue Engine',
+    typeLabel: 'Event Bus / PubSub',
+    description: 'Asynchronous Event Pipeline & Signal Distribution',
+    icon: BarChart2,
+  },
+  {
+    id: 'redis',
+    name: 'Redis Engine',
+    typeLabel: 'Cache & Lock Broker',
+    description: 'State Deduplication, Stream Broker & Cache',
+    icon: Clock,
+  },
+];
 
 export default function Settings() {
   const { data: configStatus, loading: loadingConfig, error: errorConfig, refetch: refetchConfig } = useFetch<any>("/api/config/status", null);
@@ -33,10 +88,83 @@ export default function Settings() {
   const [logSeverity, setLogSeverity] = useState<string>("all");
   const [showHealthSnapshot, setShowHealthSnapshot] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
-
   const [logError, setLogError] = useState<string | null>(null);
 
-    const loadLogs = async () => {
+  // Engine Pings State
+  const [enginePings, setEnginePings] = useState<Record<string, {
+    status: 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'ERROR';
+    latencyMs: number;
+    lastChecked: string;
+    message: string;
+    details?: Record<string, any>;
+  }>>({});
+  const [pingingMap, setPingingMap] = useState<Record<string, boolean>>({});
+  const [pingingAll, setPingingAll] = useState<boolean>(false);
+
+  const pingEngineTarget = useCallback(async (target: string) => {
+    setPingingMap((prev) => ({ ...prev, [target]: true }));
+    try {
+      const res = await fetch(`/api/system/ping?target=${target}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setEnginePings((prev) => {
+            const next = { ...prev };
+            data.data.forEach((item: any) => {
+              next[item.engineId] = {
+                status: item.status,
+                latencyMs: item.latencyMs,
+                lastChecked: item.lastChecked,
+                message: item.message,
+                details: item.details,
+              };
+            });
+            return next;
+          });
+        }
+      }
+    } catch (e) {
+      console.error(`Error pinging engine ${target}:`, e);
+    } finally {
+      setPingingMap((prev) => ({ ...prev, [target]: false }));
+    }
+  }, []);
+
+  const pingAllEngines = useCallback(async () => {
+    setPingingAll(true);
+    try {
+      const res = await fetch(`/api/system/ping?target=all`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          const nextPings: Record<string, any> = {};
+          data.data.forEach((item: any) => {
+            nextPings[item.engineId] = {
+              status: item.status,
+              latencyMs: item.latencyMs,
+              lastChecked: item.lastChecked,
+              message: item.message,
+              details: item.details,
+            };
+          });
+          setEnginePings(nextPings);
+        }
+      }
+    } catch (e) {
+      console.error("Error pinging all engines:", e);
+    } finally {
+      setPingingAll(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      pingAllEngines();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [pingAllEngines]);
+
+  const loadLogs = async () => {
     setShowLogs(true);
     setLogError(null);
     try {
@@ -88,63 +216,172 @@ export default function Settings() {
     document.body.removeChild(link);
   };
 
-
-
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "ONLINE":
-        return <CheckCircle2 className="w-3 h-3" />;
-      case "RATE LIMITED":
+        return <CheckCircle2 className="w-3 h-3 text-emerald-400" />;
       case "DEGRADED":
-        return <AlertTriangle className="w-3 h-3" />;
-      case "UNAVAILABLE":
-        return <XCircle className="w-3 h-3" />;
+      case "RATE LIMITED":
+        return <AlertTriangle className="w-3 h-3 text-amber-400" />;
       case "OFFLINE":
-        return <ServerOff className="w-3 h-3" />;
-      case "NOT CONFIGURED":
-        return <ShieldAlert className="w-3 h-3" />;
+        return <ServerOff className="w-3 h-3 text-zinc-400" />;
+      case "ERROR":
+      case "UNAVAILABLE":
+        return <XCircle className="w-3 h-3 text-rose-400" />;
       default:
-        return <Clock className="w-3 h-3" />;
+        return <Clock className="w-3 h-3 text-zinc-500" />;
+    }
+  };
+
+  const getEngineStatusBadge = (status?: string) => {
+    const s = status?.toUpperCase() || 'OFFLINE';
+    switch (s) {
+      case 'ONLINE':
+        return 'border-emerald-500/50 text-emerald-400 bg-emerald-500/10 shadow-[0_0_12px_rgba(16,185,129,0.15)]';
+      case 'DEGRADED':
+        return 'border-amber-500/50 text-amber-400 bg-amber-500/10 shadow-[0_0_12px_rgba(245,158,11,0.15)]';
+      case 'ERROR':
+        return 'border-rose-500/50 text-rose-400 bg-rose-500/10 shadow-[0_0_12px_rgba(244,63,94,0.15)]';
+      case 'OFFLINE':
+      default:
+        return 'border-zinc-700 text-zinc-400 bg-zinc-900 shadow-sm';
     }
   };
 
   const categories = [
     "All",
-    ...Array.from(new Set(mcpStatus.map((m) => m.category))),
+    ...Array.from(new Set((mcpStatus || []).map((m) => m.category))),
   ].filter(Boolean);
   const filteredMcps =
     selectedCategory === "All"
-      ? mcpStatus
-      : mcpStatus.filter((m) => m.category === selectedCategory);
+      ? (mcpStatus || [])
+      : (mcpStatus || []).filter((m) => m.category === selectedCategory);
 
   return (
-    <div className="space-y-1.5 relative h-full">
-      <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
+    <div className="space-y-4 relative h-full pb-10">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10 pb-3 gap-3">
         <div>
-          <h2 className="text-[8px] font-bold text-white flex items-center gap-2 uppercase tracking-widest">
-            <div className="p-0.5 rounded-[3px] bg-white/5 border border-white/10 shadow-sm relative overflow-hidden">
+          <h2 className="text-[11px] font-bold text-white flex items-center gap-2 uppercase tracking-widest">
+            <div className="p-1 rounded bg-white/5 border border-white/10 shadow-sm relative overflow-hidden">
                 <div className="absolute inset-0 bg-white/5 blur-xl"></div>
-                <SettingsIcon className="w-3 h-3 text-zinc-300 relative z-10" />
+                <SettingsIcon className="w-3.5 h-3.5 text-zinc-300 relative z-10" />
             </div>
-            Settings & Observability
+            Settings & Engine Observability
           </h2>
-          <p className="text-[9px] text-zinc-400 mt-1 tracking-wide font-medium">
-            Konfigurasi dan monitoring sistem menyeluruh
+          <p className="text-[10px] text-zinc-400 mt-1 tracking-wide font-medium">
+            Dynamic real-time health verification & system diagnostics
           </p>
+        </div>
+        <button
+          onClick={pingAllEngines}
+          disabled={pingingAll}
+          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-400 rounded-lg text-[9px] font-bold tracking-widest uppercase transition-all shadow-sm shrink-0 disabled:opacity-50"
+        >
+          <RotateCw className={`w-3.5 h-3.5 ${pingingAll ? 'animate-spin' : ''}`} />
+          {pingingAll ? 'Verifying All Engines...' : 'Ping All Engines'}
+        </button>
+      </div>
+
+      {/* Engine Cards Section (Dynamic Health Check) */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[9px] font-bold text-white uppercase tracking-widest flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            Engine Diagnostics Cards ({ENGINE_DEFINITIONS.length})
+          </h3>
+          <span className="text-[8px] text-zinc-400 font-mono">Real live pings — No static badges</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {ENGINE_DEFINITIONS.map((def) => {
+            const Icon = def.icon;
+            const pingInfo = enginePings[def.id];
+            const isPinging = pingingMap[def.id] || pingingAll;
+            const status = pingInfo?.status || 'OFFLINE';
+
+            return (
+              <div
+                key={def.id}
+                className="bg-black/40 border border-white/10 rounded-lg p-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden flex flex-col justify-between gap-3 group hover:border-white/20 transition-all"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div className="space-y-2 relative z-10">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-md bg-white/5 border border-white/10">
+                        <Icon className="w-4 h-4 text-blue-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-[10px] font-bold text-white tracking-wide">{def.name}</h4>
+                        <span className="text-[7px] text-zinc-400 uppercase tracking-widest font-mono font-bold">{def.typeLabel}</span>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border transition-all ${getEngineStatusBadge(status)}`}
+                    >
+                      {getStatusIcon(status)}
+                      {status}
+                    </span>
+                  </div>
+
+                  <p className="text-[9px] text-zinc-400 leading-snug font-medium">
+                    {def.description}
+                  </p>
+
+                  <div className="bg-white/5 rounded-md p-2 border border-white/10 space-y-1 text-[8px] font-mono">
+                    <div className="flex justify-between items-center text-zinc-400">
+                      <span>Ping Latency:</span>
+                      <span className={`font-bold ${pingInfo?.latencyMs !== undefined && pingInfo.latencyMs < 150 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {pingInfo?.latencyMs !== undefined ? `${pingInfo.latencyMs} ms` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-zinc-400">
+                      <span>Last Verified:</span>
+                      <span className="text-zinc-300 font-bold">
+                        {pingInfo?.lastChecked ? (
+                          <ClientDate date={pingInfo.lastChecked} format="toLocaleTimeString" />
+                        ) : (
+                          'Never'
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {pingInfo?.message && (
+                    <div className="text-[8px] text-zinc-300 bg-black/60 p-2 rounded border border-white/10 italic leading-normal line-clamp-2">
+                      {pingInfo.message}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => pingEngineTarget(def.id)}
+                  disabled={isPinging}
+                  className="w-full py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-md text-[8px] font-bold tracking-widest uppercase transition-colors flex items-center justify-center gap-1.5 shadow-sm relative z-10 disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3 h-3 ${isPinging ? 'animate-spin' : ''}`} />
+                  {isPinging ? `Pinging ${def.name}...` : `Ping ${def.name}`}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pb-10">
+      {/* Observability Dashboards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
         {/* Runtime Health */}
         <div className="bg-black/40 border border-white/10 rounded-md p-2.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl"></div>
           <h3 className="text-[8px] font-bold text-white mb-2 uppercase tracking-widest flex items-center gap-1.5 relative z-10">
-            <Activity className="w-3 h-3 text-blue-400" /> Runtime Health
+            <Activity className="w-3 h-3 text-blue-400" /> Runtime Health Services
           </h3>
           <div className="space-y-2 relative z-10">
             {loadingHealth ? (
               <div className="text-[11px] text-zinc-500 flex flex-col gap-2">
-                <div className="h-8 bg-white/5 animate-pulse rounded-xl w-full"></div>
                 <div className="h-8 bg-white/5 animate-pulse rounded-xl w-full"></div>
                 <div className="h-8 bg-white/5 animate-pulse rounded-xl w-full"></div>
               </div>
@@ -161,27 +398,6 @@ export default function Settings() {
                 >
                   <div className="flex justify-between items-center text-[10px]" title={service.message}>
                     <span className="text-zinc-300 flex items-center gap-2">
-                      {service.serviceName === "Supabase" && (
-                        <Server className="w-4 h-4 text-zinc-400" />
-                      )}
-                      {service.serviceName === "MarketData" && (
-                        <Activity className="w-4 h-4 text-zinc-400" />
-                      )}
-                      {service.serviceName === "EconomicCalendar" && (
-                        <BarChart2 className="w-4 h-4 text-zinc-400" />
-                      )}
-                      {service.serviceName === "GeminiAI" && (
-                        <SettingsIcon className="w-4 h-4 text-zinc-400" />
-                      )}
-                      {service.serviceName === "TelegramBot" && (
-                        <SettingsIcon className="w-4 h-4 text-zinc-400" />
-                      )}
-                      {service.serviceName === "RuleEngine" && (
-                        <ShieldAlert className="w-4 h-4 text-zinc-400" />
-                      )}
-                      {service.serviceName === "PythonEngine" && (
-                        <Server className="w-4 h-4 text-zinc-400" />
-                      )}
                       <span className="font-bold tracking-wide">{service.serviceName}</span>
                     </span>
                     <span
@@ -191,7 +407,7 @@ export default function Settings() {
                     </span>
                   </div>
                   {service.status !== 'ONLINE' && service.message && (
-                    <span className="text-[10px] text-zinc-500 mt-2 pl-6 line-clamp-2 italic">
+                    <span className="text-[9px] text-zinc-500 mt-1 line-clamp-2 italic">
                       Reason: {service.message}
                     </span>
                   )}
@@ -205,8 +421,7 @@ export default function Settings() {
 
             <div className="flex justify-between items-center text-[10px] py-2 border-t border-white/10 mt-1">
               <span className="text-zinc-400 flex items-center gap-1.5 font-bold uppercase tracking-widest">
-                <AlertTriangle className="w-3 h-3 text-amber-500" /> Recent
-                Errors
+                <AlertTriangle className="w-3 h-3 text-amber-500" /> Recent Errors
               </span>
               <span className="text-zinc-400 text-[8px] bg-white/5 px-2 py-0.5 rounded border border-white/10 font-mono font-bold shadow-sm">
                 {errorsData?.count24h ?? 0} in last 24h
@@ -235,7 +450,7 @@ export default function Settings() {
           <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl"></div>
           <div className="flex items-center justify-between mb-3 relative z-10">
             <h3 className="text-[8px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
-              <Key className="w-3 h-3 text-purple-400" /> Config & API Keys
+              <Key className="w-3 h-3 text-purple-400" /> Config & Environment Keys
             </h3>
             {configStatus?.lastChecked && (
               <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-widest flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/10 shadow-sm">
@@ -256,24 +471,22 @@ export default function Settings() {
                 <button onClick={refetchConfig} className="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl font-bold tracking-widest uppercase transition-colors">Retry Connection</button>
               </div>
             ) : configStatus?.env ? (
-              <>
-                <div className="space-y-2">
-                  {Object.entries(configStatus.env).map(([key, value]) => (
-                    <div key={key} className="flex flex-col gap-1.5 pb-2 border-b border-white/10 last:border-0 last:pb-0">
-                      <div className="flex justify-between items-center">
-                        <label className="text-zinc-300 capitalize text-[8px] font-bold tracking-widest">
-                          {key.replace(/_/g, " ")}
-                        </label>
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[6px] uppercase tracking-widest font-bold border shadow-sm ${value === "configured" || value === "online" ? "border-blue-500/30 text-blue-400 bg-blue-500/10" : value === "offline" || value === "error" ? "border-rose-500/30 text-rose-400 bg-rose-500/10" : "border-white/10 text-zinc-400 bg-white/5"}`}
-                        >
-                          {String(value)}
-                        </span>
-                      </div>
+              <div className="space-y-2">
+                {Object.entries(configStatus.env).map(([key, value]) => (
+                  <div key={key} className="flex flex-col gap-1.5 pb-2 border-b border-white/10 last:border-0 last:pb-0">
+                    <div className="flex justify-between items-center">
+                      <label className="text-zinc-300 capitalize text-[8px] font-bold tracking-widest">
+                        {key.replace(/_/g, " ")}
+                      </label>
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[6px] uppercase tracking-widest font-bold border shadow-sm ${value === "configured" || value === "online" ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : value === "offline" || value === "error" ? "border-rose-500/30 text-rose-400 bg-rose-500/10" : "border-white/10 text-zinc-400 bg-white/5"}`}
+                      >
+                        {String(value)}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </>
+                  </div>
+                ))}
+              </div>
             ) : (
               <div className="text-[11px] text-zinc-500 text-center py-4">
                 Loading config status...
@@ -291,7 +504,6 @@ export default function Settings() {
           <div className="space-y-2 relative z-10">
             {loadingMetrics ? (
               <div className="text-[11px] text-zinc-500 flex flex-col gap-2">
-                <div className="h-8 bg-white/5 animate-pulse rounded-xl w-full"></div>
                 <div className="h-8 bg-white/5 animate-pulse rounded-xl w-full"></div>
                 <div className="h-8 bg-white/5 animate-pulse rounded-xl w-full"></div>
               </div>
@@ -333,7 +545,7 @@ export default function Settings() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-[10px] py-2">
-                  <span className="text-zinc-300 font-bold tracking-wide">Notification Delivery</span>
+                  <span className="text-zinc-300 font-bold tracking-wide font-medium">Notification Delivery</span>
                   <span className="font-mono font-black text-emerald-400 text-[10px]">
                     {(metricsData.notificationDeliveryRate * 100).toFixed(1)}%
                   </span>
@@ -387,7 +599,7 @@ export default function Settings() {
                 <span className="text-center font-bold tracking-wide">{errorMcp}</span>
                 <button onClick={refetchMcp} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg font-bold tracking-widest uppercase transition-colors">Retry</button>
               </div>
-            ) : mcpStatus.length > 0 ? (
+            ) : (mcpStatus || []).length > 0 ? (
               filteredMcps.map((mcp) => (
                 <div
                   key={mcp.name}
@@ -426,7 +638,7 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Detail Drawer (Conditional Render) */}
+      {/* Detail Drawer */}
       {selectedMcp && (
         <div
           className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-md"
@@ -623,22 +835,6 @@ export default function Settings() {
                       </span>
                       <span className="text-zinc-300 leading-relaxed font-medium">
                         {log.message}
-                        {Object.keys(log).filter(
-                          (k) => !["timestamp", "level", "message"].includes(k),
-                        ).length > 0 && (
-                          <span className="block mt-1.5 text-zinc-500 bg-white/5 p-2 rounded-lg border border-white/5">
-                            {JSON.stringify(
-                              Object.fromEntries(
-                                Object.entries(log).filter(
-                                  ([k]) =>
-                                    !["timestamp", "level", "message"].includes(
-                                      k,
-                                    ),
-                                ),
-                              ),
-                            )}
-                          </span>
-                        )}
                       </span>
                     </div>
                   ))}
@@ -648,6 +844,7 @@ export default function Settings() {
           </div>
         </div>
       )}
+
       {/* Health Snapshot Drawer */}
       {showHealthSnapshot && (
         <div

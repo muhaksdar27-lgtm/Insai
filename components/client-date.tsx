@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 
 const emptySubscribe = () => () => {};
 
-export function ClientDate({ date, format = 'toLocaleString' }: { date: string | number, format?: 'toLocaleString' | 'toLocaleTimeString' | 'toLocaleDateString' }) {
+export function ClientDate({ date, format = 'toLocaleString' }: { date?: string | number | null, format?: 'toLocaleString' | 'toLocaleTimeString' | 'toLocaleDateString' }) {
   const str = useSyncExternalStore(
     emptySubscribe,
     () => {
