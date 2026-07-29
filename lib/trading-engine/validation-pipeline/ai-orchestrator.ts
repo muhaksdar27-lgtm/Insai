@@ -237,12 +237,8 @@ export class AIValidationOrchestrator {
         let deterministicDecision = "WAIT";
         if (failedCritical) {
             deterministicDecision = "REJECTED";
-        } else if (realScore >= 70) {
-            deterministicDecision = "APPROVED";
-        } else if (realScore >= 40) {
-            deterministicDecision = "WAIT";
         } else {
-            deterministicDecision = "REJECTED";
+            deterministicDecision = "WAIT"; // Strictly safe fallback: never auto-approve when AI is offline
         }
         return {
            strategyName: strategyId,
@@ -252,7 +248,7 @@ export class AIValidationOrchestrator {
            evidence: `AI Bypassed. Fallback used.`,
            riskNotes: "AI Offline - Circuit Breaker",
            missingFactors: ["AI Validation"],
-           recommendedAction: deterministicDecision === "APPROVED" ? "execute" : (deterministicDecision === "REJECTED" ? "block" : "wait"),
+           recommendedAction: (deterministicDecision as string) === "APPROVED" ? "execute" : (deterministicDecision === "REJECTED" ? "block" : "wait"),
            scores: {}
         };
     }
@@ -268,12 +264,8 @@ export class AIValidationOrchestrator {
        let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
        if (failedCritical) {
            deterministicDecision = 'REJECTED';
-       } else if (realScore >= 70) {
-           deterministicDecision = 'APPROVED';
-       } else if (realScore >= 40) {
-           deterministicDecision = 'WAIT';
        } else {
-           deterministicDecision = 'REJECTED';
+           deterministicDecision = 'WAIT';
        }
 
        return {
@@ -284,7 +276,7 @@ export class AIValidationOrchestrator {
           evidence: `AI Bypassed. Fallback used.`,
           riskNotes: 'AI Offline - Fallback Active',
           missingFactors: ['AI Validation'],
-          recommendedAction: deterministicDecision === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+          recommendedAction: (deterministicDecision as string) === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
           scores: {}
        };
     }
@@ -397,9 +389,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
         let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
         if (failedCritical) deterministicDecision = 'REJECTED';
-        else if (realScore >= 70) deterministicDecision = 'APPROVED';
-        else if (realScore >= 40) deterministicDecision = 'WAIT';
-        else deterministicDecision = 'REJECTED';
+        else deterministicDecision = 'WAIT';
 
         const fallbackResult: ValidationPipelineResult = {
           strategyName: strategyId,
@@ -409,7 +399,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
           evidence: `Fallback used due to active Gemini circuit breaker.`,
           riskNotes: 'API Rate Limited - Fallback Active',
           missingFactors: ['AI Validation'],
-          recommendedAction: deterministicDecision === 'APPROVED' ? 'allow_signal' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+          recommendedAction: (deterministicDecision as string) === 'APPROVED' ? 'allow_signal' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
           scores: {}
         };
         this.cache.set(cacheKey, fallbackResult);
@@ -473,12 +463,8 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       let deterministicDecision: 'APPROVED' | 'REJECTED' | 'WAIT' = 'WAIT';
       if (failedCritical) {
           deterministicDecision = 'REJECTED';
-      } else if (realScore >= 70) {
-          deterministicDecision = 'APPROVED';
-      } else if (realScore >= 40) {
-          deterministicDecision = 'WAIT';
       } else {
-          deterministicDecision = 'REJECTED';
+          deterministicDecision = 'WAIT';
       }
 
       const fallbackRes: ValidationPipelineResult = {
@@ -489,7 +475,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
          evidence: `Fallback used due to AI error.`,
          riskNotes: isQuotaExceeded ? 'API Rate Limited - Fallback Active' : 'AI Error - Fallback Active',
          missingFactors: ['AI Validation'],
-         recommendedAction: deterministicDecision === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
+         recommendedAction: (deterministicDecision as string) === 'APPROVED' ? 'execute' : (deterministicDecision === 'REJECTED' ? 'block' : 'wait'),
          scores: {}
       };
 

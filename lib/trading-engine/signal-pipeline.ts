@@ -166,27 +166,30 @@ export class SignalPipeline {
     
     logger.info(`Sending notification for APPROVED signal: ${setup.id} on strategy ${setup.sourceStrategy}`);
     
-    const chartData = marketContext?.candles?.slice(-50).map((c: any) => c.close) || [];
-    const checklistData = (setup as any).aiValidation?.checklist || [];
-    const reasonText = (setup as any).aiValidation?.reasoning || 'Passed Quality Gate & AI Validation';
-    
+    const tpArray = [
+      setup.tpPrice || (setup as any).tp1Price || 0,
+      (setup as any).tp2Price || 0,
+      (setup as any).tp3Price || 0
+    ].filter((p: number) => typeof p === 'number' && p > 0);
+
+    const dirUpper = (setup.direction || '').toUpperCase();
+    const finalDir: 'BUY' | 'SELL' = (dirUpper === 'BUY' || dirUpper === 'LONG') ? 'BUY' : 'SELL';
+
     // Use NotificationEngine
     notificationEngine.notifyNewSignal({
        signal_key: setup.id,
        correlationId: crypto.randomUUID(),
        strategyName: setup.sourceStrategy,
        symbol: setup.symbol,
-       direction: setup.direction === 'buy' || (setup.direction as string) === 'LONG' ? 'LONG' : 'SHORT',
+       timeframe: setup.timeframe || 'M15',
+       direction: finalDir,
        entry: setup.entryPrice || 0,
        sl: setup.slPrice || 0,
-       tp: [setup.tpPrice || 0],
-       checklist: checklistData,
-       reason: reasonText,
+       tp: tpArray.length > 0 ? tpArray : [setup.tpPrice || 0],
        timestamp: new Date().toISOString(),
        status: 'queued',
        qualityGatePassed: true,
-       aiDecision: 'APPROVED',
-       chartData
+       aiDecision: 'APPROVED'
     }).then(() => {
         metricsEngine.recordNotification(true);
     }).catch(() => {

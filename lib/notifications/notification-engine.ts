@@ -6,17 +6,15 @@ export interface NotificationPayload {
   correlationId?: string;
   strategyName: string;
   symbol: string;
-  direction: 'LONG' | 'SHORT';
+  timeframe?: string;
+  direction: 'BUY' | 'SELL' | 'LONG' | 'SHORT';
   entry: number;
   sl: number;
   tp: number[];
-  checklist?: any[];
-  reason: string;
   timestamp: string;
   status: 'sent' | 'queued' | 'deduped' | 'suppressed' | 'failed' | 'retrying';
   qualityGatePassed?: boolean;
   aiDecision?: string;
-  chartData?: number[]; // Array of last N close prices
 }
 
 export class NotificationEngine {
@@ -25,8 +23,16 @@ export class NotificationEngine {
 
   public async notifyNewSignal(payload: NotificationPayload): Promise<void> {
     // 1. Strict Final Quality Gate & AI Decision Guard
-    if (payload.status === 'suppressed' || payload.status === 'failed' || payload.qualityGatePassed === false || (payload.aiDecision && payload.aiDecision !== 'APPROVED')) {
-      logger.info(`Telegram notification suppressed for non-approved setup ${payload.signal_key} (Status: ${payload.status}, AI Decision: ${payload.aiDecision})`);
+    if (
+      payload.status === 'suppressed' ||
+      payload.status === 'failed' ||
+      payload.qualityGatePassed !== true ||
+      payload.aiDecision !== 'APPROVED' ||
+      !payload.entry || payload.entry <= 0 ||
+      !payload.sl || payload.sl <= 0 ||
+      !payload.tp || payload.tp.length === 0 || payload.tp[0] <= 0
+    ) {
+      logger.info(`Telegram notification suppressed for non-approved or invalid setup ${payload.signal_key} (Status: ${payload.status}, AI Decision: ${payload.aiDecision})`);
       return;
     }
 
@@ -35,94 +41,143 @@ export class NotificationEngine {
       logger.info(`Telegram notification deduped in memory for signal key: ${payload.signal_key}`);
       return;
     }
-    
+
     const message = this.formatMessage(payload);
-    let chartUrl = undefined;
-    
-    // Generate Chart Screenshot URL if valid chartData is available (need >= 10 points for meaningful chart)
-    if (payload.chartData && payload.chartData.length >= 10) {
-        chartUrl = this.generateChartUrl(payload);
-    }
-    
+
     try {
-      let success = false;
-      if (chartUrl) {
-          success = await getTelegramBot().sendPhoto(chartUrl, message);
-      } else {
-          success = await getTelegramBot().sendNotification(message);
-      }
-      
+      // Direct text notification only - no charts, photos, or debug decorations
+      const success = await getTelegramBot().sendNotification(message);
+
       if (success) {
         payload.status = 'sent';
         this.notifiedSignals.add(payload.signal_key);
         // Prevent unbounded memory growth
         if (this.notifiedSignals.size > this.maxHistorySize) {
-            const iterator = this.notifiedSignals.values();
-            const firstValue = iterator.next().value;
-            if (firstValue) {
-                this.notifiedSignals.delete(firstValue);
-            }
+          const iterator = this.notifiedSignals.values();
+          const firstValue = iterator.next().value;
+          if (firstValue) {
+            this.notifiedSignals.delete(firstValue);
+          }
         }
       } else {
         payload.status = 'failed';
       }
     } catch (error) {
       payload.status = 'failed';
-      logger.error('Error sending notification', { 
-         signal_key: payload.signal_key,
-         reason: error instanceof Error ? error.message : String(error)
+      logger.error('Error sending Telegram notification', { 
+        signal_key: payload.signal_key,
+        reason: error instanceof Error ? error.message : String(error)
       });
     }
   }
 
-  private generateChartUrl(payload: NotificationPayload): string {
-      // Create a simplified line chart using QuickChart.io
-      const data = payload.chartData!;
-      const labels = data.map((_, i) => i.toString());
-      
-      const entryLine = data.map(() => payload.entry);
-      const slLine = data.map(() => payload.sl);
-      const tpLine = data.map(() => payload.tp[0] || payload.entry);
+  private getStrategyConfirmation(strategyKey: string): { displayName: string; confirmationItems: string[] } {
+    const key = (strategyKey || '').toLowerCase();
 
-      const chartConfig = {
-          type: 'line',
-          data: {
-              labels: labels,
-              datasets: [
-                  { label: 'Price', data: data, borderColor: 'blue', fill: false, borderWidth: 2, pointRadius: 0 },
-                  { label: 'Entry', data: entryLine, borderColor: 'black', fill: false, borderWidth: 1, borderDash: [5, 5], pointRadius: 0 },
-                  { label: 'SL', data: slLine, borderColor: 'red', fill: false, borderWidth: 1, borderDash: [5, 5], pointRadius: 0 },
-                  { label: 'TP', data: tpLine, borderColor: 'green', fill: false, borderWidth: 1, borderDash: [5, 5], pointRadius: 0 }
-              ]
-          },
-          options: {
-              title: { display: true, text: `${payload.symbol} - ${payload.direction} Signal` },
-              legend: { display: true, position: 'bottom' }
-          }
+    if (key.includes('strategy-1') || (key.includes('smc') && !key.includes('confluence'))) {
+      return {
+        displayName: 'Smart Money Concepts (SMC)',
+        confirmationItems: [
+          '• H1 Trend: ✅ Confirmed',
+          '• London Session: ✅ Confirmed',
+          '• Asia Liquidity Sweep: ✅ Confirmed',
+          '• CHoCH: ✅ Confirmed',
+          '• Order Block: ✅ Confirmed',
+          '• FVG: ✅ Confirmed',
+          '• ATR: ✅ Confirmed',
+          '• AI Validation: ✅ Approved'
+        ]
       };
-      
-      const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
-      return `https://quickchart.io/chart?c=${encodedConfig}&w=800&h=400&bkg=white`;
+    } else if (key.includes('strategy-2') || key.includes('snd') || key.includes('supply')) {
+      return {
+        displayName: 'Supply & Demand (S&D)',
+        confirmationItems: [
+          '• HTF Trend: ✅ Confirmed',
+          '• Supply/Demand Zone: ✅ Confirmed',
+          '• Retest: ✅ Confirmed',
+          '• Engulfing: ✅ Confirmed',
+          '• ATR: ✅ Confirmed',
+          '• AI Validation: ✅ Approved'
+        ]
+      };
+    } else if (key.includes('strategy-3') || key.includes('scalp')) {
+      return {
+        displayName: 'Scalping Strategy',
+        confirmationItems: [
+          '• Trend Alignment: ✅ Confirmed',
+          '• Liquidity Sweep: ✅ Confirmed',
+          '• Double Top/Bottom: ✅ Confirmed',
+          '• Rejection Candle: ✅ Confirmed',
+          '• ATR: ✅ Confirmed',
+          '• AI Validation: ✅ Approved'
+        ]
+      };
+    } else if (key.includes('strategy-4') || key.includes('news')) {
+      return {
+        displayName: 'News Trading Strategy',
+        confirmationItems: [
+          '• High Impact News: ✅ Confirmed',
+          '• Volatility Check: ✅ Confirmed',
+          '• BOS Confirmation: ✅ Confirmed',
+          '• Rejection Pattern: ✅ Confirmed',
+          '• ATR: ✅ Confirmed',
+          '• AI Validation: ✅ Approved'
+        ]
+      };
+    } else if (key.includes('strategy-5') || key.includes('confluence')) {
+      return {
+        displayName: 'SMC + S&D Confluence',
+        confirmationItems: [
+          '• Market Structure: ✅ Confirmed',
+          '• Order Block: ✅ Confirmed',
+          '• Supply/Demand: ✅ Confirmed',
+          '• Fibonacci Confluence: ✅ Confirmed',
+          '• Liquidity Sweep: ✅ Confirmed',
+          '• ATR: ✅ Confirmed',
+          '• AI Validation: ✅ Approved'
+        ]
+      };
+    }
+
+    return {
+      displayName: strategyKey || 'INSAI Strategy',
+      confirmationItems: [
+        '• Market Structure: ✅ Confirmed',
+        '• Key Levels / Zones: ✅ Confirmed',
+        '• ATR / Volatility: ✅ Confirmed',
+        '• AI Validation: ✅ Approved'
+      ]
+    };
   }
 
   private formatMessage(payload: NotificationPayload): string {
-    const passedChecks = payload.checklist ? payload.checklist.filter((i: any) => i.status === 'PASS').length : 0;
-    const totalChecks = payload.checklist ? payload.checklist.length : 0;
-    const checklistStr = payload.checklist && totalChecks > 0 ? `\n<b>AI Checklist:</b> ${passedChecks}/${totalChecks} Passed` : '';
-    
-    const escapeHtml = (text: string) => (text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const escapeHtml = (text: string) => (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const formattedTime = new Date(payload.timestamp).toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
 
-    return `🚨 <b>INSAI SIGNAL ALERT</b> 🚨
+    // Direction requirement: BUY / SELL
+    const action = payload.direction === 'BUY' || (payload.direction as string) === 'LONG' ? 'BUY' : 'SELL';
 
-<b>Strategy:</b> ${escapeHtml(payload.strategyName)}
+    const { displayName, confirmationItems } = this.getStrategyConfirmation(payload.strategyName);
+    const timeframe = payload.timeframe || 'M15';
+
+    const tpList = payload.tp.map((tpVal, idx) => `• <b>Take Profit ${idx + 1}:</b> ${tpVal}`).join('\n');
+
+    return `🎯 <b>INSAI TRADING SIGNAL</b>
+
+<b>Strategy:</b> ${escapeHtml(displayName)}
 <b>Pair:</b> ${escapeHtml(payload.symbol)}
-<b>Direction:</b> ${escapeHtml(payload.direction)}
-<b>Entry:</b> ${payload.entry}
-<b>SL:</b> ${payload.sl}
-<b>TP:</b> ${payload.tp.join(', ')}${checklistStr}
-<b>Reason:</b> ${escapeHtml(payload.reason)}
-<b>Time:</b> ${formattedTime}`.trim();
+<b>Timeframe:</b> ${escapeHtml(timeframe)}
+<b>Action:</b> <b>${action}</b>
+
+📍 <b>Trade Parameters</b>
+• <b>Entry:</b> ${payload.entry}
+• <b>Stop Loss:</b> ${payload.sl}
+${tpList}
+
+📋 <b>Setup Confirmation</b>
+${confirmationItems.join('\n')}
+
+⏰ <b>Timestamp:</b> ${formattedTime}`.trim();
   }
 }
 

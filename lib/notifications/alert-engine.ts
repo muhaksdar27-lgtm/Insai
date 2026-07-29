@@ -1,5 +1,4 @@
 import { logger } from '../utils/logger';
-import { getTelegramBot } from './telegram-bot';
 import { getSupabaseClient } from '../supabase/client';
 import * as crypto from 'crypto';
 
@@ -32,17 +31,8 @@ export class AlertEngine {
         logger.error(`Failed to persist alert: ${e.message}`);
     }
 
-    // Send to Telegram if severity is error or critical
-    if (['error', 'critical'].includes(alert.severity)) {
-       const message = `
-🚨 *SYSTEM ALERT: ${alert.severity.toUpperCase()}* 🚨
-*Component:* ${alert.component}
-*Message:* ${alert.message}
-*Time:* ${alert.timestamp}
-       `.trim();
-       
-       getTelegramBot().sendNotification(message).catch(() => {});
-    }
+    // Telegram output is strictly reserved for approved trading signals (Final Decision Engine output).
+    // Debug, system logs, and error alerts are persisted to DB and logger only.
   }
 }
 

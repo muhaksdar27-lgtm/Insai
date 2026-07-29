@@ -37,8 +37,7 @@ function calculateConfluence(rulesObj: Record<string, any>): { score: number; is
     for (const [key, result] of Object.entries(rulesObj)) {
         totalCount++;
         if (result.status === 'invalid') {
-            // Critical rules like pair or hard filter failure
-            if (key.includes('pair') || key.includes('news_filter') || key.includes('spread')) {
+            if (key.includes('pair') || key.includes('news_filter') || key.includes('spread') || key.includes('session')) {
                 hasCriticalInvalid = true;
             }
         }
@@ -48,12 +47,9 @@ function calculateConfluence(rulesObj: Record<string, any>): { score: number; is
 
     const score = totalCount > 0 ? (validCount / totalCount) * 100 : 0;
     if (hasCriticalInvalid) return { score, isCandidateValid: false };
+    if (hasPending) return { score, isCandidateValid: 'pending' };
     
-    // If we have at least 1 valid rule and some pending structural conditions, candidate is pending or valid
-    if (hasPending && validCount === 0) return { score, isCandidateValid: 'pending' };
-    
-    // Consider candidate valid if key criteria or confluence threshold met
-    return { score, isCandidateValid: score >= 40 ? true : (hasPending ? 'pending' : false) };
+    return { score, isCandidateValid: score >= 80 };
 }
 
 export const StrategyRegistry: Record<string, StrategyDefinition> = {
@@ -99,16 +95,16 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
                     evidence: { trend: h1Trend, timeframe: 'H1', bias: h1Trend === 'bearish' ? 'BEARISH' : 'BULLISH' } 
                 },
                 rule_asia_liquidity_sweep: { 
-                    status: (sweepBull || sweepBear || pyData.liq_sweep_status) ? 'valid' : 'pending', 
-                    evidence: { bullSweep: sweepBull, bearSweep: sweepBear, details: pyData.liq_sweep_status || 'Asia Liquidity Sweep Monitored' } 
+                    status: (sweepBull || sweepBear) ? 'valid' : 'pending', 
+                    evidence: { bullSweep: sweepBull, bearSweep: sweepBear, details: (sweepBull || sweepBear) ? 'Asia Liquidity Sweep Confirmed' : 'Asia Liquidity Sweep Monitored' } 
                 },
                 rule_choch_confirmation: { 
-                    status: (chochBull || chochBear || pyData.confirmation_status) ? 'valid' : 'pending', 
-                    evidence: { bullChoch: chochBull, bearChoch: chochBear, details: pyData.confirmation_status || 'M15 CHoCH Structural Confirmation' } 
+                    status: (chochBull || chochBear) ? 'valid' : 'pending', 
+                    evidence: { bullChoch: chochBull, bearChoch: chochBear, details: (chochBull || chochBear) ? 'M15 CHoCH Confirmed' : 'M15 CHoCH Structural Confirmation Monitored' } 
                 },
                 rule_ob_fvg_entry: { 
-                    status: (obFvgBull || obFvgBear || pyData.zone_status) ? 'valid' : 'pending', 
-                    evidence: { obFvgBull, obFvgBear, details: pyData.zone_status || 'Order Block / FVG Alignment' } 
+                    status: (obFvgBull || obFvgBear) ? 'valid' : 'pending', 
+                    evidence: { obFvgBull, obFvgBear, details: (obFvgBull || obFvgBear) ? 'Order Block / FVG Aligned' : 'Order Block / FVG Alignment Monitored' } 
                 },
                 rule_atr_sl_buffer: { 
                     status: 'valid', 
