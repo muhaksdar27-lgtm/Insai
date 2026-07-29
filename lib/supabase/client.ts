@@ -1,6 +1,7 @@
 import { getEnv } from "../utils/env";
 import { logger } from '../utils/logger';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 export class SupabaseService {
   private client: SupabaseClient | null = null;
@@ -20,6 +21,7 @@ export class SupabaseService {
     const supabaseKey = getEnv("SUPABASE_SERVICE_ROLE_KEY") || getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY") || '';
 
     if (!supabaseUrl || !supabaseKey) {
+      logger.warn('Supabase not configured (missing URL or key). Database features will be disabled.');
       return null;
     }
 
@@ -39,10 +41,11 @@ export class SupabaseService {
              }, 12000); // 12s timeout for reliable Supabase REST operations
 
              // Omit parent signal listener to decouple DB operations from transient parent request HTTP cancellations
-             const fetchOptions = { ...options };
+             const fetchOptions = { ...options } as any;
              delete fetchOptions.signal;
 
-             return fetch(url, { ...fetchOptions, signal: controller.signal as any })
+             // Use global fetch with an AbortController
+             return (globalThis as any).fetch(url, { ...fetchOptions, signal: controller.signal })
                .finally(() => {
                  clearTimeout(timeoutId);
                });
@@ -53,8 +56,10 @@ export class SupabaseService {
       this.currentKey = supabaseKey;
       this.failures = 0;
       this.circuitOpen = false;
+      logger.info('Supabase client initialized', { url: this.currentUrl });
       return this.client;
     } catch (e: any) {
+      // Do not log secrets
       logger.warn(`Invalid Supabase configuration: ${e.message}. Supabase will be disabled.`);
       return null;
     }
@@ -98,9 +103,9 @@ export class SupabaseService {
   }
 
   public async insertSignal(signal: any) {
-    const key = signal.signalKey || signal.signal_key || crypto.randomUUID();
+    const key = signal.signalKey || signal.signal_key || (globalThis as any).crypto?.randomUUID?.() || crypto.randomUUID();
     const payload = {
-      id: signal.id || crypto.randomUUID(),
+      id: signal.id || (globalThis as any).crypto?.randomUUID?.() || crypto.randomUUID(),
       signal_key: key,
       strategy_id: signal.strategyId || signal.strategy_id || 'strategy-1-smc',
       symbol: signal.symbol || 'XAUUSD',
@@ -115,7 +120,7 @@ export class SupabaseService {
       ai_decision: signal.aiDecision || signal.ai_decision || 'APPROVED',
       ai_reasoning: signal.aiReasoning || signal.ai_reasoning || 'Passed Quality Gate & AI Validation',
       status: signal.status || 'SIGNAL_ACTIVE',
-      correlation_id: signal.correlationId || signal.correlation_id || crypto.randomUUID(),
+      correlation_id: signal.correlationId || signal.correlation_id || (globalThis as any).crypto?.randomUUID?.() || crypto.randomUUID(),
       created_at: signal.createdAt || signal.created_at || new Date().toISOString()
     };
 
@@ -242,7 +247,7 @@ export class SupabaseService {
     this.memorySignalsCache.set(signalKey, signalData);
 
     const historyRecord = { 
-       id: crypto.randomUUID(),
+       id: (globalThis as any).crypto?.randomUUID?.() || crypto.randomUUID(),
        signal_key: signalData.signal_key,
        strategy_id: signalData.strategy_id,
        symbol: signalData.symbol || 'XAUUSD',
@@ -637,7 +642,7 @@ export class SupabaseService {
             query_embedding: embedding,
             match_threshold: threshold,
             match_count: limit
-        });
+          });
         if (error) {
             logger.warn('Failed to fetch similar history', { error: error.message });
             return [];
@@ -656,5 +661,3 @@ export function getSupabaseClient(): SupabaseService {
   if (!_supabaseClient) _supabaseClient = new SupabaseService();
   return _supabaseClient;
 }
-
-  
