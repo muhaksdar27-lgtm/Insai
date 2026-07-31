@@ -236,11 +236,11 @@ export class AIValidationOrchestrator {
            strategyName: strategyId,
            decision: fallbackDecision,
            checklist: validatorResults,
-           reasoning: "Validated by deterministic engine.",
+           reasoning: "Validated by deterministic engine. AI validation is offline.",
            evidence: "Validated by deterministic engine.",
            riskNotes: "AI Offline - Circuit Breaker Open",
            missingFactors: ["AI Validation"],
-           recommendedAction: fallbackDecision === "REJECTED" ? "block" : "wait",
+           recommendedAction: fallbackDecision === "REJECTED" ? "block" : "allow_signal",
            scores: {}
         };
     }
@@ -254,11 +254,11 @@ export class AIValidationOrchestrator {
           strategyName: strategyId,
           decision: fallbackDecision,
           checklist: validatorResults,
-          reasoning: "Validated by deterministic engine.",
+          reasoning: "Validated by deterministic engine. AI validation is offline.",
           evidence: "Validated by deterministic engine.",
           riskNotes: 'AI Offline - Missing API Key',
           missingFactors: ['AI Validation'],
-          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'wait',
+          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'allow_signal',
           scores: {}
        };
     }
@@ -297,7 +297,7 @@ export class AIValidationOrchestrator {
       // --------------------------
 
       let prompt = `INSAI Analyst. Strategi: ${strategyId} | State: ${state.stateName}.
-TUGAS: Anda adalah Validator AI yang bertugas memvalidasi setup trading berdasarkan STRATEGI SPESIFIK pengguna. Jangan gunakan asumsi trading generik jika bertentangan dengan aturan strategi ini.
+TUGAS: Anda adalah Validator AI yang bertugas MEMVALIDASI setup trading berdasarkan STRATEGI SPESIFIK pengguna. Gemini HANYA bertindak sebagai VALIDATOR. Gemini TIDAK PERNAH membuat signal sendiri.
 
 STRATEGY CONTEXT:
 - Name: ${strategyDef?.name || strategyId}
@@ -372,11 +372,11 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
           strategyName: strategyId,
           decision: fallbackDecision,
           checklist: validatorResults,
-          reasoning: "Validated by deterministic engine.",
+          reasoning: "Validated by deterministic engine. AI validation is offline.",
           evidence: "Validated by deterministic engine.",
           riskNotes: 'AI Offline - Circuit Breaker Open',
           missingFactors: ['AI Validation'],
-          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'wait',
+          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'allow_signal',
           scores: {}
         };
         this.cache.set(cacheKey, fallbackResult);
@@ -384,21 +384,16 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         return fallbackResult;
       }
 
-      const response = await aiClient.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: responseSchema,
-          temperature: 0,
-        },
-      });
+      const response = await this.callGeminiWithTimeoutAndRetry(aiClient, prompt, responseSchema, 8000, 1);
 
       const text = response.text;
       if (!text) throw new Error('No response from Gemini API');
       
       const parsed = JSON.parse(text) as AIValidationDecision;
       const aiDecision = parsed.decision;
+      
+      // Report successful Gemini API invocation to ProviderRegistry
+      getProviderRegistry().reportSuccess('GeminiAI');
       
       const finalChecklist = validatorResults;
       
@@ -428,6 +423,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       getProviderRegistry().reportError('GeminiAI', error.message);
 
       const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
+      const isTimeout = error.message.toLowerCase().includes('timed out');
 
       logger.warn(`AI Validation failed: ${error.message}. Falling back to deterministic rule-based decision.`);
       
@@ -438,11 +434,11 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
          strategyName: strategyId,
          decision: fallbackDecision,
          checklist: validatorResults,
-         reasoning: "Validated by deterministic engine.",
+         reasoning: "Validated by deterministic engine. AI validation is offline.",
          evidence: "Validated by deterministic engine.",
-         riskNotes: isQuotaExceeded ? 'AI Offline - Quota Exceeded' : 'AI Offline - System Error',
+         riskNotes: isQuotaExceeded ? 'AI Offline - Quota Exceeded' : (isTimeout ? 'AI Offline - Request Timeout' : 'AI Offline - System Error'),
          missingFactors: ['AI Validation'],
-         recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'wait',
+         recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'allow_signal',
          scores: {}
       };
 
@@ -450,6 +446,44 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
 
       return fallbackRes;
+    }
+  }
+
+  private async callGeminiWithTimeoutAndRetry(
+    aiClient: GoogleGenAI,
+    prompt: string,
+    responseSchema: Schema,
+    timeoutMs: number = 8000,
+    maxRetries: number = 1
+  ): Promise<any> {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      try {
+        const generatePromise = aiClient.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: responseSchema,
+            temperature: 0,
+          },
+        });
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`)), timeoutMs);
+        });
+
+        const response = await Promise.race([generatePromise, timeoutPromise]);
+        return response;
+      } catch (err: any) {
+        attempt++;
+        const isQuotaOrAuth = err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429') || err.message?.includes('401') || err.message?.includes('403') || err.message?.toLowerCase().includes('quota');
+        if (attempt > maxRetries || isQuotaOrAuth) {
+          throw err;
+        }
+        logger.warn(`Gemini API call failed (attempt ${attempt}/${maxRetries}), retrying in 500ms... Error: ${err.message}`);
+        await new Promise(r => setTimeout(r, 500));
+      }
     }
   }
 }

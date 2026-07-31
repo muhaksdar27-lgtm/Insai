@@ -25,8 +25,8 @@ export default function Navigation() {
   return (
     <>
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t border-white/5 bg-black/90 backdrop-blur-md z-50">
-        <ul className="flex items-center justify-around h-[34px]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t border-white/10 bg-black/95 backdrop-blur-md z-50">
+        <ul className="flex items-center justify-around h-12">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
@@ -34,21 +34,21 @@ export default function Navigation() {
               <li key={item.name} className="flex-1 h-full">
                 <Link
                   href={item.href}
-                  className={`relative flex flex-col items-center justify-center w-full h-full space-y-[1px] transition-all ${
+                  className={`relative flex flex-col items-center justify-center w-full h-full space-y-0.5 transition-all ${
                     isActive
-                      ? "text-zinc-200"
-                      : "text-zinc-600 hover:text-zinc-400"
+                      ? "text-zinc-100 font-bold"
+                      : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
                   {isActive && (
                     <motion.div
                       layoutId="mobile-active-nav"
-                      className="absolute inset-0 bg-white/5"
+                      className="absolute inset-0 bg-white/10"
                       transition={{ type: "spring", stiffness: 300, damping: 30 }}
                     />
                   )}
-                  <Icon className="w-2.5 h-2.5 z-10" />
-                  <span className="text-[5px] font-bold tracking-widest z-10 uppercase">
+                  <Icon className="w-4 h-4 z-10" />
+                  <span className="text-[9px] font-bold tracking-wider z-10 uppercase">
                     {item.name}
                   </span>
                 </Link>
@@ -59,8 +59,8 @@ export default function Navigation() {
       </nav>
 
       {/* Desktop Side Navigation */}
-      <nav className="hidden md:flex flex-col fixed top-0 left-0 bottom-0 w-[120px] border-r border-white/5 bg-black/60 backdrop-blur-md z-40 pt-10">
-        <ul className="flex flex-col py-1.5 space-y-0.5 px-2">
+      <nav className="hidden md:flex flex-col fixed top-0 left-0 bottom-0 w-[130px] border-r border-white/10 bg-black/80 backdrop-blur-md z-40 pt-12">
+        <ul className="flex flex-col py-2 space-y-1 px-2.5">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
@@ -68,28 +68,28 @@ export default function Navigation() {
               <li key={item.name} className="relative">
                 <Link
                   href={item.href}
-                  className={`group relative flex items-center space-x-1.5 px-2 py-1.5 rounded-[4px] transition-all duration-300 ${
+                  className={`group relative flex items-center space-x-2 px-2.5 py-2 rounded-md transition-all duration-300 ${
                     isActive
-                      ? "text-zinc-200"
-                      : "text-zinc-500 hover:text-zinc-300"
+                      ? "text-zinc-100 font-bold"
+                      : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
                   {isActive && (
                     <motion.div
                       layoutId="active-nav"
-                      className="absolute inset-0 bg-white/5 rounded-[4px]"
+                      className="absolute inset-0 bg-white/10 rounded-md"
                       transition={{ type: "spring", stiffness: 300, damping: 30 }}
                     />
                   )}
                   {isActive && (
                     <motion.div
                       layoutId="active-indicator"
-                      className="absolute left-0 top-1/4 bottom-1/4 w-[1px] bg-zinc-300"
+                      className="absolute left-0 top-1/4 bottom-1/4 w-[2px] bg-blue-400 rounded-r"
                       transition={{ type: "spring", stiffness: 300, damping: 30 }}
                     />
                   )}
-                  <Icon className="w-3 h-3 relative z-10 transition-transform duration-300 group-hover:scale-105" />
-                  <span className="text-[7px] uppercase font-bold tracking-widest relative z-10">
+                  <Icon className="w-3.5 h-3.5 relative z-10 transition-transform duration-300 group-hover:scale-105" />
+                  <span className="text-[9px] uppercase font-bold tracking-wider relative z-10">
                     {item.name}
                   </span>
                 </Link>

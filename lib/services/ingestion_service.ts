@@ -43,6 +43,15 @@ export class IngestionService {
     this.startFallbackMonitor();
   }
 
+  public stop() {
+    this.isRunning = false;
+    if (this.fallbackInterval) {
+      clearInterval(this.fallbackInterval);
+      this.fallbackInterval = null;
+    }
+    logger.info(`Ingestion Service stopped`);
+  }
+
   private startFallbackMonitor() {
     if (this.fallbackInterval) clearInterval(this.fallbackInterval);
     

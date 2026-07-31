@@ -184,6 +184,16 @@ const gracefulShutdown = async (signal: string) => {
     logger.warn(`Error stopping scanner during shutdown: ${e.message}`);
   }
 
+  // Stop ingestion service
+  try {
+    const ingestion = getIngestionService();
+    if (ingestion) {
+      ingestion.stop();
+    }
+  } catch (e: any) {
+    logger.warn(`Error stopping ingestion service during shutdown: ${e.message}`);
+  }
+
   // Close Redis Queue
   try {
     await getQueueManager().close();
@@ -242,7 +252,7 @@ server.listen(port, hostname, () => {
           }
           
           try {
-             getIngestionService().start('XAUUSD');
+             getIngestionService().start('XAUUSD').catch(err => logger.error(`IngestionService start error: ${err.message}`));
           } catch (e: any) {
              logger.error(`Failed to start Ingestion Service: ${e.message}`);
           }

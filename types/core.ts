@@ -1,16 +1,23 @@
 export type StateName = 
+  | 'IDLE'
+  | 'WAIT_SESSION'
+  | 'SCAN_MARKET'
+  | 'DETECT_SETUP'
+  | 'VALIDATE_RULES'
+  | 'CALCULATE_RISK'
+  | 'AI_VALIDATION'
+  | 'SIGNAL_READY'
+  | 'SEND_SIGNAL'
+  | 'FINISHED'
+  | 'REJECTED'
+  | 'ERROR'
   | 'WAIT'
   | 'SCANNING'
   | 'STRUCTURE'
   | 'SETUP'
   | 'CONFIRMATION'
   | 'VALIDATION'
-  | 'AI_VALIDATION'
-  | 'SIGNAL_READY'
-  | 'SIGNAL_SENT'
-  | 'FINISHED'
-  | 'REJECTED'
-  | 'ERROR';
+  | 'SIGNAL_SENT';
 
 export type TradeStatus = 'OPEN' | 'CLOSED' | 'PENDING' | 'CANCELLED';
 export type TradeDirection = 'BUY' | 'SELL' | 'LONG' | 'SHORT';

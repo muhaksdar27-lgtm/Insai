@@ -22,7 +22,7 @@ class StrategyEngine:
         sig = f"{direction}_{timeframe}_{entry}_{sl}_{tp}_{target_strat_id}_{z_score:.4f}"
         if analysis:
             sig += f"_{analysis.get('trend_slope', 0):.4f}_{analysis.get('volatility', 0):.6f}"
-        return hashlib.sha256(sig.encode()).hexdigest()
+        return sig
 
     def run_all(self, direction: str, analysis: Dict[str, Any], z_score: float, timeframe: str, entry: float, sl: float, tp: float, target_strat_id: str = None) -> Tuple[int, List[str]]:
         

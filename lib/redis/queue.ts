@@ -25,6 +25,7 @@ export class QueueManager {
   private readonly maxFailures = 5;
 
   private redisListeners = new Map<string, Array<{ handler: (msg: QueueMessage) => Promise<void>, wrapped: (channel: string, msg: string) => void }>>();
+  private activeStreamPolls = new Set<string>();
 
   constructor() {
     this.useRedis = !!getEnv("REDIS_URL");
@@ -214,6 +215,7 @@ export class QueueManager {
 
   async close() {
     this.connected = false;
+    this.activeStreamPolls.clear();
     this.localEmitter.removeAllListeners();
     this.redisListeners.clear();
     const closePromises = [];
@@ -323,14 +325,21 @@ export class QueueManager {
     }
   }
 
-  async streamSubscribeGroup(stream: string, group: string, consumer: string, handler: (message: QueueMessage, msgId: string) => Promise<void>) {
+  async streamSubscribeGroup(stream: string, group: string, consumer: string, handler: (message: QueueMessage, msgId: string) => Promise<void>): Promise<() => void> {
+    const pollId = `${stream}:${group}:${consumer}`;
+    this.activeStreamPolls.add(pollId);
+
+    const stop = () => {
+      this.activeStreamPolls.delete(pollId);
+    };
+
     if (this.useRedis && (!this.client || this.circuitOpen || this.client.status !== 'ready')) {
        await this.connect();
     }
     
     if (!this.useRedis || !this.client || this.circuitOpen || this.client.status !== 'ready') {
        logger.warn('Redis Streams require an active Redis connection.');
-       return;
+       return stop;
     }
     
     // Create group if not exists
@@ -339,13 +348,18 @@ export class QueueManager {
     } catch (err: any) {
       if (!err.message.includes('BUSYGROUP')) {
         logger.error(`Failed to create group ${group} on ${stream}: ${err.message}`);
-        return;
+        return stop;
       }
     }
 
     const poll = async () => {
+      if (!this.activeStreamPolls.has(pollId)) {
+        return; // Stopped gracefully
+      }
       if (!this.connected || this.circuitOpen) {
-          setTimeout(poll, 5000);
+          if (this.activeStreamPolls.has(pollId)) {
+            setTimeout(poll, 5000);
+          }
           return;
       }
       try {
@@ -379,13 +393,18 @@ export class QueueManager {
           }
         }
       } catch (e: any) {
-        logger.error(`XREADGROUP error on ${stream}: ${e.message}`);
+        if (this.activeStreamPolls.has(pollId)) {
+          logger.error(`XREADGROUP error on ${stream}: ${e.message}`);
+        }
       }
-      setTimeout(poll, 100);
+      if (this.activeStreamPolls.has(pollId)) {
+        setTimeout(poll, 100);
+      }
     };
     
     poll();
-}
+    return stop;
+  }
 }
 
 let _queueManager: QueueManager | null = null;

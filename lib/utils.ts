@@ -7,14 +7,14 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getStatusBadge(status: string) {
   const s = status?.toLowerCase() || '';
-  if (['approved', 'signal_active', 'take_partial', 'finished', 'win', 'valid', 'tp tercapai', 'tp1 hit', 'tp2 hit', 'tp3 hit', 'healthy', 'online'].some(x => s === x || s.includes(x))) return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+  if (['approved', 'signal_active', 'take_partial', 'finished', 'win', 'valid', 'pass', 'tp tercapai', 'tp1 hit', 'tp2 hit', 'tp3 hit', 'healthy', 'online'].some(x => s === x || s.includes(x))) return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
   if (['active', 'validated', 'live', 'connected'].some(x => s === x || s.includes(x))) return "text-blue-400 bg-blue-500/10 border-blue-500/20";
-  if (['rejected', 'error', 'disconnected', 'unavailable', 'block', 'invalid', 'sl tercapai', 'failed'].some(x => s === x || s.includes(x))) return "text-rose-400 bg-rose-500/10 border-rose-500/20";
+  if (['rejected', 'error', 'disconnected', 'unavailable', 'block', 'invalid', 'fail', 'sl tercapai', 'failed'].some(x => s === x || s.includes(x))) return "text-rose-400 bg-rose-500/10 border-rose-500/20";
   if (['warning', 'stale', 'degraded', 'reconnecting', 'suppressed'].some(x => s === x || s.includes(x))) return "text-amber-400 bg-amber-500/10 border-amber-500/20";
-  if (['expired', 'history', 'cached'].some(x => s === x || s.includes(x))) return "text-zinc-500 bg-zinc-800 border-zinc-700";
+  if (['expired', 'history', 'cached'].some(x => s === x || s.includes(x))) return "text-zinc-400 bg-zinc-800 border-zinc-700";
   if (['not configured', 'placeholder', 'tbd', 'needs configuration'].some(x => s === x || s.includes(x))) return "text-zinc-400 bg-zinc-900 border-zinc-700 border-dashed";
   if (['disabled', 'stopped'].some(x => s === x || s.includes(x))) return "text-zinc-500 bg-zinc-900 border-zinc-800";
-  if (['awaiting', 'idle', 'wait', 'pending'].some(x => s === x || s.includes(x))) return "text-blue-400 bg-zinc-900 border-blue-900/30";
+  if (['awaiting', 'idle', 'wait', 'pending', 'monitoring'].some(x => s === x || s.includes(x))) return "text-blue-400 bg-zinc-900 border-blue-900/40";
   return "text-zinc-400 bg-zinc-800 border-zinc-700";
 }
 

@@ -317,6 +317,10 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+  provider: string;
+  latency: number;
+  freshness: 'live' | 'cached' | 'stale';
+  confidence: number;
 }
 
 export interface NewsEvent {

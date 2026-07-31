@@ -38,8 +38,8 @@ export class QualityGate {
     }
 
     // 3. AI Validation Check
-    if (aiResult.decision !== 'APPROVED') {
-       return this.reject(`AI Validation not approved (${aiResult.decision}). Reason: ${aiResult.reasoning}`);
+    if (aiResult.decision === 'REJECTED') {
+       return this.reject(`AI Validation rejected setup. Reason: ${aiResult.reasoning}`);
     }
 
     const aiConfidence = aiResult.aiReview?.confidenceScore || 0;

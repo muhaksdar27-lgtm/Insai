@@ -116,22 +116,25 @@ class HealthCheckEngine {
         const start = Date.now();
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', { 
-            signal: controller.signal,
-            headers: {
-                'User-Agent': 'Mozilla/5.0',
-                'Accept': 'application/json'
-            }
-        });
-        clearTimeout(timeout);
-        if (res.ok) {
-            this.updateServiceHealth('EconomicCalendar', 'ONLINE', Date.now() - start);
-        } else {
-            if (res.status === 429) {
-                this.updateServiceHealth('EconomicCalendar', 'RATE LIMITED', Date.now() - start, `HTTP ${res.status}`);
+        try {
+            const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', { 
+                signal: controller.signal,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0',
+                    'Accept': 'application/json'
+                }
+            });
+            if (res.ok) {
+                this.updateServiceHealth('EconomicCalendar', 'ONLINE', Date.now() - start);
             } else {
-                this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', Date.now() - start, `HTTP ${res.status}`);
+                if (res.status === 429) {
+                    this.updateServiceHealth('EconomicCalendar', 'RATE LIMITED', Date.now() - start, `HTTP ${res.status}`);
+                } else {
+                    this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', Date.now() - start, `HTTP ${res.status}`);
+                }
             }
+        } finally {
+            clearTimeout(timeout);
         }
     } catch (e: any) {
         this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', 0, e.message);
@@ -144,17 +147,20 @@ class HealthCheckEngine {
         if (geminiKey) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`, { signal: controller.signal });
-            clearTimeout(timeout);
-            const data = await res.json();
-            if (data.error) {
-                if (data.error.code === 429 || data.error.message.includes('quota') || data.error.status === 'RESOURCE_EXHAUSTED') {
-                    this.updateServiceHealth('GeminiAI', 'QUOTA_EXCEEDED', Date.now() - start, data.error.message);
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`, { signal: controller.signal });
+                const data = await res.json();
+                if (data.error) {
+                    if (data.error.code === 429 || data.error.message.includes('quota') || data.error.status === 'RESOURCE_EXHAUSTED') {
+                        this.updateServiceHealth('GeminiAI', 'QUOTA_EXCEEDED', Date.now() - start, data.error.message);
+                    } else {
+                        this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', Date.now() - start, data.error.message);
+                    }
                 } else {
-                    this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', Date.now() - start, data.error.message);
+                    this.updateServiceHealth('GeminiAI', 'ONLINE', Date.now() - start);
                 }
-            } else {
-                this.updateServiceHealth('GeminiAI', 'ONLINE', Date.now() - start);
+            } finally {
+                clearTimeout(timeout);
             }
         } else {
             this.updateServiceHealth('GeminiAI', 'NOT CONFIGURED', 0, 'Missing Gemini API Key');
@@ -170,17 +176,20 @@ class HealthCheckEngine {
         if (token) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
-            const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: controller.signal });
-            clearTimeout(timeout);
-            const data = await res.json();
-            if (!data.ok) {
-                if (data.error_code === 429) {
-                    this.updateServiceHealth('TelegramBot', 'RATE LIMITED', Date.now() - start, data.description || 'Rate limited');
+            try {
+                const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: controller.signal });
+                const data = await res.json();
+                if (!data.ok) {
+                    if (data.error_code === 429) {
+                        this.updateServiceHealth('TelegramBot', 'RATE LIMITED', Date.now() - start, data.description || 'Rate limited');
+                    } else {
+                        this.updateServiceHealth('TelegramBot', 'UNAVAILABLE', Date.now() - start, data.description || 'Invalid token');
+                    }
                 } else {
-                    this.updateServiceHealth('TelegramBot', 'UNAVAILABLE', Date.now() - start, data.description || 'Invalid token');
+                    this.updateServiceHealth('TelegramBot', 'ONLINE', Date.now() - start);
                 }
-            } else {
-                this.updateServiceHealth('TelegramBot', 'ONLINE', Date.now() - start);
+            } finally {
+                clearTimeout(timeout);
             }
         } else {
             this.updateServiceHealth('TelegramBot', 'NOT CONFIGURED', 0, 'Missing Telegram Bot Token');
@@ -198,12 +207,15 @@ class HealthCheckEngine {
             const pyUrl = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
-            const res = await fetch(`${pyUrl}/health`, { signal: controller.signal });
-            clearTimeout(timeout);
-            if (res.ok) {
-                this.updateServiceHealth('PythonEngine', 'ONLINE', Date.now() - start);
-            } else {
-                this.updateServiceHealth('PythonEngine', 'OFFLINE', Date.now() - start, `HTTP ${res.status}`);
+            try {
+                const res = await fetch(`${pyUrl}/health`, { signal: controller.signal });
+                if (res.ok) {
+                    this.updateServiceHealth('PythonEngine', 'ONLINE', Date.now() - start);
+                } else {
+                    this.updateServiceHealth('PythonEngine', 'OFFLINE', Date.now() - start, `HTTP ${res.status}`);
+                }
+            } finally {
+                clearTimeout(timeout);
             }
         }
     } catch (e: any) {

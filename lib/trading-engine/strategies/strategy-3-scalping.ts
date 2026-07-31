@@ -82,15 +82,22 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
   else if (hasPending) isCandidateValid = 'pending';
   else isCandidateValid = confluenceScore >= 75;
 
-  const direction: 'buy' | 'sell' = doubleTop ? 'sell' : (doubleBottom ? 'buy' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
+  const direction: 'buy' | 'sell' = doubleBottom ? 'buy' : (doubleTop ? 'sell' : (sweepBull ? 'buy' : (sweepBear ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'))));
 
   const confirmationStatus = (doubleTop || doubleBottom)
     ? 'M1 Double Top/Bottom & Neckline Break Confirmed'
     : 'M1 Structural Pattern & Neckline Monitored';
 
+  const riskDistance = atr * 0.3;
+  const entryPriceVal = currentPrice || 0;
+  const slVal = entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined;
+  const tp1Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.0) : entryPriceVal - (riskDistance * 3.0)) : undefined;
+  const tp2Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 4.5) : entryPriceVal - (riskDistance * 4.5)) : undefined;
+  const tp3Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 6.0) : entryPriceVal - (riskDistance * 6.0)) : undefined;
+
   const setupSnapshot = {
     strategyId: 'strategy-3-scalping',
-    strategyName: 'STRATEGI 3 (scalping smc+liquidity sweep+double top/down)',
+    strategyName: 'STRATEGI 3 — Scalping SMC + Liquidity Sweep + Double Top/Bottom',
     symbol,
     timeframe: 'M1',
     session: currentSession,
@@ -98,9 +105,16 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
     bias: h1Trend.toUpperCase(),
     marketBias: h1Trend.toUpperCase(),
     direction,
-    entry: currentPrice,
-    sl: direction === 'buy' ? (currentPrice ? currentPrice - (atr * 0.3) : undefined) : (currentPrice ? currentPrice + (atr * 0.3) : undefined),
-    tp1: direction === 'buy' ? (currentPrice ? currentPrice + (atr * 0.9) : undefined) : (currentPrice ? currentPrice - (atr * 0.9) : undefined),
+    entry: entryPriceVal,
+    entryPrice: entryPriceVal,
+    sl: slVal,
+    slPrice: slVal,
+    tp1: tp1Val,
+    tp1Price: tp1Val,
+    tp2: tp2Val,
+    tp2Price: tp2Val,
+    tp3: tp3Val,
+    tp3Price: tp3Val,
     rr: '1:3.0',
     patternStatus: (doubleTop || doubleBottom) ? 'M1 Double Top/Bottom Formed' : 'Monitoring M1 Pattern',
     necklineStatus: (doubleTop || doubleBottom) ? 'Neckline Broken' : 'Monitoring Neckline',

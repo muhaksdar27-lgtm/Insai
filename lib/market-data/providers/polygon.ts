@@ -95,12 +95,14 @@ export class PolygonProvider implements PriceProvider {
       const to = toDate.toISOString().split('T')[0];
       const from = fromDate.toISOString().split('T')[0];
 
+      const startTime = Date.now();
       const res = await fetchWithRetry(`https://api.polygon.io/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${key}`, {
           timeoutMs: 1500,
           retries: 0
       });
       if (res.status === 429) throw new Error('Rate Limited (429)');
       const data = await res.json();
+      const latency = Date.now() - startTime;
 
       if (data.status !== 'OK' || !data.results) {
         throw new Error(data.error || 'Failed to fetch candles');
@@ -112,7 +114,11 @@ export class PolygonProvider implements PriceProvider {
         high: parseFloat(v.h) || 0,
         low: parseFloat(v.l) || 0,
         close: parseFloat(v.c) || 0,
-        volume: parseFloat(v.v) || 0
+        volume: parseFloat(v.v) || 0,
+        provider: this.name,
+        latency,
+        freshness: 'live' as const,
+        confidence: 0.95
       }));
 
       return candles.reverse() as any;

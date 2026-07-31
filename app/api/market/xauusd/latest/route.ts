@@ -25,10 +25,6 @@ export async function GET() {
     data = {
       symbol: 'XAUUSD',
       price: 2750.00,
-      change24h: 0,
-      high24h: 2760.00,
-      low24h: 2740.00,
-      volume24h: 15000,
       timestamp: new Date().toISOString(),
       provider: 'fallback',
       freshness: 'stale',
@@ -39,7 +35,7 @@ export async function GET() {
   }
 
   const response: ApiResponse<MarketSnapshot> = {
-    success: true,
+    success,
     data,
     error,
     meta: {

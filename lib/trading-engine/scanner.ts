@@ -28,6 +28,7 @@ export class MarketScanner {
     this.engine = new TradingEngine();
   }
 
+  private streamUnsubscribe: (() => void) | null = null;
   private timer: NodeJS.Timeout | null = null;
 
   public async start() {
@@ -51,7 +52,13 @@ export class MarketScanner {
         }
       }
     };
-    getQueueManager().streamSubscribeGroup('market_stream:XAUUSD', 'scanner-group', 'scanner-' + crypto.randomUUID(), this.marketUpdateHandler as any);
+    
+    this.streamUnsubscribe = await getQueueManager().streamSubscribeGroup(
+      'market_stream:XAUUSD',
+      'scanner-group',
+      'scanner-' + crypto.randomUUID(),
+      this.marketUpdateHandler as any
+    );
     
     // Initial scan
     this.scan();
@@ -74,6 +81,11 @@ export class MarketScanner {
       this.timer = null;
     }
     
+    if (this.streamUnsubscribe) {
+      this.streamUnsubscribe();
+      this.streamUnsubscribe = null;
+    }
+
     if (this.marketUpdateHandler) {
       this.marketUpdateHandler = null;
     }

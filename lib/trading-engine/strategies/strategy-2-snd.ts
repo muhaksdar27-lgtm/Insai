@@ -82,15 +82,22 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
   else if (hasPending) isCandidateValid = 'pending';
   else isCandidateValid = confluenceScore >= 75;
 
-  const direction: 'buy' | 'sell' = (engulfBear || h1Trend === 'bearish') ? 'sell' : 'buy';
+  const direction: 'buy' | 'sell' = engulfBull ? 'buy' : (engulfBear ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
 
   const confirmationStatus = sdActive && (engulfBull || engulfBear)
     ? 'Supply/Demand Touch & Engulfing Trigger Confirmed'
     : 'Supply/Demand Zone & Engulfing Monitored';
 
+  const riskDistance = atr * 0.5;
+  const entryPriceVal = currentPrice || 0;
+  const slVal = entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined;
+  const tp1Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined;
+  const tp2Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.5) : entryPriceVal - (riskDistance * 3.5)) : undefined;
+  const tp3Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 5.0) : entryPriceVal - (riskDistance * 5.0)) : undefined;
+
   const setupSnapshot = {
     strategyId: 'strategy-2-snd',
-    strategyName: 'STRATEGI 2(S&D+ENGULFING)',
+    strategyName: 'STRATEGI 2 — Supply & Demand + Engulfing',
     symbol,
     timeframe: 'M15',
     session: currentSession,
@@ -98,9 +105,17 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
     bias: h1Trend.toUpperCase(),
     marketBias: h1Trend.toUpperCase(),
     direction,
-    entry: currentPrice,
-    sl: direction === 'buy' ? (currentPrice ? currentPrice - (atr * 0.5) : undefined) : (currentPrice ? currentPrice + (atr * 0.5) : undefined),
-    tp1: direction === 'buy' ? (currentPrice ? currentPrice + (atr * 1.0) : undefined) : (currentPrice ? currentPrice - (atr * 1.0) : undefined),
+    entry: entryPriceVal,
+    entryPrice: entryPriceVal,
+    sl: slVal,
+    slPrice: slVal,
+    tp1: tp1Val,
+    tp1Price: tp1Val,
+    tp2: tp2Val,
+    tp2Price: tp2Val,
+    tp3: tp3Val,
+    tp3Price: tp3Val,
+    rr: '1:2.0',
     sdZoneStatus: sdActive ? 'Inside S&D Zone' : 'Monitoring S&D Zone',
     engulfingStatus: (engulfBull || engulfBear) ? 'Engulfing Confirmed' : 'Engulfing Monitored',
     atr14: atr,

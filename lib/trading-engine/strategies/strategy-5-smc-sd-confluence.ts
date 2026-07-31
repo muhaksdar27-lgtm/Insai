@@ -75,15 +75,22 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
   else if (hasPending) isCandidateValid = 'pending';
   else isCandidateValid = confluenceScore >= 80;
 
-  const direction: 'buy' | 'sell' = (bosBear || h1Trend === 'bearish' || sweepBear) ? 'sell' : 'buy';
+  const direction: 'buy' | 'sell' = (bosBull || sweepBull) ? 'buy' : ((bosBear || sweepBear) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
 
   const confirmationStatus = (bosBull || bosBear) && sdActive
     ? 'H1/M15 Structure & S&D Overlap Confluence Confirmed'
     : 'Multi-Zone Overlap & Structure Monitored';
 
+  const riskDistance = atr * 0.4;
+  const entryPriceVal = currentPrice || 0;
+  const slVal = entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined;
+  const tp1Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.0) : entryPriceVal - (riskDistance * 3.0)) : undefined;
+  const tp2Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 5.0) : entryPriceVal - (riskDistance * 5.0)) : undefined;
+  const tp3Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 7.5) : entryPriceVal - (riskDistance * 7.5)) : undefined;
+
   const setupSnapshot = {
     strategyId: 'strategy-5-smc-sd-confluence',
-    strategyName: 'Strategy 5: SMC-SD-Pattern Confluence',
+    strategyName: 'STRATEGI 5 — SMC-SD Pattern Confluence',
     symbol,
     timeframe: 'M5',
     session: currentSession,
@@ -91,9 +98,16 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
     bias: h1Trend.toUpperCase(),
     marketBias: h1Trend.toUpperCase(),
     direction,
-    entry: currentPrice,
-    sl: direction === 'buy' ? (currentPrice ? currentPrice - (atr * 0.4) : undefined) : (currentPrice ? currentPrice + (atr * 0.4) : undefined),
-    tp1: direction === 'buy' ? (currentPrice ? currentPrice + (atr * 1.2) : undefined) : (currentPrice ? currentPrice - (atr * 1.2) : undefined),
+    entry: entryPriceVal,
+    entryPrice: entryPriceVal,
+    sl: slVal,
+    slPrice: slVal,
+    tp1: tp1Val,
+    tp1Price: tp1Val,
+    tp2: tp2Val,
+    tp2Price: tp2Val,
+    tp3: tp3Val,
+    tp3Price: tp3Val,
     rr: '1:3.0',
     structureStatus: (bosBull || bosBear) ? 'Structure Aligned' : 'Structure Monitored',
     zoneOverlapStatus: sdActive ? 'S&D / Fib Overlap Active' : 'Zone Overlap Monitored',

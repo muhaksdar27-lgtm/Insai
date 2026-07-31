@@ -28,7 +28,7 @@ export async function GET() {
   }
 
   const response: ApiResponse<any> = {
-    success: true,
+    success,
     data: {
       active_events: Array.isArray(active_events) ? active_events : [],
       ...providerStatus

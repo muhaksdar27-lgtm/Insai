@@ -261,7 +261,6 @@ export class TradingEngine {
                     cache: 'no-store',
                     signal: controller.signal
                 });
-                clearTimeout(timeout);
                 if (pyRes.ok) {
                     commonPyData = await pyRes.json();
                 } else {
@@ -270,6 +269,8 @@ export class TradingEngine {
                 }
             } catch (err: any) {
                 logger.error(`Failed to reach Python Engine HTTP: ${err.message} cause: ${err.cause?.message || "none"}`);
+            } finally {
+                clearTimeout(timeout);
             }
         }
     } catch (e: any) {
@@ -278,13 +279,13 @@ export class TradingEngine {
     
     // Process all active strategies concurrently
     await Promise.allSettled(relevantStrategies.map(async (strategyId) => {
-      const sm = new StateMachine(strategyId, STEPS.WAIT);
+      const sm = new StateMachine(strategyId, STEPS.IDLE);
       
       try {
         let setup = this.setupDetector.startScanning(strategyId, context.symbol, context.timeframe, context.timestamp);
 
-        // State 1: WAIT
-        await this.advanceStateMachine(sm, STEPS.WAIT, 'Checking market session and timing filters...', setup.id, context, { marketStates, validationSummary: 'Session check active' });
+        // State 1: WAIT_SESSION
+        await this.advanceStateMachine(sm, STEPS.WAIT_SESSION, 'Checking market session and timing filters...', setup.id, context, { marketStates, validationSummary: 'Session check active' });
 
         const stratDef = getStrategyDefinition(strategyId);
         if (!stratDef) {
@@ -293,8 +294,8 @@ export class TradingEngine {
             return;
         }
 
-        // State 2: SCANNING
-        await this.advanceStateMachine(sm, STEPS.SCANNING, 'Scanning market feed...', setup.id, context, { marketStates, validationSummary: 'Scanning price action' });
+        // State 2: SCAN_MARKET
+        await this.advanceStateMachine(sm, STEPS.SCAN_MARKET, 'Scanning market feed...', setup.id, context, { marketStates, validationSummary: 'Scanning price action' });
 
         // --- FETCH TECHNICAL ANALYSIS FROM PYTHON OR FALLBACK ---
         let pyData: any = commonPyData;
@@ -337,17 +338,11 @@ export class TradingEngine {
         const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, pyData);
         (setup as any).setupSnapshot = translatedSnapshot;
 
-        // State 3: STRUCTURE
-        await this.advanceStateMachine(sm, STEPS.STRUCTURE, 'Evaluating market structure & HTF trend', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
-
-        // State 4: SETUP
+        // State 3: DETECT_SETUP
         if (setup.status === 'scanning') {
             setup = this.setupDetector.transitionState(setup.id, 'candidate', 'Evaluating setup parameters & zones');
         }
-        await this.advanceStateMachine(sm, STEPS.SETUP, 'Evaluating key levels & liquidity sweep', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
-
-        // State 5: CONFIRMATION
-        await this.advanceStateMachine(sm, STEPS.CONFIRMATION, 'Evaluating trigger confirmation', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
+        await this.advanceStateMachine(sm, STEPS.DETECT_SETUP, 'Evaluating key levels, structure & liquidity sweep', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
 
         const result = stratDef.extractCandidateRules(context, pyData);
         let isCandidateValid = result.isCandidateValid;
@@ -367,7 +362,7 @@ export class TradingEngine {
 
         if (isCandidateValid === 'pending') {
             this.setupDetector.transitionState(setup.id, 'candidate', 'Waiting for explicit trigger/pending rules');
-            await this.advanceStateMachine(sm, STEPS.WAIT, 'Pending missing data', setup.id, context, { marketStates, ruleResults: candidateRules, setupDetails: translatedSnapshot });
+            await this.advanceStateMachine(sm, STEPS.REJECTED, 'Pending missing data / trigger unconfirmed', setup.id, context, { marketStates, ruleResults: candidateRules, setupDetails: translatedSnapshot });
             return;
         }
 
@@ -379,12 +374,13 @@ export class TradingEngine {
             return;
         }
 
-        // State 6: VALIDATION
-        await this.advanceStateMachine(sm, STEPS.VALIDATION, 'Passed rule set validation', setup.id, context, { marketStates, ruleResults: candidateRules, setupDetails: translatedSnapshot });
+        // State 4: VALIDATE_RULES
+        await this.advanceStateMachine(sm, STEPS.VALIDATE_RULES, 'Passed rule set validation', setup.id, context, { marketStates, ruleResults: candidateRules, setupDetails: translatedSnapshot });
 
+        // State 5: CALCULATE_RISK
         let entryPrice = translatedSnapshot.entry || pyData.current_price || context.candles![context.candles!.length - 1].close;
         let slPrice = translatedSnapshot.sl;
-        let tpPrice = translatedSnapshot.tp;
+        let tpPrice = translatedSnapshot.tp1 || translatedSnapshot.tp;
 
         if (!slPrice || !tpPrice) {
             const atr = pyData.atr || 4.5;
@@ -394,13 +390,14 @@ export class TradingEngine {
         }
 
         this.setupDetector.updateSetupDetails(setup.id, { direction, entryPrice, slPrice, tpPrice, marketStates });
-        
+        await this.advanceStateMachine(sm, STEPS.CALCULATE_RISK, 'Calculated risk parameters and target levels', setup.id, context, { marketStates, ruleResults: candidateRules, setupDetails: translatedSnapshot });
+
         const ruleResults = {
             'Market States': marketStates,
             ...candidateRules
         };
 
-        // State 7: AI_VALIDATION
+        // State 6: AI_VALIDATION
         setup = this.setupDetector.transitionState(setup.id, 'validation', 'Passed candidate pattern matching');
         const validationState = sm.lastTransitionState || { stateName: STEPS.AI_VALIDATION } as any;
         await this.advanceStateMachine(sm, STEPS.AI_VALIDATION, 'Running AI confluence validation...', setup.id, context, { marketStates, ruleResults, setupDetails: translatedSnapshot });
@@ -426,7 +423,7 @@ export class TradingEngine {
             return;
         }
 
-        if (validationResult.decision !== 'APPROVED') {
+        if (validationResult.decision === 'REJECTED') {
            logger.warn(`Setup ${setup.id} rejected by AI Validator: ${validationResult.reasoning}`);
            this.setupDetector.transitionState(setup.id, 'expired', `AI Rejected: ${validationResult.reasoning}`);
            
@@ -437,7 +434,7 @@ export class TradingEngine {
            return;
         }
         
-        // State 8: SIGNAL_READY
+        // State 7: SIGNAL_READY
         setup = this.setupDetector.transitionState(setup.id, 'ready', 'Setup confirmed and priced');
         (setup as any).aiValidation = validationResult;
         (setup as any).qualityGatePassed = true;
@@ -446,14 +443,14 @@ export class TradingEngine {
 
         await this.advanceStateMachine(sm, STEPS.SIGNAL_READY, 'Signal assembled and priced', setup.id, context, { marketStates, ruleResults, setupDetails: { ...translatedSnapshot, aiDecision: validationResult.decision, direction, entryPrice, slPrice, tpPrice } });
 
-        // State 9: SIGNAL_SENT
+        // State 8: SEND_SIGNAL
         setup = this.setupDetector.transitionState(setup.id, 'signal', 'Signal emitted');
-        await this.advanceStateMachine(sm, STEPS.SIGNAL_SENT, 'Signal generated and dispatched', setup.id, context, { marketStates, ruleResults, setupDetails: { ...translatedSnapshot, aiDecision: validationResult.decision, direction, entryPrice, slPrice, tpPrice } });
+        await this.advanceStateMachine(sm, STEPS.SEND_SIGNAL, 'Signal generated and dispatched', setup.id, context, { marketStates, ruleResults, setupDetails: { ...translatedSnapshot, aiDecision: validationResult.decision, direction, entryPrice, slPrice, tpPrice } });
         
         logger.info(`🚨 SIGNAL GENERATED: ${setup.id} [${setup.direction?.toUpperCase()} ${setup.symbol}] Entry: ${setup.entryPrice}`);
         await this.signalPipeline.emitSignal(setup, context).catch(e => logger.error(`Failed to emit signal: ${e.message}`));
 
-        // State 10: FINISHED
+        // State 9: FINISHED
         this.setupDetector.transitionState(setup.id, 'archived', 'Signal processing complete');
         await this.advanceStateMachine(sm, STEPS.FINISHED, 'Strategy cycle complete', setup.id, context, { marketStates });
         await getSupabaseClient().archiveToHistory(setup.id, 'FINISHED', 25.0, 'WIN', context.correlationId).catch(() => null);

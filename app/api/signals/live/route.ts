@@ -142,7 +142,7 @@ export async function GET() {
   }
 
   const response: ApiResponse<any> = {
-    success: true,
+    success,
     data: Array.isArray(formattedData) ? formattedData : [],
     error,
     meta: {

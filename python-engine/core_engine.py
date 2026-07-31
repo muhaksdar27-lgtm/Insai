@@ -82,15 +82,15 @@ class CoreEngine:
 
         try:
             if is_dict:
-                O = np.fromiter((c.get('open', 0.0) for c in candles), dtype=np.float64, count=N)
-                H = np.fromiter((c.get('high', 0.0) for c in candles), dtype=np.float64, count=N)
-                L = np.fromiter((c.get('low', 0.0) for c in candles), dtype=np.float64, count=N)
-                C = np.fromiter((c.get('close', 0.0) for c in candles), dtype=np.float64, count=N)
+                O = np.array([c.get('open', 0.0) for c in candles], dtype=np.float64)
+                H = np.array([c.get('high', 0.0) for c in candles], dtype=np.float64)
+                L = np.array([c.get('low', 0.0) for c in candles], dtype=np.float64)
+                C = np.array([c.get('close', 0.0) for c in candles], dtype=np.float64)
             else:
-                O = np.fromiter((getattr(c, 'open', 0.0) for c in candles), dtype=np.float64, count=N)
-                H = np.fromiter((getattr(c, 'high', 0.0) for c in candles), dtype=np.float64, count=N)
-                L = np.fromiter((getattr(c, 'low', 0.0) for c in candles), dtype=np.float64, count=N)
-                C = np.fromiter((getattr(c, 'close', 0.0) for c in candles), dtype=np.float64, count=N)
+                O = np.array([getattr(c, 'open', 0.0) for c in candles], dtype=np.float64)
+                H = np.array([getattr(c, 'high', 0.0) for c in candles], dtype=np.float64)
+                L = np.array([getattr(c, 'low', 0.0) for c in candles], dtype=np.float64)
+                C = np.array([getattr(c, 'close', 0.0) for c in candles], dtype=np.float64)
             
             self._array_cache.put(full_key, (O.copy(), H.copy(), L.copy(), C.copy()))
             return O, H, L, C
@@ -129,24 +129,35 @@ class CoreEngine:
         avg_body = float(np.mean(body_size[-20:])) if N >= 20 else float(np.mean(body_size))
         if avg_body == 0: avg_body = 1.0
         
+        # True Range Vectorization for ATR
+        tr = np.empty(N, dtype=np.float64)
+        tr[0] = H[0] - L[0]
+        if N > 1:
+            tr[1:] = np.maximum(H[1:] - L[1:], np.maximum(np.abs(H[1:] - C[:-1]), np.abs(L[1:] - C[:-1])))
+        atr_window = min(14, N)
+        avg_tr = float(np.mean(tr[-atr_window:]))
+        if avg_tr == 0: avg_tr = 1.0
+
         C_20 = C[-20:]
-        if len(C_20) > 1:
+        n_20 = len(C_20)
+        if n_20 > 1:
             returns = np.diff(C_20) / C_20[:-1]
             volatility = float(np.std(returns))
             ma_20 = float(np.mean(C_20))
             std_20 = float(np.std(C_20))
-            x = np.arange(len(C_20))
-            slope = float(np.sum((x - np.mean(x)) * (C_20 - np.mean(C_20))) / np.sum((x - np.mean(x))**2))
+            
+            x = np.arange(n_20, dtype=np.float64)
+            x_centered = x - np.mean(x)
+            denom = np.sum(x_centered**2)
+            slope = float(np.sum(x_centered * (C_20 - ma_20)) / denom) if denom > 0 else 0.0
         else:
             volatility, ma_20, std_20, slope = 0.0, float(C[-1]), 0.0, 0.0
 
         if N >= 10:
             recent_H, recent_L = H[-10:], L[-10:]
-            true_range = float(np.max(recent_H) - np.min(recent_L))
-            avg_tr = float(np.mean(recent_H - recent_L))
-            is_choppy = bool(true_range < (avg_tr * 2.5))
+            true_range_span = float(np.max(recent_H) - np.min(recent_L))
+            is_choppy = bool(true_range_span < (avg_tr * 2.5))
         else:
-            avg_tr = 4.0
             is_choppy = False
 
         # Filter low probability setups strictly
@@ -201,10 +212,9 @@ class CoreEngine:
         is_low_prob = hist_data["is_low_prob"]
         sh_indices = hist_data["sh_indices"]
         sl_indices = hist_data["sl_indices"]
-
-        body_size = np.abs(C - O)
-        is_green = C > O
-        is_red = C < O
+        body_size = hist_data["body_size"]
+        is_green = hist_data["is_green"]
+        is_red = hist_data["is_red"]
 
         lookback = min(15, N)
         O_lb, H_lb, L_lb, C_lb = O[-lookback:], H[-lookback:], L[-lookback:], C[-lookback:]

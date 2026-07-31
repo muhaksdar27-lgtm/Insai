@@ -30,6 +30,16 @@ export class FallbackChain<T> {
 
       try {
         const result = await operation(provider);
+        if (i > 0 && typeof result === 'object' && result !== null) {
+          const primaryName = this.providers[0].name;
+          logger.warn(`FALLBACK_EVENT: ${context} failed on primary ${primaryName}. Fallback recorded source: ${name}`);
+          (result as any).recordedSource = {
+            primaryProvider: primaryName,
+            activeProvider: name,
+            fallbackIndex: i,
+            fallbackReason: errors.map(e => e.message).join(' | ')
+          };
+        }
         return result;
       } catch (error: any) {
         if (error.message.includes('not configured')) {

@@ -3,6 +3,7 @@ import math
 import os
 import json
 import hashlib
+import numpy as np
 from core_engine import CoreEngine
 
 # Redis integration
@@ -83,17 +84,17 @@ class TechnicalAnalyzer:
             except Exception:
                 pass
         elif len(m15_c) >= 10:
-            closes = [float(c.get("close", getattr(c, "close", 0))) for c in m15_c[-10:]]
-            highs = [float(c.get("high", getattr(c, "high", 0))) for c in m15_c[-10:]]
-            lows = [float(c.get("low", getattr(c, "low", 0))) for c in m15_c[-10:]]
-            c_last = closes[-1]
-            result["bos_bull"] = c_last > max(highs[:-1])
-            result["bos_bear"] = c_last < min(lows[:-1])
-            result["choch_bull"] = result["bos_bull"] and closes[-2] < lows[-3]
-            result["choch_bear"] = result["bos_bear"] and closes[-2] > highs[-3]
+            closes = np.array([c.get("close", getattr(c, "close", 0)) for c in m15_c[-10:]], dtype=np.float64)
+            highs = np.array([c.get("high", getattr(c, "high", 0)) for c in m15_c[-10:]], dtype=np.float64)
+            lows = np.array([c.get("low", getattr(c, "low", 0)) for c in m15_c[-10:]], dtype=np.float64)
+            c_last = float(closes[-1])
+            result["bos_bull"] = bool(c_last > np.max(highs[:-1]))
+            result["bos_bear"] = bool(c_last < np.min(lows[:-1]))
+            result["choch_bull"] = bool(result["bos_bull"] and closes[-2] < lows[-3])
+            result["choch_bear"] = bool(result["bos_bear"] and closes[-2] > highs[-3])
             result["sd_zone_active"] = True
-            result["ob_fvg_bull"] = any(closes[i] > highs[i-1] for i in range(1, len(closes)))
-            result["ob_fvg_bear"] = any(closes[i] < lows[i-1] for i in range(1, len(closes)))
+            result["ob_fvg_bull"] = bool(np.any(closes[1:] > highs[:-1]))
+            result["ob_fvg_bear"] = bool(np.any(closes[1:] < lows[:-1]))
         else:
             result["bos_bull"] = result["bos_bear"] = False
             result["choch_bull"] = result["choch_bear"] = False

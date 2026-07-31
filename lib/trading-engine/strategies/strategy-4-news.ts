@@ -11,7 +11,9 @@ export interface StrategyExecutionResult {
 
 export function detectStrategy4News(context: RuleEvaluationContext, pyData: any = {}): StrategyExecutionResult {
   const symbol = context.symbol || 'XAUUSD';
-  const currentSession = pyData.current_session || pyData.session || 'News Window';
+  
+  const newsActive = !!pyData.news_high_impact_active || !!pyData.is_news_active || pyData.current_session === 'News Window';
+  const currentSession = pyData.current_session || pyData.session || (newsActive ? 'News Window' : 'No-News Window');
 
   const sweepBull = !!pyData.liq_sweep_bull;
   const sweepBear = !!pyData.liq_sweep_bear;
@@ -23,9 +25,9 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
 
   const candidateRules = {
     rule_news_high_impact: {
-      status: 'valid',
-      evidence: { detail: 'Post-News Reaction Window Monitored' },
-      description: 'Post-News Reaction Window'
+      status: newsActive ? 'valid' : 'invalid',
+      evidence: { newsActive, session: currentSession, detail: newsActive ? 'Post-News Reaction Window Active' : 'No-News Window Active (Strategy 4 Blocked)' },
+      description: 'High-Impact Post-News Reaction Window Restriction'
     },
     rule_spread_wide_filter: {
       status: spreadAcceptable ? 'valid' : 'invalid',
@@ -62,7 +64,7 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
   for (const [key, res] of Object.entries(candidateRules)) {
     totalCount++;
     if (res.status === 'invalid') {
-      if (key.includes('spread')) {
+      if (key.includes('news') || key.includes('spread')) {
         hasCriticalInvalid = true;
       }
     }
@@ -82,9 +84,16 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
     ? 'Post-News Spike Sweep & M1 Reversal BOS Confirmed'
     : 'Post-News Reaction & Reversal Monitored';
 
+  const riskDistance = atr * 0.6;
+  const entryPriceVal = currentPrice || 0;
+  const slVal = entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined;
+  const tp1Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.5) : entryPriceVal - (riskDistance * 2.5)) : undefined;
+  const tp2Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 4.0) : entryPriceVal - (riskDistance * 4.0)) : undefined;
+  const tp3Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 6.0) : entryPriceVal - (riskDistance * 6.0)) : undefined;
+
   const setupSnapshot = {
     strategyId: 'strategy-4-news',
-    strategyName: 'Strategi 4 (news)',
+    strategyName: 'STRATEGI 4 — News Liquidity Sweep Reversal',
     symbol,
     timeframe: 'M1',
     session: currentSession,
@@ -92,9 +101,17 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
     bias: direction === 'buy' ? 'BULLISH' : 'BEARISH',
     marketBias: direction === 'buy' ? 'BULLISH' : 'BEARISH',
     direction,
-    entry: currentPrice,
-    sl: direction === 'buy' ? (currentPrice ? currentPrice - (atr * 0.6) : undefined) : (currentPrice ? currentPrice + (atr * 0.6) : undefined),
-    tp1: direction === 'buy' ? (currentPrice ? currentPrice + (atr * 1.5) : undefined) : (currentPrice ? currentPrice - (atr * 1.5) : undefined),
+    entry: entryPriceVal,
+    entryPrice: entryPriceVal,
+    sl: slVal,
+    slPrice: slVal,
+    tp1: tp1Val,
+    tp1Price: tp1Val,
+    tp2: tp2Val,
+    tp2Price: tp2Val,
+    tp3: tp3Val,
+    tp3Price: tp3Val,
+    rr: '1:2.5',
     spikeSweepStatus: (sweepBull || sweepBear) ? 'Spike Sweep Confirmed' : 'Monitoring News Spike',
     reversalBosStatus: (bosBull || bosBear) ? 'Reversal BOS Confirmed' : 'Monitoring Reversal BOS',
     spreadStatus: spreadAcceptable ? 'Normalized' : 'Wide',

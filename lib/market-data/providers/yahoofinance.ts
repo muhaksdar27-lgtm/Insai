@@ -76,7 +76,9 @@ export class YahooFinanceProvider implements PriceProvider {
          interval: interval,
       };
 
+      const startTime = Date.now();
       const chartResult = await yahooFinance.chart(formattedSymbol, queryOptions as any) as any;
+      const latency = Date.now() - startTime;
       const result = chartResult?.quotes || [];
       
       if (!result || result.length === 0) {
@@ -89,7 +91,11 @@ export class YahooFinanceProvider implements PriceProvider {
          high: item.high,
          low: item.low,
          close: item.close,
-         volume: item.volume
+         volume: item.volume,
+         provider: this.name,
+         latency,
+         freshness: 'live' as const,
+         confidence: 0.95
       }));
 
       // Return the most recent 'limit' candles

@@ -226,6 +226,7 @@ export class TwelveDataProvider implements PriceProvider {
     }
     
     try {
+      const startTime = Date.now();
       const interval = this.mapTimeframe(timeframe);
       const res = await fetchWithRetry(`https://api.twelvedata.com/time_series?symbol=${formattedSymbol}&interval=${interval}&outputsize=${limit}&apikey=${key}`, {
           timeoutMs: 1500,
@@ -233,6 +234,7 @@ export class TwelveDataProvider implements PriceProvider {
       });
       if (res.status === 429) throw new Error('Rate Limited (429)');
       const data = await res.json();
+      const latency = Date.now() - startTime;
 
       if (data.code || !data.values) {
         throw new Error(data.message || 'Failed to fetch candles');
@@ -244,7 +246,11 @@ export class TwelveDataProvider implements PriceProvider {
         high: parseFloat(v.high) || 0,
         low: parseFloat(v.low) || 0,
         close: parseFloat(v.close) || 0,
-        volume: parseFloat(v.volume) || 0
+        volume: parseFloat(v.volume) || 0,
+        provider: this.name,
+        latency,
+        freshness: 'live' as const,
+        confidence: 1.0
       }));
 
       return candles.reverse();

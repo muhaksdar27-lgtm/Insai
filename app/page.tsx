@@ -135,41 +135,41 @@ export default function Dashboard() {
       initial="hidden"
       animate="visible"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {/* KPI Strip: Harga XAUUSD */}
-        <motion.div variants={itemVariants} className={`relative overflow-hidden bg-white/5 border rounded-md p-1.5 flex flex-col justify-between min-h-[2.75rem] shadow-sm backdrop-blur-md hover:bg-white/10 hover:border-blue-500/30 transition-all duration-300 group ${ping ? 'border-emerald-500/50' : 'border-white/10'}`}>
+        <motion.div variants={itemVariants} className={`relative overflow-hidden bg-white/5 border rounded-lg p-2.5 flex flex-col justify-between min-h-[3.25rem] shadow-sm backdrop-blur-md hover:bg-white/10 hover:border-blue-500/30 transition-all duration-300 group ${ping ? 'border-emerald-500/50' : 'border-white/10'}`}>
           <div className="absolute top-0 right-0 -mt-2 -mr-2 w-10 h-10 bg-blue-500/10 rounded-full blur-xl group-hover:bg-blue-500/20 transition-all"></div>
           <div className="flex justify-between items-start mb-0.5 relative z-10">
-            <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1">
-              <Activity className="w-[9px] h-[9px] text-blue-400" /> XAUUSD
+            <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+              <Activity className="w-3 h-3 text-blue-400" /> XAUUSD
             </div>
           </div>
           <div className="relative z-10">
             {loadingMarket ? (
               <div className="animate-pulse space-y-1 mt-1">
-                <div className="h-3 bg-white/5 rounded w-1/2"></div>
+                <div className="h-3.5 bg-white/5 rounded w-1/2"></div>
                 <div className="h-2 bg-white/5 rounded w-1/3"></div>
               </div>
             ) : errorMarket ? (
-              <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[7px] border border-rose-500/20">
+              <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[8px] border border-rose-500/20">
                 <span className="truncate">{errorMarket}</span>
               </div>
             ) : currentMarketStatus?.status === 'not_configured' ? (
-              <div className="flex flex-col text-amber-400 bg-amber-500/10 p-1 rounded text-[7px] border border-amber-500/20">
+              <div className="flex flex-col text-amber-400 bg-amber-500/10 p-1 rounded text-[8px] border border-amber-500/20">
                 <span className="truncate">{currentMarketStatus.reason || 'Not configured'}</span>
               </div>
             ) : currentMarketStatus ? (
               <>
-                <div className={`text-[9px] font-mono font-bold tracking-tight flex items-center gap-1 transition-colors duration-300 ${ping ? 'text-emerald-400' : 'text-zinc-100'}`}>
+                <div className={`text-sm font-mono font-bold tracking-tight flex items-center gap-1 transition-colors duration-300 ${ping ? 'text-emerald-400' : 'text-zinc-100'}`}>
                   {currentMarketStatus.price ? currentMarketStatus.price.toFixed(2) : "--.--"}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1">
+                <div className="mt-1 flex items-center gap-1.5">
                   <span
-                    className={`inline-flex items-center px-1 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase transition-colors duration-300 ${currentMarketStatus.freshness === "live" || currentMarketStatus.freshness === "cached" ? (ping ? "bg-emerald-500/20 text-emerald-300" : "bg-blue-500/10 text-blue-400") : "bg-white/5 text-zinc-500"}`}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider uppercase transition-colors duration-300 ${currentMarketStatus.freshness === "live" || currentMarketStatus.freshness === "cached" ? (ping ? "bg-emerald-500/20 text-emerald-300" : "bg-blue-500/10 text-blue-400") : "bg-white/5 text-zinc-400"}`}
                   >
                     {currentMarketStatus.freshness || "loading"}
                   </span>
-                  <span className="text-[6px] text-zinc-600 font-bold uppercase tracking-wider">{currentMarketStatus.provider || 'Unknown'}</span>
+                  <span className="text-[8px] text-zinc-400 font-bold uppercase tracking-wider">{currentMarketStatus.provider || 'Unknown'}</span>
                 </div>
               </>
             ) : null}
@@ -177,37 +177,37 @@ export default function Dashboard() {
         </motion.div>
 
         {/* KPI Strip: Trend / Bias */}
-        <motion.div variants={itemVariants} className="relative overflow-hidden bg-white/5 border border-white/10 rounded-md p-1.5 flex flex-col justify-between min-h-[2.75rem] shadow-sm backdrop-blur-md hover:bg-white/10 hover:border-purple-500/30 transition-all duration-300 group">
+        <motion.div variants={itemVariants} className="relative overflow-hidden bg-white/5 border border-white/10 rounded-lg p-2.5 flex flex-col justify-between min-h-[3.25rem] shadow-sm backdrop-blur-md hover:bg-white/10 hover:border-purple-500/30 transition-all duration-300 group">
           <div className="absolute top-0 right-0 -mt-2 -mr-2 w-10 h-10 bg-purple-500/10 rounded-full blur-xl group-hover:bg-purple-500/20 transition-all"></div>
           <div className="flex justify-between items-start mb-0.5 relative z-10">
-            <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1">
-              <BarChart2 className="w-[9px] h-[9px] text-purple-400" /> HTF Bias
+            <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+              <BarChart2 className="w-3 h-3 text-purple-400" /> HTF Bias
             </div>
           </div>
           <div className="relative z-10">
             {loadingMarket ? (
               <div className="animate-pulse space-y-1 mt-1">
-                <div className="h-3 bg-white/5 rounded w-1/2"></div>
+                <div className="h-3.5 bg-white/5 rounded w-1/2"></div>
                 <div className="h-2 bg-white/5 rounded w-1/3"></div>
               </div>
             ) : errorMarket ? (
-              <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[7px] border border-rose-500/20">
+              <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[8px] border border-rose-500/20">
                 <span className="truncate">{errorMarket}</span>
               </div>
             ) : currentMarketStatus?.status === 'not_configured' ? (
-              <div className="flex flex-col text-amber-400 bg-amber-500/10 p-1 rounded text-[7px] border border-amber-500/20">
+              <div className="flex flex-col text-amber-400 bg-amber-500/10 p-1 rounded text-[8px] border border-amber-500/20">
                 <span className="truncate">{currentMarketStatus.reason || 'Not configured'}</span>
               </div>
             ) : currentMarketStatus ? (
               <>
-                <div className="text-[9px] font-bold text-zinc-100 tracking-tight">
+                <div className="text-sm font-bold text-zinc-100 tracking-tight">
                   {currentMarketStatus.bias || "NEUTRAL"}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1">
+                <div className="mt-1 flex items-center gap-1.5">
                   <span
-                    className={`inline-flex items-center px-1 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase ${currentMarketStatus.bias ? "bg-purple-500/10 text-purple-400" : "bg-white/5 text-zinc-500"}`}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider uppercase ${currentMarketStatus.bias ? "bg-purple-500/10 text-purple-400" : "bg-white/5 text-zinc-400"}`}
                   >
-                    {currentMarketStatus.bias ? "live" : "unavailable"}
+                    {currentMarketStatus.bias ? "ONLINE" : "WAIT"}
                   </span>
                 </div>
               </>
@@ -218,24 +218,24 @@ export default function Dashboard() {
         {/* KPI Strip: Session */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white/5 border border-white/10 rounded-md p-1.5 flex flex-col justify-between min-h-[2.75rem] shadow-sm backdrop-blur-md cursor-pointer hover:border-amber-500/50 hover:bg-white/10 transition-all duration-300 group"
+          className="relative overflow-hidden bg-white/5 border border-white/10 rounded-lg p-2.5 flex flex-col justify-between min-h-[3.25rem] shadow-sm backdrop-blur-md cursor-pointer hover:border-amber-500/50 hover:bg-white/10 transition-all duration-300 group"
           onClick={() => setShowSessionDrawer(true)}
         >
           <div className="absolute top-0 right-0 -mt-2 -mr-2 w-10 h-10 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/20 transition-all"></div>
           <div className="flex justify-between items-start mb-0.5 relative z-10">
-            <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1">
-              <Clock className="w-[9px] h-[9px] text-amber-400" /> Session
+            <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+              <Clock className="w-3 h-3 text-amber-400" /> Session
             </div>
           </div>
           <div className="relative z-10">
-            <div className="text-[9px] font-bold text-zinc-100 tracking-tight">
+            <div className="text-sm font-bold text-zinc-100 tracking-tight">
               {currentSessionName}
             </div>
-            <div className="mt-0.5 flex items-center gap-1">
-              <span className="inline-flex items-center px-1 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase bg-amber-500/10 text-amber-400">
-                active
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider uppercase ${currentSessionName !== '---' ? 'bg-amber-500/10 text-amber-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                {currentSessionName !== '---' ? 'ACTIVE' : 'WAIT'}
               </span>
-              <span className="text-[6px] text-zinc-600 font-bold uppercase tracking-wider">UTC</span>
+              <span className="text-[8px] text-zinc-400 font-bold uppercase tracking-wider">UTC</span>
             </div>
           </div>
         </motion.div>
@@ -243,32 +243,32 @@ export default function Dashboard() {
         {/* KPI Strip: Signal Aktif */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white/5 border border-white/10 rounded-md p-1.5 flex flex-col justify-between min-h-[2.75rem] shadow-sm backdrop-blur-md cursor-pointer hover:border-emerald-500/50 hover:bg-white/10 transition-all duration-300 group"
+          className="relative overflow-hidden bg-white/5 border border-white/10 rounded-lg p-2.5 flex flex-col justify-between min-h-[3.25rem] shadow-sm backdrop-blur-md cursor-pointer hover:border-emerald-500/50 hover:bg-white/10 transition-all duration-300 group"
           onClick={() => router.push("/live-signals")}
         >
           <div className="absolute top-0 right-0 -mt-2 -mr-2 w-10 h-10 bg-emerald-500/10 rounded-full blur-xl group-hover:bg-emerald-500/20 transition-all"></div>
           <div className="flex justify-between items-start mb-0.5 relative z-10">
-            <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1">
-              <Zap className="w-[9px] h-[9px] text-emerald-400" /> Signals
+            <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+              <Zap className="w-3 h-3 text-emerald-400" /> Signals
             </div>
           </div>
           <div className="relative z-10">
             {loadingSignals ? (
                <div className="h-4 bg-white/5 rounded animate-pulse w-10 mt-1"></div>
             ) : errorSignals ? (
-              <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[7px] border border-rose-500/20">
+              <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[8px] border border-rose-500/20">
                 <span className="truncate">{errorSignals}</span>
               </div>
             ) : activeSignals ? (
               <>
-                <div className="text-[9px] font-bold text-zinc-100 tracking-tight flex items-baseline gap-1">
-                  {safeActiveSignals.length} <span className="text-[6px] font-bold text-zinc-500 uppercase tracking-widest">active</span>
+                <div className="text-sm font-bold text-zinc-100 tracking-tight flex items-baseline gap-1">
+                  {safeActiveSignals.length} <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-wider">active</span>
                 </div>
-                <div className="mt-0.5 flex items-center gap-1">
+                <div className="mt-1 flex items-center gap-1.5">
                   <span
-                    className={`inline-flex items-center px-1 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase ${safeActiveSignals.length > 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-white/5 text-zinc-500"}`}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider uppercase ${safeActiveSignals.length > 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-white/5 text-zinc-400"}`}
                   >
-                    {safeActiveSignals.length > 0 ? "live" : "none"}
+                    {safeActiveSignals.length > 0 ? "ONLINE" : "WAIT"}
                   </span>
                 </div>
               </>
@@ -454,38 +454,38 @@ export default function Dashboard() {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="w-full max-w-[280px] h-full bg-zinc-950/90 border-l border-white/10 shadow-2xl p-3 overflow-y-auto backdrop-blur-md"
+            className="w-full max-w-xs sm:max-w-sm h-full bg-zinc-950/95 border-l border-white/10 shadow-2xl p-4 overflow-y-auto backdrop-blur-md"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[8px] font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-widest">
-                <ListFilter className="w-3 h-3 text-zinc-500" />
+              <h3 className="text-xs font-bold text-zinc-200 flex items-center gap-1.5 uppercase tracking-wider">
+                <ListFilter className="w-4 h-4 text-zinc-400" />
                 Strategy Setup
               </h3>
               <button
                 onClick={() => setSelectedStrategy(null)}
-                className="p-1 hover:bg-white/10 rounded-full text-zinc-500 hover:text-white transition-colors"
+                className="p-1 hover:bg-white/10 rounded-full text-zinc-400 hover:text-white transition-colors"
               >
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-2">
-              <div className="bg-white/5 border border-white/10 rounded-lg p-2 shadow-sm relative overflow-hidden">
+            <div className="space-y-3">
+              <div className="bg-white/5 border border-white/10 rounded-lg p-3 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 right-0 -mt-6 -mr-6 w-20 h-20 bg-blue-500/10 rounded-full blur-xl"></div>
-                <div className="flex justify-between items-start mb-1 relative z-10">
-                  <div className="max-w-[70%]">
-                    <h4 className="text-[10px] font-bold text-white tracking-wide truncate">{selectedStrategy.name}</h4>
-                    <p className="text-[6px] text-zinc-500 mt-0.5 leading-relaxed line-clamp-2">{selectedStrategy.description}</p>
+                <div className="flex justify-between items-start mb-1 relative z-10 gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-bold text-white tracking-wide truncate">{selectedStrategy.name}</h4>
+                    <p className="text-[10px] text-zinc-400 mt-0.5 leading-relaxed line-clamp-2">{selectedStrategy.description}</p>
                   </div>
-                  <span className={`inline-flex items-center px-1 py-[2px] rounded-[3px] text-[5px] font-bold tracking-widest uppercase shadow-sm border ${selectedStrategy.status === 'active' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-white/5 text-zinc-500 border-white/10'}`}>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[8px] font-bold tracking-wider uppercase shrink-0 border ${selectedStrategy.status === 'active' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-white/5 text-zinc-400 border-white/10'}`}>
                     {selectedStrategy.status}
                   </span>
                 </div>
               </div>
 
               <div>
-                <h5 className="text-[7px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Setup Requirements</h5>
+                <h5 className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Setup Requirements</h5>
                 
                 <div className="mb-3">
                   {selectedStrategy && (
@@ -505,25 +505,25 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   {buildRules(selectedStrategy).map((rule: any, idx: number) => {
                      const isPassed = rule.status === 'valid' || rule.passed === true;
                      const isFailed = rule.status === 'invalid' || rule.passed === false;
                      return (
-                        <div key={idx} className="flex justify-between items-center bg-white/5 border border-white/10 rounded-md p-1.5 shadow-sm">
-                          <span className="text-[8px] text-zinc-400 font-medium capitalize tracking-wide truncate pr-2">{rule.ruleId.replace(/([A-Z])/g, " $1").trim()}</span>
+                        <div key={idx} className="flex justify-between items-center bg-white/5 border border-white/10 rounded-md p-2 shadow-sm">
+                          <span className="text-[9px] text-zinc-300 font-medium capitalize tracking-wide truncate pr-2">{rule.ruleId.replace(/([A-Z])/g, " $1").trim()}</span>
                           {isPassed ? (
-                            <span className="text-[7px] font-bold text-emerald-400 flex items-center gap-1 shrink-0"><Shield className="w-2 h-2" /> PASS</span>
+                            <span className="text-[8px] font-bold text-emerald-400 flex items-center gap-1 shrink-0"><Shield className="w-2.5 h-2.5" /> PASS</span>
                           ) : isFailed ? (
-                            <span className="text-[7px] font-bold text-rose-400 flex items-center gap-1 shrink-0"><X className="w-2 h-2" /> FAIL</span>
+                            <span className="text-[8px] font-bold text-rose-400 flex items-center gap-1 shrink-0"><X className="w-2.5 h-2.5" /> FAIL</span>
                           ) : (
-                            <span className="text-[7px] font-bold text-zinc-600 flex items-center gap-1 shrink-0">WAIT</span>
+                            <span className="text-[8px] font-bold text-blue-400 flex items-center gap-1 shrink-0">WAIT</span>
                           )}
                         </div>
                      );
                   })}
                   {buildRules(selectedStrategy).length === 0 && (
-                    <div className="text-[8px] text-zinc-600 text-center py-4 bg-white/5 border border-white/10 rounded-lg border-dashed">
+                    <div className="text-[9px] text-zinc-500 text-center py-4 bg-white/5 border border-white/10 rounded-lg border-dashed">
                       No setup rules
                     </div>
                   )}
@@ -532,7 +532,7 @@ export default function Dashboard() {
               
               <button 
                 onClick={() => router.push("/monitoring")}
-                className="w-full mt-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-lg text-[8px] text-zinc-300 transition-all font-bold tracking-widest uppercase shadow-sm"
+                className="w-full mt-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-lg text-[9px] text-zinc-200 transition-all font-bold tracking-wider uppercase shadow-sm"
               >
                 Go to Scan
               </button>
@@ -557,19 +557,19 @@ export default function Dashboard() {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="w-full max-w-[240px] h-full bg-zinc-950/90 border-l border-white/10 shadow-2xl p-3 overflow-y-auto backdrop-blur-md"
+            className="w-full max-w-xs sm:max-w-sm h-full bg-zinc-950/95 border-l border-white/10 shadow-2xl p-4 overflow-y-auto backdrop-blur-md"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[8px] font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-widest">
-                <Clock className="w-3 h-3 text-zinc-500" />
-                Session
+              <h3 className="text-xs font-bold text-zinc-200 flex items-center gap-1.5 uppercase tracking-wider">
+                <Clock className="w-4 h-4 text-zinc-400" />
+                Session Detail
               </h3>
               <button
                 onClick={() => setShowSessionDrawer(false)}
-                className="p-1 hover:bg-white/10 rounded-full text-zinc-500 hover:text-white transition-colors"
+                className="p-1 hover:bg-white/10 rounded-full text-zinc-400 hover:text-white transition-colors"
               >
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 

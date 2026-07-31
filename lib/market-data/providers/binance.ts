@@ -65,6 +65,7 @@ export class BinanceProvider implements PriceProvider {
     const formattedSymbol = this.formatSymbol(symbol);
     
     try {
+      const startTime = Date.now();
       const interval = this.mapTimeframe(timeframe);
       const res = await fetchWithRetry(`https://api.binance.com/api/v3/klines?symbol=${formattedSymbol}&interval=${interval}&limit=${limit}`, {
           timeoutMs: 1500,
@@ -76,6 +77,7 @@ export class BinanceProvider implements PriceProvider {
       }
 
       const data = await res.json();
+      const latency = Date.now() - startTime;
       if (!Array.isArray(data)) {
         throw new Error('Failed to fetch candles from Binance');
       }
@@ -86,7 +88,11 @@ export class BinanceProvider implements PriceProvider {
         high: parseFloat(v[2]),
         low: parseFloat(v[3]),
         close: parseFloat(v[4]),
-        volume: parseFloat(v[5])
+        volume: parseFloat(v[5]),
+        provider: this.name,
+        latency,
+        freshness: 'live' as const,
+        confidence: 0.90
       }));
 
       // Binance returns oldest first, which matches our system's expected ascending order

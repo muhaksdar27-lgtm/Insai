@@ -1,34 +1,43 @@
 import { StateName, StepStatus } from '@/types';
 
 /**
- * Strict set of 12 allowed states across all trading strategies.
- * State machine is the single source of truth for setup progression.
+ * Strict set of 10 sequential execution flow states + terminal states.
+ * Deterministic state machine is the single source of truth for setup progression.
  */
 export const STEPS = {
-  WAIT: 'WAIT',
-  SCANNING: 'SCANNING',
-  STRUCTURE: 'STRUCTURE',
-  SETUP: 'SETUP',
-  CONFIRMATION: 'CONFIRMATION',
-  VALIDATION: 'VALIDATION',
+  IDLE: 'IDLE',
+  WAIT_SESSION: 'WAIT_SESSION',
+  SCAN_MARKET: 'SCAN_MARKET',
+  DETECT_SETUP: 'DETECT_SETUP',
+  VALIDATE_RULES: 'VALIDATE_RULES',
+  CALCULATE_RISK: 'CALCULATE_RISK',
   AI_VALIDATION: 'AI_VALIDATION',
   SIGNAL_READY: 'SIGNAL_READY',
-  SIGNAL_SENT: 'SIGNAL_SENT',
+  SEND_SIGNAL: 'SEND_SIGNAL',
   FINISHED: 'FINISHED',
   REJECTED: 'REJECTED',
-  ERROR: 'ERROR'
+  ERROR: 'ERROR',
+
+  // Legacy aliases for backward compatibility
+  WAIT: 'WAIT_SESSION',
+  SCANNING: 'SCAN_MARKET',
+  STRUCTURE: 'DETECT_SETUP',
+  SETUP: 'DETECT_SETUP',
+  CONFIRMATION: 'DETECT_SETUP',
+  VALIDATION: 'VALIDATE_RULES',
+  SIGNAL_SENT: 'SEND_SIGNAL'
 } as const;
 
 export const CANONICAL_STATE_FLOW: StateName[] = [
-  'WAIT',
-  'SCANNING',
-  'STRUCTURE',
-  'SETUP',
-  'CONFIRMATION',
-  'VALIDATION',
+  'IDLE',
+  'WAIT_SESSION',
+  'SCAN_MARKET',
+  'DETECT_SETUP',
+  'VALIDATE_RULES',
+  'CALCULATE_RISK',
   'AI_VALIDATION',
   'SIGNAL_READY',
-  'SIGNAL_SENT',
+  'SEND_SIGNAL',
   'FINISHED'
 ];
 
@@ -55,22 +64,23 @@ export interface StrategyFlowConfig {
 }
 
 /**
- * Canonical 12-state step framework required for every strategy.
- * Every strategy follows the identical state sequence frame with its own rule set.
+ * Deterministic 10-step canonical flow required for every strategy.
+ * Allowed flow: IDLE -> WAIT_SESSION -> SCAN_MARKET -> DETECT_SETUP -> VALIDATE_RULES -> CALCULATE_RISK -> AI_VALIDATION -> SIGNAL_READY -> SEND_SIGNAL -> FINISHED
+ * Terminal rejection: REJECTED / ERROR (allowed from any state)
  */
 export const CANONICAL_STEPS: StrategyStepConfig[] = [
-  { id: 'WAIT', title: 'Session & Timing Check', description: 'Checking session overlap and timing filters', status: 'awaiting', next: 'SCANNING', rollback: null, timeout: 0 },
-  { id: 'SCANNING', title: 'Market Scanning', description: 'Scanning live price action and candle feed', status: 'awaiting', next: 'STRUCTURE', rollback: 'WAIT', timeout: 0 },
-  { id: 'STRUCTURE', title: 'Market Structure', description: 'Validating HTF bias and market structure alignment', status: 'awaiting', next: 'SETUP', rollback: 'WAIT', timeout: 0 },
-  { id: 'SETUP', title: 'Setup Identification', description: 'Detecting key S&D zone, level, or liquidity sweep', status: 'awaiting', next: 'CONFIRMATION', rollback: 'WAIT', timeout: 0 },
-  { id: 'CONFIRMATION', title: 'Trigger & Confirmation', description: 'Verifying CHoCH, engulfing, or structural trigger', status: 'awaiting', next: 'VALIDATION', rollback: 'WAIT', timeout: 0 },
-  { id: 'VALIDATION', title: 'Rule Set Validation', description: 'Evaluating deterministic rule engine checklist', status: 'awaiting', next: 'AI_VALIDATION', rollback: 'REJECTED', timeout: 0 },
-  { id: 'AI_VALIDATION', title: 'AI Confluence Gate', description: 'Running AI verification and risk validation', status: 'awaiting', next: 'SIGNAL_READY', rollback: 'REJECTED', timeout: 0 },
-  { id: 'SIGNAL_READY', title: 'Signal Assembly & Pricing', description: 'Compiling entry, SL, TPs, and RR parameters', status: 'awaiting', next: 'SIGNAL_SENT', rollback: 'REJECTED', timeout: 0 },
-  { id: 'SIGNAL_SENT', title: 'Signal Dispatched', description: 'Signal active and dispatched to monitoring pipeline', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
+  { id: 'IDLE', title: 'Standby / Initializing', description: 'System idle and awaiting market cycle', status: 'awaiting', next: 'WAIT_SESSION', rollback: null, timeout: 0 },
+  { id: 'WAIT_SESSION', title: 'Session & Timing Check', description: 'Checking market session and macroeconomic news filters', status: 'awaiting', next: 'SCAN_MARKET', rollback: 'IDLE', timeout: 0 },
+  { id: 'SCAN_MARKET', title: 'Market Scanning', description: 'Scanning live market price action and candles', status: 'awaiting', next: 'DETECT_SETUP', rollback: 'IDLE', timeout: 0 },
+  { id: 'DETECT_SETUP', title: 'Setup Identification', description: 'Detecting market structure, S&D zone, or liquidity sweep', status: 'awaiting', next: 'VALIDATE_RULES', rollback: 'IDLE', timeout: 0 },
+  { id: 'VALIDATE_RULES', title: 'Rule Engine Validation', description: 'Evaluating deterministic rule checklist', status: 'awaiting', next: 'CALCULATE_RISK', rollback: 'REJECTED', timeout: 0 },
+  { id: 'CALCULATE_RISK', title: 'Risk & Price Parameters', description: 'Calculating entry, SL, TP levels and Risk/Reward ratio', status: 'awaiting', next: 'AI_VALIDATION', rollback: 'REJECTED', timeout: 0 },
+  { id: 'AI_VALIDATION', title: 'AI Confluence Gate', description: 'Running AI verification and risk confluence checks', status: 'awaiting', next: 'SIGNAL_READY', rollback: 'REJECTED', timeout: 0 },
+  { id: 'SIGNAL_READY', title: 'Signal Assembly', description: 'Compiling signal object with single source of truth', status: 'awaiting', next: 'SEND_SIGNAL', rollback: 'REJECTED', timeout: 0 },
+  { id: 'SEND_SIGNAL', title: 'Signal Dispatched', description: 'Dispatched to notifications and telemetry stream', status: 'active', next: 'FINISHED', rollback: null, timeout: 0 },
   { id: 'FINISHED', title: 'Finished', description: 'Strategy execution cycle completed successfully', status: 'terminal', next: null, rollback: null, timeout: 0 },
   { id: 'REJECTED', title: 'Rejected', description: 'Setup rejected by rule or validation engine', status: 'terminal', next: null, rollback: null, timeout: 0 },
-  { id: 'ERROR', title: 'Execution Error', description: 'System or data exception encountered during scan', status: 'terminal', next: null, rollback: null, timeout: 0 }
+  { id: 'ERROR', title: 'Execution Error', description: 'System or data exception encountered', status: 'terminal', next: null, rollback: null, timeout: 0 }
 ];
 
 export const STRATEGY_FLOWS_CONFIG: StrategyFlowConfig[] = [
@@ -112,21 +122,21 @@ export const STRATEGY_FLOWS_CONFIG: StrategyFlowConfig[] = [
 ];
 
 export function normalizeStateName(state: string): StateName {
-  if (!state) return 'WAIT';
+  if (!state) return 'IDLE';
   const s = state.toUpperCase().trim();
-  if (s === 'IDLE' || s === 'WAIT_SESSION' || s === 'WAIT_NEWS') return 'WAIT';
-  if (s === 'SCANNING') return 'SCANNING';
-  if (s === 'WAIT_TREND' || s === 'WAIT_STRUCTURE' || s === 'STRUCTURE') return 'STRUCTURE';
-  if (s === 'WAIT_LEVEL' || s === 'WAIT_SWEEP' || s === 'WAIT_PATTERN' || s === 'WAIT_REJECTION' || s === 'WAIT_ZONE' || s === 'SETUP') return 'SETUP';
-  if (s === 'WAIT_CONFIRMATION' || s === 'CONFIRMATION') return 'CONFIRMATION';
-  if (s === 'VALIDATION') return 'VALIDATION';
-  if (s === 'WAIT_AI' || s === 'AI_VALIDATION') return 'AI_VALIDATION';
+  if (s === 'IDLE' || s === 'STANDBY') return 'IDLE';
+  if (s === 'WAIT_SESSION' || s === 'WAIT' || s === 'WAIT_NEWS') return 'WAIT_SESSION';
+  if (s === 'SCAN_MARKET' || s === 'SCANNING') return 'SCAN_MARKET';
+  if (s === 'DETECT_SETUP' || s === 'STRUCTURE' || s === 'SETUP' || s === 'CONFIRMATION' || s === 'WAIT_STRUCTURE' || s === 'WAIT_PATTERN' || s === 'WAIT_SWEEP') return 'DETECT_SETUP';
+  if (s === 'VALIDATE_RULES' || s === 'VALIDATION') return 'VALIDATE_RULES';
+  if (s === 'CALCULATE_RISK') return 'CALCULATE_RISK';
+  if (s === 'AI_VALIDATION' || s === 'WAIT_AI') return 'AI_VALIDATION';
   if (s === 'SIGNAL_READY') return 'SIGNAL_READY';
-  if (s === 'SIGNAL_ACTIVE' || s === 'SIGNAL' || s === 'SIGNAL_SENT') return 'SIGNAL_SENT';
+  if (s === 'SEND_SIGNAL' || s === 'SIGNAL_SENT' || s === 'SIGNAL_ACTIVE' || s === 'SIGNAL') return 'SEND_SIGNAL';
   if (s === 'FINISHED') return 'FINISHED';
-  if (s === 'REJECTED' || s === 'EXPIRED' || s === 'SUPPRESSED') return 'REJECTED';
+  if (s === 'REJECTED' || s === 'EXPIRED' || s === 'SUPPRESSED' || s === 'FAILED') return 'REJECTED';
   if (s === 'ERROR') return 'ERROR';
-  return 'WAIT';
+  return 'IDLE';
 }
 
 export function getStrategyFlow(strategyId: string): StrategyFlowConfig | undefined {
@@ -180,7 +190,7 @@ export function isFinished(_strategyId: string, stepId: string): boolean {
 
 export function isWaiting(_strategyId: string, stepId: string): boolean {
   const norm = normalizeStateName(stepId);
-  return norm === 'WAIT' || norm === 'SCANNING';
+  return norm === 'IDLE' || norm === 'WAIT_SESSION' || norm === 'SCAN_MARKET';
 }
 
 export function isRejected(_strategyId: string, stepId: string): boolean {
@@ -214,7 +224,7 @@ export class StateMachine {
   private currentSignalKey: string | undefined;
   public lastTransitionState: StrategyState | null = null;
 
-  constructor(strategyId: string, initialState: StateName = 'WAIT') {
+  constructor(strategyId: string, initialState: StateName = 'IDLE') {
     this.strategyId = strategyId;
     this.currentState = normalizeStateName(initialState);
   }
@@ -233,7 +243,7 @@ export class StateMachine {
     if (signalKey) {
        this.currentSignalKey = signalKey;
     }
-    if (['WAIT', 'FINISHED', 'REJECTED', 'ERROR'].includes(normState)) {
+    if (['IDLE', 'FINISHED', 'REJECTED', 'ERROR'].includes(normState)) {
        this.currentSignalKey = undefined;
     }
     
@@ -265,20 +275,25 @@ export class StateMachine {
 
   public transition(newState: StateName, reason: string, signalKey?: string, context?: any): StrategyState {
     const normState = normalizeStateName(newState);
+    const normCurrent = normalizeStateName(this.currentState);
     const isTerm = ['FINISHED', 'REJECTED', 'ERROR'].includes(normState);
     
-    const isStateInFlow = getStep(this.strategyId, normState) !== undefined;
-    const currentStepConfig = getStep(this.strategyId, this.currentState);
-    const isRollback = currentStepConfig?.rollback === normState;
-    const isValidTransition = isStateInFlow || isTerm || isRollback;
+    const currentStepConfig = CANONICAL_STEPS.find(s => s.id === normCurrent);
+    const expectedNext = currentStepConfig?.next;
+    
+    const isValidTransition = 
+      normState === normCurrent ||
+      isTerm ||
+      normState === expectedNext ||
+      (currentStepConfig?.rollback === normState);
     
     if (isValidTransition) {
       this.currentState = normState;
     } else {
-      throw new Error(`Invalid transition: Cannot move from ${this.currentState} to ${normState}.`);
+      throw new Error(`Invalid state transition: Cannot move from ${normCurrent} to ${normState}. Expected next state: ${expectedNext || 'terminal'}.`);
     }
 
-    if (this.currentState === 'SIGNAL_READY' || this.currentState === 'SIGNAL_SENT') {
+    if (this.currentState === 'SIGNAL_READY' || this.currentState === 'SEND_SIGNAL') {
         this.currentSignalKey = signalKey || this.generateSignalKey(context);
     } else if (signalKey) {
         this.currentSignalKey = signalKey;

@@ -12,8 +12,11 @@ export interface StrategyExecutionResult {
 export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any = {}): StrategyExecutionResult {
   const symbol = context.symbol || 'XAUUSD';
   const pairMatch = symbol === 'XAUUSD';
-  const currentSession = pyData.current_session || pyData.session || 'London';
-  const sessionValid = currentSession === 'London' || currentSession === 'London/NY Overlap';
+
+  const currentHour = new Date(context.timestamp || Date.now()).getUTCHours();
+  const isLondonHours = currentHour >= 7 && currentHour < 16;
+  const currentSession = pyData.current_session || pyData.session || (isLondonHours ? 'London' : 'Asian/Off-Session');
+  const sessionValid = isLondonHours && (currentSession === 'London' || currentSession === 'London/NY Overlap');
 
   const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
   const sweepBull = !!pyData.liq_sweep_bull;
@@ -90,15 +93,22 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
   else if (hasPending) isCandidateValid = 'pending';
   else isCandidateValid = confluenceScore >= 80;
 
-  const direction: 'buy' | 'sell' = (h1Trend === 'bearish' || chochBear || sweepBear) ? 'sell' : 'buy';
+  const direction: 'buy' | 'sell' = (chochBull || sweepBull) ? 'buy' : ((chochBear || sweepBear) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
 
   const confirmationStatus = (sweepBull || sweepBear) && (chochBull || chochBear) 
     ? 'Asia Sweep & M15 CHoCH Confirmed'
     : 'Asia Liquidity Sweep / CHoCH Monitored';
 
+  const riskDistance = atr * 0.5;
+  const entryPriceVal = currentPrice || 0;
+  const slVal = entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined;
+  const tp1Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined;
+  const tp2Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.5) : entryPriceVal - (riskDistance * 3.5)) : undefined;
+  const tp3Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 5.0) : entryPriceVal - (riskDistance * 5.0)) : undefined;
+
   const setupSnapshot = {
     strategyId: 'strategy-1-smc',
-    strategyName: 'STRATEGI 1 (smc +sesi landon+15mnt)',
+    strategyName: 'STRATEGI 1 — SMC + Sesi London + M15',
     symbol,
     timeframe: 'M15',
     session: currentSession,
@@ -106,9 +116,17 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
     bias: h1Trend.toUpperCase(),
     marketBias: h1Trend.toUpperCase(),
     direction,
-    entry: currentPrice,
-    sl: direction === 'buy' ? (currentPrice ? currentPrice - (atr * 0.5) : undefined) : (currentPrice ? currentPrice + (atr * 0.5) : undefined),
-    tp1: direction === 'buy' ? (currentPrice ? currentPrice + (atr * 1.0) : undefined) : (currentPrice ? currentPrice - (atr * 1.0) : undefined),
+    entry: entryPriceVal,
+    entryPrice: entryPriceVal,
+    sl: slVal,
+    slPrice: slVal,
+    tp1: tp1Val,
+    tp1Price: tp1Val,
+    tp2: tp2Val,
+    tp2Price: tp2Val,
+    tp3: tp3Val,
+    tp3Price: tp3Val,
+    rr: '1:2.0',
     sweepStatus: (sweepBull || sweepBear) ? 'Asia Sweep Confirmed' : 'Asia Sweep Monitored',
     chochStatus: (chochBull || chochBear) ? 'M15 CHoCH Confirmed' : 'M15 CHoCH Monitored',
     obFvgStatus: (obFvgBull || obFvgBear) ? 'OB/FVG Aligned' : 'OB/FVG Monitored',

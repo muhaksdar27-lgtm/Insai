@@ -61,7 +61,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
             atr14Buffer: 'ATR SL Buffer'
         },
         priority: 5,
-        isRelevantForStates: (_states) => true,
+        isRelevantForStates: (states) => states.some(s => [MarketState.TRENDING, MarketState.LIQUIDITY_HUNT, MarketState.SESSION_TRANSITION].includes(s)),
         extractCandidateRules: (context, pyData = {}) => detectStrategy1SMC(context, pyData)
     },
     'strategy-2-snd': {
@@ -86,7 +86,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
             atrBuffer: 'ATR SL Buffer'
         },
         priority: 4,
-        isRelevantForStates: (_states) => true,
+        isRelevantForStates: (states) => states.some(s => [MarketState.TRENDING, MarketState.RANGING, MarketState.COMPRESSION, MarketState.EXPANSION].includes(s)),
         extractCandidateRules: (context, pyData = {}) => detectStrategy2SND(context, pyData)
     },
     'strategy-3-scalping': {
@@ -112,7 +112,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
             newsFilter: 'News Exclusion Gate'
         },
         priority: 3,
-        isRelevantForStates: (_states) => true,
+        isRelevantForStates: (states) => states.some(s => [MarketState.RANGING, MarketState.COMPRESSION, MarketState.LIQUIDITY_HUNT, MarketState.HIGH_VOLATILITY].includes(s)),
         extractCandidateRules: (context, pyData = {}) => detectStrategy3Scalping(context, pyData)
     },
     'strategy-4-news': {
@@ -137,7 +137,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
             m1BosReversal: 'M1 Reversal BOS'
         },
         priority: 2,
-        isRelevantForStates: (_states) => true,
+        isRelevantForStates: (states) => states.some(s => [MarketState.NEWS_MODE, MarketState.HIGH_VOLATILITY].includes(s)),
         extractCandidateRules: (context, pyData = {}) => detectStrategy4News(context, pyData)
     },
     'strategy-5-smc-sd-confluence': {
@@ -162,7 +162,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
             minRR2plus: 'Min 1:2+ Risk/Reward'
         },
         priority: 1,
-        isRelevantForStates: () => true,
+        isRelevantForStates: (states) => states.some(s => [MarketState.TRENDING, MarketState.RANGING, MarketState.EXPANSION, MarketState.LIQUIDITY_HUNT].includes(s)),
         extractCandidateRules: (context, pyData = {}) => detectStrategy5Confluence(context, pyData)
     }
 };

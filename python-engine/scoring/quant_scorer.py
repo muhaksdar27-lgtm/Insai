@@ -14,6 +14,15 @@ from scoring.session_analyzer import get_session_info
 
 logger = get_logger("QuantScorer")
 
+_global_strategy_engine = None
+
+def get_global_strategy_engine():
+    global _global_strategy_engine
+    if _global_strategy_engine is None:
+        from strategy_engine import StrategyEngine
+        _global_strategy_engine = StrategyEngine()
+    return _global_strategy_engine
+
 class QuantScorer:
     def __init__(self, direction: str, entry_price: float, sl_price: float, tp_price: float, analysis: Dict[str, Any], timeframe: str = "15m", strategy_id: str = None, strategy_engine: Any = None):
         self.direction = direction.upper()
@@ -30,8 +39,7 @@ class QuantScorer:
         if strategy_engine:
             self.strategy_engine = strategy_engine
         else:
-            from strategy_engine import StrategyEngine
-            self.strategy_engine = StrategyEngine()
+            self.strategy_engine = get_global_strategy_engine()
 
     def calculate_metrics(self):
         if self.analysis.get('std_20', 0) > 0:

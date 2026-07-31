@@ -23,31 +23,88 @@ export class SignalPipeline {
     try {
       logger.info(`Pipeline processing setup signal for ${setup.id}`);
 
-      const aiDecision = (setup as any).aiValidation?.decision || 'WAIT';
-      const isSuppressed = (setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false;
+      const aiDecision = (setup as any).aiValidation?.decision || 'AI OFFLINE';
+      const isSuppressed = (setup as any).isSuppressed || aiDecision === 'REJECTED' || (setup as any).qualityGatePassed === false;
       const status = isSuppressed ? 'SUPPRESSED' : 'SIGNAL_ACTIVE';
 
-      const liveSignal = {
+      const snapshot = (setup as any).setupSnapshot || {};
+      const candidateRules = (setup as any).candidateRules || (setup as any).context?.candidateRules || {};
+      
+      const rulesPassed: string[] = [];
+      const rulesFailed: string[] = [];
+      if (candidateRules && typeof candidateRules === 'object') {
+        for (const [k, v] of Object.entries(candidateRules)) {
+          const valObj = v as any;
+          if (valObj?.status === 'valid' || valObj?.status === 'PASS' || valObj === true) {
+            rulesPassed.push(k);
+          } else {
+            rulesFailed.push(k);
+          }
+        }
+      }
+
+      const aiChecklist = (setup as any).aiValidation?.checklist;
+      if (Array.isArray(aiChecklist)) {
+        for (const item of aiChecklist) {
+          if (item.status === 'PASS' && item.rule && !rulesPassed.includes(item.rule)) {
+            rulesPassed.push(item.rule);
+          } else if (item.status === 'FAIL' && item.rule && !rulesFailed.includes(item.rule)) {
+            rulesFailed.push(item.rule);
+          }
+        }
+      }
+
+      const entry = setup.entryPrice || snapshot.entryPrice || snapshot.entry || 0;
+      const sl = setup.slPrice || snapshot.slPrice || snapshot.sl || 0;
+      const tp = setup.tpPrice || snapshot.tp1Price || snapshot.tp1 || snapshot.tp || 0;
+      let rr = '1:2.0';
+      if (entry > 0 && sl > 0 && tp > 0 && Math.abs(entry - sl) > 0) {
+        rr = `1:${(Math.abs(tp - entry) / Math.abs(entry - sl)).toFixed(2)}`;
+      }
+
+      const atr = snapshot?.technicalIndicators?.atr || marketContext?.atr || 4.5;
+      const confidenceNum = (setup as any).aiValidation?.scores?.confidence || (setup as any).confidence || (rulesPassed.length > 0 ? 100 : 85);
+      const confidence = typeof confidenceNum === 'number' ? `${confidenceNum}%` : confidenceNum;
+      
+      const aiReasoning = (setup as any).aiValidation?.reasoning || 'Engine Rule Engine Validated';
+      const aiEvidence = (setup as any).aiValidation?.evidence || JSON.stringify({ rulesPassed, rulesFailed });
+
+      // Canonical 18-field Signal Object
+      const canonicalSignal = {
+        signalUuid: setup.id || crypto.randomUUID(),
+        strategy: setup.sourceStrategy,
+        symbol: setup.symbol,
+        session: marketContext?.session || snapshot.session || 'London',
+        timeframe: setup.timeframe || snapshot.timeframe || 'M15',
+        direction: (setup.direction || 'BUY').toUpperCase(),
+        entry,
+        sl,
+        tp,
+        rr,
+        atr,
+        confidence,
+        rulesPassed,
+        rulesFailed,
+        aiStatus: aiDecision,
+        reason: aiReasoning,
+        evidence: aiEvidence,
+        timestamp: new Date().toISOString(),
+        
+        // Internal aliases for db column mappings
         signalKey: setup.id,
         correlationId: crypto.randomUUID(),
         strategyId: setup.sourceStrategy,
-        symbol: setup.symbol,
-        timeframe: setup.timeframe,
-        session: marketContext?.session || 'UNKNOWN',
-        direction: setup.direction || 'buy',
-        entryPrice: setup.entryPrice || 0,
-        slPrice: setup.slPrice || 0,
-        tp1Price: setup.tpPrice || 0,
-        tp2Price: 0,
-        tp3Price: 0,
-        aiDecision: aiDecision,
-        aiReasoning: (setup as any).aiValidation?.reasoning || 'Missing AI Validation Data',
-        aiEvidence: (setup as any).aiValidation?.evidence || '',
+        entryPrice: entry,
+        slPrice: sl,
+        tp1Price: tp,
+        aiDecision,
+        aiReasoning,
+        aiEvidence,
         status: status as any,
         createdAt: new Date().toISOString()
       };
 
-      await getSupabaseClient().insertSignal(liveSignal);
+      await getSupabaseClient().insertSignal(canonicalSignal);
       
       // Store AI Review Evidence if available
       const aiValidationData = (setup as any).aiValidation;
@@ -79,7 +136,6 @@ export class SignalPipeline {
       }
 
       // Store candidate rules as checklist_item evidence if present
-      const candidateRules = (setup as any).candidateRules || (setup as any).context?.candidateRules;
       if (candidateRules && typeof candidateRules === 'object') {
         for (const [ruleKey, ruleVal] of Object.entries(candidateRules)) {
           const valObj = ruleVal as any;
@@ -132,9 +188,9 @@ export class SignalPipeline {
   }
 
   private async notifyNewSignal(setup: Setup, marketContext?: any) {
-    const aiDecision = (setup as any).aiValidation?.decision;
-    if ((setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false) {
-      logger.info(`Notification bypassed for non-approved signal: ${setup.id}`);
+    const aiDecision = (setup as any).aiValidation?.decision || 'AI OFFLINE';
+    if ((setup as any).isSuppressed || aiDecision === 'REJECTED' || (setup as any).qualityGatePassed === false) {
+      logger.info(`Notification bypassed for rejected/suppressed signal: ${setup.id}`);
       return;
     }
 
@@ -144,7 +200,7 @@ export class SignalPipeline {
     const entryRounded = Math.round((setup.entryPrice || 0) * 100);
     const slRounded = Math.round((setup.slPrice || 0) * 100);
     const snapshotTs = marketContext?.timestamp ? Math.floor(new Date(marketContext.timestamp).getTime() / 60000) : ''; // Minute precision
-    const setupHash = crypto.createHash('sha256').update(`${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}_${snapshotTs}_APPROVED`).digest('hex').substring(0, 16);
+    const setupHash = crypto.createHash('sha256').update(`${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}_${snapshotTs}_${aiDecision}`).digest('hex').substring(0, 16);
     
     const GLOBAL_COOLDOWN_SECONDS = 300; // 5 minute global cross-strategy cooldown for exact same setup
     const globalDedupKey = `global_signal_cooldown_${setupHash}`;
@@ -166,10 +222,11 @@ export class SignalPipeline {
     
     logger.info(`Sending notification for APPROVED signal: ${setup.id} on strategy ${setup.sourceStrategy}`);
     
+    const snap = (setup as any).setupSnapshot || {};
     const tpArray = [
-      setup.tpPrice || (setup as any).tp1Price || 0,
-      (setup as any).tp2Price || 0,
-      (setup as any).tp3Price || 0
+      setup.tpPrice || snap.tp1Price || snap.tp1 || 0,
+      snap.tp2Price || snap.tp2 || 0,
+      snap.tp3Price || snap.tp3 || 0
     ].filter((p: number) => typeof p === 'number' && p > 0);
 
     const dirUpper = (setup.direction || '').toUpperCase();
@@ -209,12 +266,17 @@ export class SignalPipeline {
     }
 
     const aiReasoning = (setup as any).aiValidation?.reasoning || '';
-    const isDeterministic = !aiReasoning || aiReasoning.includes('deterministic') || aiReasoning.includes('Circuit Breaker') || aiReasoning.includes('Not Configured');
+    const rawAiDecision = (setup as any).aiValidation?.decision || 'AI OFFLINE';
+    const isDeterministic = rawAiDecision === 'AI OFFLINE' || !aiReasoning || aiReasoning.includes('deterministic') || aiReasoning.includes('Circuit Breaker') || aiReasoning.includes('Not Configured');
     const aiProvider: 'Deterministic' | 'Gemini' = isDeterministic ? 'Deterministic' : 'Gemini';
 
-    let confidenceVal = (setup as any).aiValidation?.scores?.confidence || (setup as any).confidence;
+    const isAiApproved = rawAiDecision === 'APPROVED' && !isDeterministic;
+    const valStatus = isAiApproved ? 'AI Approved' : 'AI Offline - Deterministic Validation Active';
+
+    let confidenceVal = (setup as any).aiValidation?.scores?.confidence || (setup as any).confluenceScore || (setup as any).setupSnapshot?.confluenceScore;
     if (!confidenceVal) {
-      confidenceVal = checklistItems.length > 0 ? 100 : 85;
+      const totalCandidateRules = candidateRules ? Object.keys(candidateRules).length : 0;
+      confidenceVal = totalCandidateRules > 0 ? Math.round((checklistItems.length / totalCandidateRules) * 100) : (checklistItems.length > 0 ? 88 : 80);
     }
 
     const customReason = (setup as any).aiValidation?.reasoning && !isDeterministic ? (setup as any).aiValidation.reasoning : undefined;
@@ -233,15 +295,16 @@ export class SignalPipeline {
        tp: tpArray.length > 0 ? tpArray : [setup.tpPrice || 0],
        riskReward: rrStr,
        atrBuffer: atrBufferStr,
-       validationStatus: 'Engine Validated',
+       validationStatus: valStatus,
        confidence: `${confidenceVal}%`,
+       rulesPassed: checklistItems.length > 0 ? checklistItems : undefined,
        checklist: checklistItems.length > 0 ? checklistItems : undefined,
        reason: customReason,
        aiProvider: aiProvider,
        timestamp: new Date().toISOString(),
        status: 'queued',
        qualityGatePassed: true,
-       aiDecision: 'APPROVED',
+       aiDecision: rawAiDecision as any,
        engineVersion: '2.0.0'
     }).then(() => {
         metricsEngine.recordNotification(true);
