@@ -2,11 +2,15 @@ import { useEffect, useRef } from 'react';
 
 export function useAudioNotification() {
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const timeoutsRef = useRef<Set<NodeJS.Timeout>>(new Set());
 
   const playChime = () => {
     try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (typeof window === 'undefined') return;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) return;
+        audioCtxRef.current = new AudioContextClass();
       }
       
       const ctx = audioCtxRef.current;
@@ -39,23 +43,43 @@ export function useAudioNotification() {
       osc2.start();
       osc1.stop(ctx.currentTime + 1.5);
       osc2.stop(ctx.currentTime + 1.5);
-    } catch (e) {
-      console.error("Failed to play notification audio:", e);
+
+      const tid = setTimeout(() => {
+        try {
+          osc1.disconnect();
+          osc2.disconnect();
+          gainNode.disconnect();
+        } catch {
+          // ignore already disconnected
+        }
+        timeoutsRef.current.delete(tid);
+      }, 1600);
+      timeoutsRef.current.add(tid);
+    } catch {
+      // Quiet fail if web audio context is blocked
     }
   };
 
   useEffect(() => {
+    const activeTimeouts = timeoutsRef.current;
     const handleAppUpdate = (e: any) => {
       if (e.detail?.type === 'SIGNAL_PUBLISHED') {
         playChime();
-        // Also trigger a refetch so the UI shows the new signal instantly
-        window.dispatchEvent(new CustomEvent('app-refetch'));
       }
     };
     
     window.addEventListener('app-update', handleAppUpdate);
-    return () => window.removeEventListener('app-update', handleAppUpdate);
+    return () => {
+      window.removeEventListener('app-update', handleAppUpdate);
+      activeTimeouts.forEach(t => clearTimeout(t));
+      activeTimeouts.clear();
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
+    };
   }, []);
   
   return { playChime };
 }
+

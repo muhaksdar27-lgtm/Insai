@@ -1,6 +1,6 @@
 {
-  "name": "INSAI Trading Engine",
-  "description": "INSAI Real-time Signal Scanner and Trading Engine",
+  "name": "XAUUSD Signal Engine",
+  "description": "Real-time XAUUSD Gold Trading Signal Generator with Technical Indicators, Market Structure Analysis & Multi-Timeframe Strategy Engine",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

@@ -30,15 +30,15 @@ import {
 } from "@/components/strategy-ui";
 import { buildDashboard, buildSetup, buildRules, getAllStrategiesWithFallback } from "@/lib/strategyViewModel";
 
-function createDashboardCard(strategy: StrategyResponse, onClick: () => void, index: number) {
+function createDashboardCard(strategy: StrategyResponse, onClick: () => void) {
   const data = buildDashboard(strategy);
+  if (!data) return null;
   
   return (
     <motion.div
-      key={data.id || index}
+      key={data.id}
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: index * 0.05 }}
       onClick={onClick}
       className="flex flex-col p-1.5 bg-white/5 border border-white/10 rounded-md cursor-pointer hover:border-blue-500/30 hover:bg-white/10 transition-all h-full group shadow-sm relative overflow-hidden"
     >
@@ -78,9 +78,9 @@ export default function Dashboard() {
   const { data: marketStatus, loading: loadingMarket, error: errorMarket, refetch: refetchMarket } = useFetch<any>("/api/market/xauusd/latest", null);
   const { data: overviewStatus, loading: loadingOverview, error: errorOverview, refetch: refetchOverview } = useFetch<any>("/api/system/health", null);
   const { data: strategies = [], loading: loadingStrategies, error: errorStrategies, refetch: refetchStrategies } = useFetch<any[]>("/api/strategies", []);
-  const { data: mcpStatus = [] } = useFetch<any[]>("/api/mcp/status", []);
+  const { data: mcpStatus = [], refetch: refetchMcp } = useFetch<any[]>("/api/mcp/status", []);
   const { data: activeSignals = [], loading: loadingSignals, error: errorSignals, refetch: refetchSignals } = useFetch<any[]>("/api/signals/live", []);
-  const { data: newsEventsData } = useFetch<any>("/api/news/active", { active_events: [] });
+  const { data: newsEventsData, refetch: refetchNews } = useFetch<any>("/api/news/active", { active_events: [] });
   
   const [ping, setPing] = useState(false);
 
@@ -89,8 +89,11 @@ export default function Dashboard() {
       setPing(true);
       setTimeout(() => setPing(false), 300);
       refetchMarket();
+      refetchOverview();
       refetchStrategies();
+      refetchMcp();
       refetchSignals();
+      refetchNews();
     };
     window.addEventListener('app-update', handleAppUpdate);
     window.addEventListener('app-refetch', handleAppUpdate);
@@ -98,7 +101,7 @@ export default function Dashboard() {
       window.removeEventListener('app-update', handleAppUpdate);
       window.removeEventListener('app-refetch', handleAppUpdate);
     };
-  }, [refetchMarket, refetchStrategies, refetchSignals]);
+  }, [refetchMarket, refetchOverview, refetchStrategies, refetchMcp, refetchSignals, refetchNews]);
 
   const currentMarketStatus = marketStatus;
   const currentSessionName = marketStatus?.session || "---";
@@ -152,7 +155,7 @@ export default function Dashboard() {
               </div>
             ) : errorMarket ? (
               <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[8px] border border-rose-500/20">
-                <span className="truncate">{errorMarket}</span>
+                <span className="truncate">{errorMarket?.message || "Error loading market data"}</span>
               </div>
             ) : currentMarketStatus?.status === 'not_configured' ? (
               <div className="flex flex-col text-amber-400 bg-amber-500/10 p-1 rounded text-[8px] border border-amber-500/20">
@@ -192,7 +195,7 @@ export default function Dashboard() {
               </div>
             ) : errorMarket ? (
               <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[8px] border border-rose-500/20">
-                <span className="truncate">{errorMarket}</span>
+                <span className="truncate">{errorMarket?.message || "Error loading market data"}</span>
               </div>
             ) : currentMarketStatus?.status === 'not_configured' ? (
               <div className="flex flex-col text-amber-400 bg-amber-500/10 p-1 rounded text-[8px] border border-amber-500/20">
@@ -257,7 +260,7 @@ export default function Dashboard() {
                <div className="h-4 bg-white/5 rounded animate-pulse w-10 mt-1"></div>
             ) : errorSignals ? (
               <div className="flex flex-col text-rose-400 bg-rose-500/10 p-1 rounded text-[8px] border border-rose-500/20">
-                <span className="truncate">{errorSignals}</span>
+                <span className="truncate">{errorSignals?.message || "Error loading signals"}</span>
               </div>
             ) : activeSignals ? (
               <>
@@ -302,11 +305,11 @@ export default function Dashboard() {
               ) : errorStrategies ? (
                  <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center text-rose-400 bg-rose-500/10 p-4 rounded-lg border border-rose-500/20 text-[9px]">
                   <AlertTriangle className="w-4 h-4 mb-2 opacity-80" />
-                  <span className="font-bold">{errorStrategies}</span>
+                  <span className="font-bold">{errorStrategies?.message || "Error loading strategies"}</span>
                 </div>
               ) : safeStrategies.length > 0 ? (
-                safeStrategies.slice(0, 10).map((strategy: StrategyResponse, index: number) => 
-                  createDashboardCard(strategy, () => setSelectedStrategy(strategy), index)
+                safeStrategies.slice(0, 10).map((strategy: StrategyResponse) => 
+                  createDashboardCard(strategy, () => setSelectedStrategy(strategy))
                 )
               ) : (
                 <div className="col-span-1 md:col-span-2 text-[9px] text-zinc-500 p-6 bg-white/5 border border-white/10 rounded-lg text-center flex flex-col items-center justify-center">
@@ -324,12 +327,11 @@ export default function Dashboard() {
             </h3>
             {newsEvents.length > 0 ? (
               <div className="space-y-1">
-                {newsEvents.slice(0, 10).map((event: any, idx: number) => (
+                {newsEvents.slice(0, 10).map((event: any) => (
                   <motion.div
-                    key={idx}
+                    key={event.id || (event.title ? `${event.title}-${event.publishedAt || event.timestamp}` : 'news-item')}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
                     className="p-1.5 bg-white/5 border border-white/10 rounded-md flex flex-col hover:border-white/20 hover:bg-white/10 transition-all shadow-sm group"
                   >
                     <div className="flex justify-between items-center mb-1">
@@ -372,7 +374,7 @@ export default function Dashboard() {
                 <div className="space-y-2 py-1"><Skeleton className="h-4 w-full bg-white/5 rounded" /><Skeleton className="h-4 w-[90%] bg-white/5 rounded" /><Skeleton className="h-4 w-[80%] bg-white/5 rounded" /></div>
               ) : errorOverview ? (
                 <div className="flex flex-col text-rose-400 bg-rose-500/10 p-3 rounded text-[9px] border border-rose-500/20 text-center">
-                  <span className="mb-2 font-bold">{errorOverview}</span>
+                  <span className="mb-2 font-bold">{errorOverview?.message || "Error loading system status"}</span>
                   <button onClick={refetchOverview} className="bg-rose-500/20 hover:bg-rose-500/30 rounded text-rose-300 py-1 transition-colors font-bold tracking-wide">Retry</button>
                 </div>
               ) : overviewStatus?.services ? (
@@ -410,9 +412,9 @@ export default function Dashboard() {
             </h3>
             <div className="space-y-2">
               {safeMcpStatus.length > 0 ? (
-                safeMcpStatus.slice(0, 4).map((mcp: any, idx: number) => (
+                safeMcpStatus.slice(0, 4).map((mcp: any) => (
                   <div
-                    key={idx}
+                    key={mcp.name || mcp.id}
                     className="flex justify-between items-center text-[7px] py-1 border-b border-white/10 last:border-0 group"
                   >
                     <span className="text-zinc-500 group-hover:text-zinc-300 transition-colors line-clamp-1 pr-2 font-bold tracking-wide">{mcp.name}</span>
@@ -506,11 +508,11 @@ export default function Dashboard() {
                 </div>
 
                 <div className="space-y-1.5">
-                  {buildRules(selectedStrategy).map((rule: any, idx: number) => {
+                  {buildRules(selectedStrategy).map((rule: any) => {
                      const isPassed = rule.status === 'valid' || rule.passed === true;
                      const isFailed = rule.status === 'invalid' || rule.passed === false;
                      return (
-                        <div key={idx} className="flex justify-between items-center bg-white/5 border border-white/10 rounded-md p-2 shadow-sm">
+                        <div key={rule.ruleId || rule.id || rule.name} className="flex justify-between items-center bg-white/5 border border-white/10 rounded-md p-2 shadow-sm">
                           <span className="text-[9px] text-zinc-300 font-medium capitalize tracking-wide truncate pr-2">{rule.ruleId.replace(/([A-Z])/g, " $1").trim()}</span>
                           {isPassed ? (
                             <span className="text-[8px] font-bold text-emerald-400 flex items-center gap-1 shrink-0"><Shield className="w-2.5 h-2.5" /> PASS</span>
@@ -588,8 +590,8 @@ export default function Dashboard() {
                      { name: 'Tokyo', range: '00:00 - 09:00' },
                      { name: 'London', range: '08:00 - 16:00' },
                      { name: 'New York', range: '13:00 - 22:00' },
-                   ].map((s, idx) => (
-                      <div key={idx} className="flex justify-between items-center bg-white/5 border border-white/10 rounded-md p-1.5 shadow-sm">
+                   ].map((s) => (
+                      <div key={s.name} className="flex justify-between items-center bg-white/5 border border-white/10 rounded-md p-1.5 shadow-sm">
                          <span className="text-[8px] font-bold text-zinc-300 tracking-wide">{s.name}</span>
                          <div className="flex items-center gap-1.5">
                            <span className="text-[8px] text-zinc-500 font-mono font-bold">{s.range}</span>

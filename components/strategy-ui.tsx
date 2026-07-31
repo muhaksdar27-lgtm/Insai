@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { 
   Shield, 
   Target, 
@@ -8,16 +9,16 @@ import {
 import { getStatusBadge } from "@/lib/utils";
 import { StrategyStep } from "@/types";
 
-export function StrategyStatus({ status, className = "" }: { status: string; className?: string }) {
+export const StrategyStatus = memo(function StrategyStatus({ status, className = "" }: { status: string; className?: string }) {
   const badgeStyle = getStatusBadge(status);
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[9px] font-bold tracking-wider border uppercase ${badgeStyle} ${className}`}>
       {status}
     </span>
   );
-}
+});
 
-export function ProgressBar({ progress, status }: { progress: number; status?: string }) {
+export const ProgressBar = memo(function ProgressBar({ progress, status }: { progress: number; status?: string }) {
   let color = "bg-blue-500";
   if (status === 'error' || status === 'failed' || status === 'rejected') color = "bg-rose-500";
   else if (status === 'finished' || status === 'approved') color = "bg-emerald-500";
@@ -27,9 +28,9 @@ export function ProgressBar({ progress, status }: { progress: number; status?: s
       <div className={`h-full ${color} transition-all duration-500`} style={{ width: `${progress}%` }}></div>
     </div>
   );
-}
+});
 
-export function StrategyHeader({ name, description, status }: { name: string; description?: string; status: string }) {
+export const StrategyHeader = memo(function StrategyHeader({ name, description, status }: { name: string; description?: string; status: string }) {
   return (
     <div className="flex items-start justify-between gap-2">
       <div className="min-w-0 flex-1">
@@ -41,9 +42,9 @@ export function StrategyHeader({ name, description, status }: { name: string; de
       <StrategyStatus status={status} className="shrink-0" />
     </div>
   );
-}
+});
 
-export function TimelineCard({ steps }: { steps: StrategyStep[] }) {
+export const TimelineCard = memo(function TimelineCard({ steps }: { steps: StrategyStep[] }) {
   if (!steps || steps.length === 0) {
     return <div className="text-[10px] text-zinc-500 font-mono italic">No steps</div>;
   }
@@ -60,8 +61,9 @@ export function TimelineCard({ steps }: { steps: StrategyStep[] }) {
         if (isApproved) colorCls = 'text-emerald-400 font-bold';
         if (isRejected || isExpired) colorCls = 'text-rose-400 font-bold';
         
+        const key = step.id || (step.name ? `${step.name}-${step.status}` : undefined);
         return (
-          <div key={sIdx} className="flex items-center min-w-0">
+          <div key={key} className="flex items-center min-w-0">
             <span className={`text-[9px] font-semibold uppercase tracking-wider truncate ${colorCls}`}>
               {step.name}
             </span>
@@ -69,13 +71,13 @@ export function TimelineCard({ steps }: { steps: StrategyStep[] }) {
               <ArrowRight className={`w-3 h-3 mx-1 shrink-0 ${isApproved ? 'text-emerald-500/80' : 'text-zinc-600'}`} />
             )}
           </div>
-        )
+        );
       })}
     </div>
   );
-}
+});
 
-export function ValidationBadge({ passed, total }: { passed: number; total: number }) {
+export const ValidationBadge = memo(function ValidationBadge({ passed, total }: { passed: number; total: number }) {
   const isPassed = passed > 0 && passed === total;
   const colorClass = isPassed ? "text-emerald-400 font-bold" : (passed > 0 ? "text-amber-400 font-bold" : "text-zinc-400 font-medium");
   return (
@@ -86,9 +88,9 @@ export function ValidationBadge({ passed, total }: { passed: number; total: numb
       </span>
     </div>
   );
-}
+});
 
-export function SetupCard({ 
+export const SetupCard = memo(function SetupCard({ 
   pair, 
   timeframe, 
   bias, 
@@ -184,9 +186,9 @@ export function SetupCard({
       </div>
     </div>
   );
-}
+});
 
-export function RuleTable({ rules }: { rules: any[] }) {
+export const RuleTable = memo(function RuleTable({ rules }: { rules: any[] }) {
   if (!rules || rules.length === 0) {
     return <div className="text-[10px] text-zinc-500 font-mono italic">No rules executed</div>;
   }
@@ -203,10 +205,11 @@ export function RuleTable({ rules }: { rules: any[] }) {
             ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' 
             : 'bg-rose-500/10 text-rose-400 border border-rose-500/20');
 
+        const key = rule.ruleId || rule.id || rule.name;
         return (
-          <div key={idx} className="flex flex-col bg-black/50 border border-white/10 rounded-md p-2 shadow-inner">
+          <div key={key} className="flex flex-col bg-black/50 border border-white/10 rounded-md p-2 shadow-inner">
             <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-[9px] text-zinc-200 font-bold uppercase tracking-wider">{(rule.ruleId || `Rule ${idx + 1}`).replace(/_/g, ' ')}</span>
+              <span className="text-[9px] text-zinc-200 font-bold uppercase tracking-wider">{(rule.ruleId || rule.name || `Rule ${idx + 1}`).replace(/_/g, ' ')}</span>
               <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${statusClass}`}>
                 {statusLabel}
               </span>
@@ -214,7 +217,7 @@ export function RuleTable({ rules }: { rules: any[] }) {
             {rule.evidence && typeof rule.evidence === 'object' && (
                <div className="grid grid-cols-2 gap-1.5 mt-1">
                  {Object.entries(rule.evidence).map(([dk, dv]: [string, any]) => (
-                    <div key={dk} className="flex flex-col">
+                    <div key={`${key}-${dk}`} className="flex flex-col">
                        <span className="text-[8px] text-zinc-400 font-semibold uppercase tracking-wider">{dk.replace(/_/g, ' ')}</span>
                        <span className="text-[9px] text-zinc-300 font-mono truncate">{String(dv)}</span>
                     </div>
@@ -226,9 +229,9 @@ export function RuleTable({ rules }: { rules: any[] }) {
       })}
     </div>
   );
-}
+});
 
-export function SignalCard({ direction, entry, sl, tp1, tp2, tp3 }: { direction?: string; entry?: string | number; sl?: string | number; tp1?: string | number; tp2?: string | number; tp3?: string | number; }) {
+export const SignalCard = memo(function SignalCard({ direction, entry, sl, tp1, tp2, tp3 }: { direction?: string; entry?: string | number; sl?: string | number; tp1?: string | number; tp2?: string | number; tp3?: string | number; }) {
   const isLong = direction === 'LONG' || direction === 'BUY';
   const isShort = direction === 'SHORT' || direction === 'SELL';
   
@@ -281,9 +284,9 @@ export function SignalCard({ direction, entry, sl, tp1, tp2, tp3 }: { direction?
       )}
     </div>
   );
-}
+});
 
-export function ParameterGrid({ parameters }: { parameters: Record<string, string | number | boolean> }) {
+export const ParameterGrid = memo(function ParameterGrid({ parameters }: { parameters: Record<string, string | number | boolean> }) {
   if (!parameters || Object.keys(parameters).length === 0) return null;
   return (
     <div className="grid grid-cols-2 gap-1.5">
@@ -295,9 +298,9 @@ export function ParameterGrid({ parameters }: { parameters: Record<string, strin
       ))}
     </div>
   );
-}
+});
 
-export function EngineBadge({ engineName, status }: { engineName: string; status: string }) {
+export const EngineBadge = memo(function EngineBadge({ engineName, status }: { engineName: string; status: string }) {
   const isHealthy = status === 'healthy' || status === 'online' || status === 'connected';
   return (
     <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] border text-[9px] font-bold uppercase tracking-wider ${isHealthy ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
@@ -305,4 +308,4 @@ export function EngineBadge({ engineName, status }: { engineName: string; status
       {engineName}
     </div>
   );
-}
+});

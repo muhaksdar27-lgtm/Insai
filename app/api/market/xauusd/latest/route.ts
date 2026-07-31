@@ -12,31 +12,29 @@ export async function GET() {
 
   try {
     data = await getMarketDataService().getLatestPrice('XAUUSD');
-    success = true;
+    const hasErrorStatus = data && typeof data === 'object' && ('status' in data && (data as any).status !== 'live' && (data as any).status !== 'cached' && (data as any).status !== 'stale');
+    
+    if (data && typeof data.price === 'number' && !isNaN(data.price) && data.price > 0 && !hasErrorStatus) {
+      success = true;
+    } else {
+      const errCode = (data as any)?.status === 'not_configured' ? 'PROVIDER_NOT_CONFIGURED' : 'MARKET_DATA_UNAVAILABLE';
+      const reason = (data as any)?.reason || 'No valid real-time market price available from providers.';
+      error = {
+        code: errCode,
+        message: reason
+      };
+      success = false;
+    }
   } catch (err: any) {
     error = {
       code: 'PROVIDER_ERROR',
-      message: err.message || 'Failed to fetch price'
+      message: err.message || 'Failed to fetch market price'
     };
   }
 
-  // Fallback to safe default data if data is null so client never crashes
-  if (!data) {
-    data = {
-      symbol: 'XAUUSD',
-      price: 2750.00,
-      timestamp: new Date().toISOString(),
-      provider: 'fallback',
-      freshness: 'stale',
-      session: 'London',
-      bias: 'NEUTRAL'
-    };
-    success = true;
-  }
-
-  const response: ApiResponse<MarketSnapshot> = {
+  const response: ApiResponse<MarketSnapshot | null> = {
     success,
-    data,
+    data: success ? data : null,
     error,
     meta: {
       request_id: crypto.randomUUID(),
@@ -44,5 +42,5 @@ export async function GET() {
     }
   };
 
-  return NextResponse.json(response, { status: 200 });
+  return NextResponse.json(response, { status: success ? 200 : 503 });
 }

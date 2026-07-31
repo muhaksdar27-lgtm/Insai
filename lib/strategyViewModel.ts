@@ -1,17 +1,18 @@
 import { StrategyResponse, DashboardCard, StrategyStep } from "@/types";
 import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName } from "@/lib/trading-engine/state-machine";
+import { getStrategyDefinition } from "@/lib/trading-engine/strategy-registry";
 
 export function normalizeStrategy(strategy: StrategyResponse) {
   const s = strategy;
-  let setupStatus = 'active';
+  let setupStatus = s.status || 'inactive';
   const steps = s.steps || [];
   
   if (s.status === 'stopped' || s.status === 'disabled') {
      setupStatus = 'disabled';
-  } else if (s.errors && s.errors.length > 0) {
+  } else if (s.status === 'error' || (s.errors && s.errors.length > 0)) {
      setupStatus = 'error';
   } else if (!steps || steps.length === 0) {
-     setupStatus = 'not configured';
+     setupStatus = s.status || 'inactive';
   } else {
      const isRejected = steps.some((st: StrategyStep) => st.status === 'failed' || st.status === 'rejected');
      if (isRejected) {
@@ -34,9 +35,9 @@ export function normalizeStrategy(strategy: StrategyResponse) {
     setupStatus,
     progress: strategy.progress || 0,
     steps: strategy.steps || [],
-    currentStep: strategy.currentStep || 'Unknown Step',
-    setupSnapshot: strategy.setupSnapshot || {},
-    ruleResults: strategy.ruleResults || {},
+    currentStep: strategy.currentStep || '',
+    setupSnapshot: strategy.setupSnapshot || null,
+    ruleResults: strategy.ruleResults || null,
     signal: strategy.signal || null
   };
 }
@@ -98,9 +99,9 @@ export function buildSetupSnapshot(strategyId: string, context: any) {
   
   // Base fields
   const base = {
-    pair: snap.pair || snap.symbol || config.pairRestriction[0] || "--",
-    session: snap.session || config.sessionRestriction[0] || "--",
-    timeframe: snap.timeframe || config.timeframes?.entry?.[0] || "--",
+    pair: snap.pair || snap.symbol || "--",
+    session: snap.session || "--",
+    timeframe: snap.timeframe || "--",
     
     // Core attributes
     h1Bias: snap.h1Bias ?? snap.marketBias ?? snap.bias ?? "--",
@@ -237,7 +238,7 @@ export function buildSetup(strategy: StrategyResponse) {
   };
 
   return {
-      pair: snap?.pair && snap.pair !== "--" ? snap.pair : 'XAUUSD',
+      pair: snap?.pair && snap.pair !== "--" ? snap.pair : '--',
       bias: snap?.h1Bias && snap.h1Bias !== "--" ? snap.h1Bias : (snap?.bias && snap.bias !== "--" ? snap.bias : '--'),
       session: snap?.session && snap.session !== "--" ? snap.session : '--',
       direction: (() => {
@@ -263,28 +264,9 @@ export function buildSetup(strategy: StrategyResponse) {
   };
 }
 
-export function buildDashboard(strategy: StrategyResponse): DashboardCard {
+export function buildDashboard(strategy: StrategyResponse): DashboardCard | null {
   if (!strategy || !strategy.id) {
-    return {
-      id: 'unknown',
-      name: 'Unknown Strategy',
-      description: '--',
-      currentStep: '--',
-      progress: 0,
-      status: 'error',
-      validationScore: '0/0',
-      passedCount: 0,
-      rulesCount: 0,
-      pair: 'XAUUSD',
-      bias: '--',
-      session: '--',
-      direction: '--',
-      entry: '--',
-      sl: '--',
-      tp: '--',
-      rr: '--',
-      updatedAt: new Date().toISOString()
-    };
+    return null;
   }
 
   const rules = buildRuleResults(strategy.id, strategy.ruleResults || {});
@@ -298,8 +280,8 @@ export function buildDashboard(strategy: StrategyResponse): DashboardCard {
 
   return {
       id: strategy.id,
-      name: config?.name || strategy.name || "--",
-      description: config?.description || strategy.description || "--",
+      name: config?.name || strategy.name || strategy.id,
+      description: config?.description || strategy.description || "",
       currentStep: progress.currentStep,
       progress: progress.percentage,
       status: progress.status,
@@ -322,9 +304,6 @@ export function buildDashboard(strategy: StrategyResponse): DashboardCard {
 
 
 export function getStrategyConfig(strategyId: string) {
-  // We dynamically load it to avoid server/client issues, or we just import it if it's safe.
-  // Actually, importing from strategy-registry is safe.
-  const { getStrategyDefinition } = require("@/lib/trading-engine/strategy-registry");
   return getStrategyDefinition(strategyId) || null;
 }
 
@@ -381,34 +360,15 @@ export function getValidationRules(strategyId: string): string[] {
 
 
 export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]): StrategyResponse[] {
-  const { getAllStrategies } = require("@/lib/trading-engine/strategy-registry");
-  const defaultStrategies = getAllStrategies().map((cfg: any) => {
-    return {
-      id: cfg.id,
-      name: cfg.name,
-      description: cfg.description,
-      status: 'not configured',
-      steps: [],
-      currentStep: 'IDLE',
-      progress: 0,
-      setupSnapshot: {},
-      ruleResults: {},
-      updatedAt: null,
-      freshness: 'stale'
-    };
-  });
+  if (!rawStrategies || !Array.isArray(rawStrategies)) return [];
 
-  return defaultStrategies.map((def: any) => {
-    const found = rawStrategies.find(s => s.id === def.id);
-    if (found) {
-      return { 
-        ...def, 
-        ...found, 
-        name: def.name, 
-        description: def.description,
-        updatedAt: found.updatedAt || null
-      };
-    }
-    return def;
+  return rawStrategies.map((found: StrategyResponse) => {
+    const cfg = getStrategyConfig(found.id);
+    return {
+      ...found,
+      name: cfg?.name || found.name || found.id,
+      description: cfg?.description || found.description || "",
+      updatedAt: found.updatedAt || null
+    };
   });
 }

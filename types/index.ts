@@ -208,6 +208,7 @@ export interface ValidationSummary {
 }
 
 export interface StrategyStep {
+  id?: string;
   name: string;
   status: Status | string;
   type?: StepType;

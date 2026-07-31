@@ -17,7 +17,8 @@ import {
   Activity,
   CheckCircle2,
   XCircle,
-  BarChart2
+  BarChart2,
+  Download
 } from "lucide-react";
 
 const listVariants = {
@@ -98,6 +99,37 @@ export default function History() {
     };
   }, [history, filter, strategyFilter, timeframeFilter, nowTimestamp, search]);
 
+  const handleExportCSV = () => {
+    if (!filteredHistory || filteredHistory.length === 0) return;
+    const headers = ["Signal Key", "Pair", "Direction", "Strategy", "Outcome", "Pips", "Closed At", "Reason"];
+    const rows = filteredHistory.map(item => [
+      item.signalKey || item.id || '',
+      item.pair || 'XAUUSD',
+      item.direction || '',
+      `"${(item.strategyName || '').replace(/"/g, '""')}"`,
+      item.outcome || '',
+      item.pips || 0,
+      `"${item.closedAt || ''}"`,
+      `"${(item.reason || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `trade-history-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 100);
+    }
+  };
+
   return (
     <div className="space-y-2.5 h-full pb-10 relative">
       <motion.div 
@@ -143,6 +175,14 @@ export default function History() {
                 >
                     <ListFilter className="w-2.5 h-2.5" />
                     Filters
+                </button>
+                <button 
+                    onClick={handleExportCSV}
+                    disabled={!filteredHistory || filteredHistory.length === 0}
+                    className="flex items-center gap-1 px-2 py-1 border rounded text-[6px] font-bold tracking-widest uppercase transition-colors shadow-sm min-h-[24px] bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10 hover:border-white/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                    <Download className="w-2.5 h-2.5 text-emerald-400" />
+                    CSV
                 </button>
             </div>
         </div>
@@ -271,7 +311,7 @@ export default function History() {
               </h3>
               <div className="space-y-1.5">
                 {strategyRanking.map((strat, idx) => (
-                  <div key={idx} className="flex items-center justify-between bg-black/40 border border-white/10 rounded p-1.5 text-[8px] hover:bg-white/10 transition-colors shadow-inner relative overflow-hidden group">
+                  <div key={strat.name} className="flex items-center justify-between bg-black/40 border border-white/10 rounded p-1.5 text-[8px] hover:bg-white/10 transition-colors shadow-inner relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-full blur-xl group-hover:bg-blue-500/10 transition-all"></div>
                     <span className="text-zinc-200 font-bold tracking-wide truncate pr-2 flex-1 text-[8px] relative z-10">
                       {idx + 1}. {strat.name}
@@ -308,10 +348,10 @@ export default function History() {
                 animate="show"
                 className="grid grid-cols-1 md:grid-cols-2 gap-1.5"
               >
-                {filteredHistory.slice(0, 100).map((item, idx) => (
+                {filteredHistory.slice(0, 100).map((item) => (
                   <motion.div
                     variants={itemVariants}
-                    key={idx}
+                    key={item.id || item.signalKey || `${item.pair}-${item.strategyName}-${item.closedAtTimestamp || item.closedAt}`}
                     onClick={() => setSelectedHistory(item)}
                     className="bg-white/5 border border-white/10 rounded-md p-1.5 cursor-pointer hover:border-blue-500/30 hover:bg-white/10 transition-all group shadow-sm backdrop-blur-md relative overflow-hidden"
                   >

@@ -40,13 +40,24 @@ export async function GET() {
 
     for (let i = 0; i < baseStrategies.length; i++) {
         try {
-            const normalized = normalizeStrategyFromDB(baseStrategies[i], states[i]);
-            strategies.push(normalized);
+            const st = states[i];
+            if (st && typeof st === 'object' && ('status' in st) && (st.status === 'not_configured' || st.status === 'error')) {
+              const normalized = normalizeStrategyFromDB(baseStrategies[i], null);
+              strategies.push({
+                ...normalized,
+                status: 'error',
+                freshness: 'stale',
+                errors: [st.reason || 'Database state unavailable']
+              });
+            } else {
+              const normalized = normalizeStrategyFromDB(baseStrategies[i], st);
+              strategies.push(normalized);
+            }
         } catch (e: any) {
             strategies.push({
                 id: baseStrategies[i].id,
                 name: baseStrategies[i].name,
-                status: baseStrategies[i].status,
+                status: 'error',
                 progress: 0,
                 currentStep: 'Error',
                 steps: [],
@@ -62,12 +73,13 @@ export async function GET() {
     
     success = true;
   } catch (err: any) {
-    error = { code: 'DB_ERROR', message: err.message };
+    error = { code: 'DB_ERROR', message: err.message || 'Failed to fetch strategies' };
+    success = false;
   }
 
   const response: ApiResponse<StrategyResponse[]> = {
     success,
-    data: strategies,
+    data: success ? strategies : [],
     error,
     meta: {
       request_id: crypto.randomUUID(),
@@ -75,6 +87,6 @@ export async function GET() {
     }
   };
 
-  return NextResponse.json(response, { status: 200 });
+  return NextResponse.json(response, { status: success ? 200 : 500 });
 }
 

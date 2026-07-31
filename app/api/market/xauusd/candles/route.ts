@@ -30,29 +30,37 @@ export async function GET(request: Request) {
 
   try {
     const result = await getMarketDataService().getCandles('XAUUSD', timeframe);
-    candles = Array.isArray(result) ? result : [];
-    if ((result as any).status) {
-      providerStatus = {
-        status: (result as any).status,
-        available: (result as any).available,
-        reason: (result as any).reason
+    const hasStatusObj = result && typeof result === 'object' && ('status' in result || (result as any).available === false);
+    
+    if (Array.isArray(result) && !hasStatusObj && result.length > 0) {
+      candles = result;
+      success = true;
+    } else if (result && typeof result === 'object' && (result as any).candles && Array.isArray((result as any).candles) && (result as any).candles.length > 0) {
+      candles = (result as any).candles;
+      success = true;
+    } else {
+      const errStatus = (result as any)?.status || 'unavailable';
+      const reason = (result as any)?.reason || 'No valid market candles available from configured providers';
+      error = {
+        code: errStatus === 'not_configured' ? 'PROVIDER_NOT_CONFIGURED' : 'MARKET_DATA_UNAVAILABLE',
+        message: reason
       };
+      success = false;
     }
-    success = true;
   } catch (err: any) {
-    error = { code: 'FETCH_ERROR', message: err.message };
+    error = { code: 'FETCH_ERROR', message: err.message || 'Failed to fetch candles' };
     candles = [];
-    success = true;
+    success = false;
   }
   
   const response: ApiResponse<any> = {
     success,
-    data: {
+    data: success ? {
       symbol: 'XAUUSD',
       timeframe,
       candles: Array.isArray(candles) ? candles : [],
       ...providerStatus
-    },
+    } : null,
     error,
     meta: {
       request_id: crypto.randomUUID(),
@@ -60,5 +68,5 @@ export async function GET(request: Request) {
     }
   };
 
-  return NextResponse.json(response, { status: 200 });
+  return NextResponse.json(response, { status: success ? 200 : 503 });
 }

@@ -11,15 +11,20 @@ export default function ConnectionStatus() {
   const [ping, setPing] = useState(false);
   
   useEffect(() => {
+    let pingTimeout: NodeJS.Timeout | null = null;
     const handleAppUpdate = (e: any) => {
       if (e.detail?.type === 'MARKET_TICK' && e.detail?.payload) {
         setLocalMarketStatus(e.detail.payload);
         setPing(true);
-        setTimeout(() => setPing(false), 300);
+        if (pingTimeout) clearTimeout(pingTimeout);
+        pingTimeout = setTimeout(() => setPing(false), 300);
       }
     };
     const handleSseStatus = (e: any) => {
       setSseStatus(e.detail);
+      if (e.detail === 'disconnected') {
+        setLocalMarketStatus(null);
+      }
     };
     
     window.addEventListener('app-update', handleAppUpdate);
@@ -28,12 +33,14 @@ export default function ConnectionStatus() {
     return () => {
       window.removeEventListener('app-update', handleAppUpdate);
       window.removeEventListener('sse-status', handleSseStatus);
+      if (pingTimeout) clearTimeout(pingTimeout);
     };
   }, []);
 
   const currentStatus = localMarketStatus || marketStatus;
+  const hasError = !!errorMarket || currentStatus?.status === 'error' || currentStatus?.status === 'not_configured';
 
-  const dataConnectionStatus = loading && !currentStatus ? 'connecting' : (errorMarket || currentStatus?.status === 'error' || currentStatus?.status === 'not_configured' ? 'disconnected' : 'connected');
+  const dataConnectionStatus = loading && !currentStatus ? 'connecting' : (hasError ? 'disconnected' : 'connected');
   const realtimeSyncStatus = sseStatus === 'connected' ? 'synced' : sseStatus === 'connecting' ? 'degraded' : 'disconnected';
 
   return (

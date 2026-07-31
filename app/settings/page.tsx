@@ -16,6 +16,9 @@ import {
   Download,
   RotateCw,
   Zap,
+  Save,
+  RotateCcw,
+  Check,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { ClientDate } from "@/components/client-date";
@@ -89,6 +92,123 @@ export default function Settings() {
   const [showHealthSnapshot, setShowHealthSnapshot] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [logError, setLogError] = useState<string | null>(null);
+
+  // Editable Configuration State
+  const [formData, setFormData] = useState<Record<string, string>>({
+    STANDARD_PIP_BUFFER: "15",
+    MIN_ENGULFING_BODY_RATIO: "0.6",
+    DOUBLE_PATTERN_TOLERANCE: "20",
+    NEWS_NO_TRADE_WINDOW: "15",
+    PYTHON_ENGINE_URL: "",
+    TELEGRAM_CHAT_ID: "",
+    TWELVEDATA_API_KEY: "",
+    NEWS_API_KEY: "",
+    TELEGRAM_BOT_TOKEN: "",
+    GEMINI_API_KEY: "",
+  });
+  const [baselineData, setBaselineData] = useState<Record<string, string>>({});
+  const [savingConfig, setSavingConfig] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!configStatus?.values) return;
+    const initial = {
+      STANDARD_PIP_BUFFER: configStatus.values.STANDARD_PIP_BUFFER || "15",
+      MIN_ENGULFING_BODY_RATIO: configStatus.values.MIN_ENGULFING_BODY_RATIO || "0.6",
+      DOUBLE_PATTERN_TOLERANCE: configStatus.values.DOUBLE_PATTERN_TOLERANCE || "20",
+      NEWS_NO_TRADE_WINDOW: configStatus.values.NEWS_NO_TRADE_WINDOW || "15",
+      PYTHON_ENGINE_URL: configStatus.values.PYTHON_ENGINE_URL || "",
+      TELEGRAM_CHAT_ID: configStatus.values.TELEGRAM_CHAT_ID || "",
+      TWELVEDATA_API_KEY: "",
+      NEWS_API_KEY: "",
+      TELEGRAM_BOT_TOKEN: "",
+      GEMINI_API_KEY: "",
+    };
+    const timer = setTimeout(() => {
+      setBaselineData(initial);
+      setFormData((prev) => ({
+        ...initial,
+        STANDARD_PIP_BUFFER: prev.STANDARD_PIP_BUFFER !== "15" ? prev.STANDARD_PIP_BUFFER : initial.STANDARD_PIP_BUFFER,
+        MIN_ENGULFING_BODY_RATIO: prev.MIN_ENGULFING_BODY_RATIO !== "0.6" ? prev.MIN_ENGULFING_BODY_RATIO : initial.MIN_ENGULFING_BODY_RATIO,
+        DOUBLE_PATTERN_TOLERANCE: prev.DOUBLE_PATTERN_TOLERANCE !== "20" ? prev.DOUBLE_PATTERN_TOLERANCE : initial.DOUBLE_PATTERN_TOLERANCE,
+        NEWS_NO_TRADE_WINDOW: prev.NEWS_NO_TRADE_WINDOW !== "15" ? prev.NEWS_NO_TRADE_WINDOW : initial.NEWS_NO_TRADE_WINDOW,
+        PYTHON_ENGINE_URL: prev.PYTHON_ENGINE_URL || initial.PYTHON_ENGINE_URL,
+        TELEGRAM_CHAT_ID: prev.TELEGRAM_CHAT_ID || initial.TELEGRAM_CHAT_ID,
+      }));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [configStatus]);
+
+  const validateForm = () => {
+    const errs: Record<string, string> = {};
+    const pip = Number(formData.STANDARD_PIP_BUFFER);
+    if (isNaN(pip) || pip < 0 || pip > 500) {
+      errs.STANDARD_PIP_BUFFER = "Must be between 0 and 500 pips";
+    }
+    const ratio = Number(formData.MIN_ENGULFING_BODY_RATIO);
+    if (isNaN(ratio) || ratio <= 0 || ratio > 1) {
+      errs.MIN_ENGULFING_BODY_RATIO = "Must be a decimal between 0.1 and 1.0";
+    }
+    const tol = Number(formData.DOUBLE_PATTERN_TOLERANCE);
+    if (isNaN(tol) || tol < 0 || tol > 500) {
+      errs.DOUBLE_PATTERN_TOLERANCE = "Must be between 0 and 500 pips";
+    }
+    const news = Number(formData.NEWS_NO_TRADE_WINDOW);
+    if (isNaN(news) || news < 0 || news > 180) {
+      errs.NEWS_NO_TRADE_WINDOW = "Must be between 0 and 180 minutes";
+    }
+    setValidationErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSaveConfig = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSaveSuccess(null);
+    setSaveError(null);
+
+    if (!validateForm()) {
+      setSaveError("Validation failed. Please correct parameters before saving.");
+      return;
+    }
+
+    setSavingConfig(true);
+    try {
+      const payload: Record<string, any> = {};
+      for (const [key, val] of Object.entries(formData)) {
+        if (val !== undefined && val !== null && val !== "") {
+          payload[key] = val;
+        }
+      }
+
+      const res = await fetch("/api/config/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error?.message || `Save failed with status ${res.status}`);
+      }
+
+      setSaveSuccess(data.data?.message || "Configuration successfully saved!");
+      setBaselineData({ ...formData });
+      refetchConfig();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to save configuration");
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const handleResetConfig = () => {
+    setFormData({ ...baselineData });
+    setValidationErrors({});
+    setSaveSuccess(null);
+    setSaveError(null);
+  };
 
   // Engine Pings State
   const [enginePings, setEnginePings] = useState<Record<string, {
@@ -208,12 +328,18 @@ export default function Settings() {
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `system-logs-${logSeverity}-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `system-logs-${logSeverity}-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 100);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -387,7 +513,7 @@ export default function Settings() {
               </div>
             ) : errorHealth ? (
               <div className="text-[11px] text-rose-400 flex flex-col items-center justify-center py-6 bg-rose-500/10 rounded-2xl border border-rose-500/20 gap-3">
-                <span className="text-center font-bold tracking-wide">{errorHealth}</span>
+                <span className="text-center font-bold tracking-wide">{errorHealth?.message || "Error loading health status"}</span>
                 <button onClick={refetchHealth} className="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl font-bold tracking-widest uppercase transition-colors">Retry Connection</button>
               </div>
             ) : healthStatus ? (
@@ -445,6 +571,145 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* Interactive Configuration Form */}
+        <div className="bg-black/40 border border-white/10 rounded-md p-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden md:col-span-2 lg:col-span-2">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="flex items-center justify-between mb-3 relative z-10 border-b border-white/10 pb-2">
+            <div>
+              <h3 className="text-[9px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
+                <SettingsIcon className="w-3.5 h-3.5 text-blue-400" /> System & Strategy Parameters
+              </h3>
+              <p className="text-[8px] text-zinc-400 mt-0.5 font-medium">Configure active trading pips, thresholds, and runtime integrations</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleResetConfig}
+                disabled={savingConfig}
+                className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white rounded text-[7px] font-bold uppercase tracking-widest transition-colors shadow-sm disabled:opacity-50"
+              >
+                <RotateCcw className="w-2.5 h-2.5 text-zinc-400" />
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveConfig}
+                disabled={savingConfig}
+                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 rounded text-[7px] font-bold uppercase tracking-widest transition-all shadow-sm disabled:opacity-50"
+              >
+                <Save className={`w-2.5 h-2.5 ${savingConfig ? 'animate-spin' : ''}`} />
+                {savingConfig ? 'Saving...' : 'Save Settings'}
+              </button>
+            </div>
+          </div>
+
+          {saveSuccess && (
+            <div className="mb-3 p-2 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[8px] font-medium flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-1.5">
+                <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>{saveSuccess}</span>
+              </div>
+              <button onClick={() => setSaveSuccess(null)} className="text-emerald-400 hover:text-white"><X className="w-3 h-3" /></button>
+            </div>
+          )}
+
+          {saveError && (
+            <div className="mb-3 p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[8px] font-medium flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                <span>{saveError}</span>
+              </div>
+              <button onClick={() => setSaveError(null)} className="text-rose-400 hover:text-white"><X className="w-3 h-3" /></button>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveConfig} className="space-y-3 relative z-10 text-[8px]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-zinc-300 uppercase tracking-widest mb-1">Standard Pip Buffer</label>
+                <input
+                  type="number"
+                  step="1"
+                  className={`w-full bg-white/5 border ${validationErrors.STANDARD_PIP_BUFFER ? 'border-rose-500' : 'border-white/10 focus:border-blue-500/50'} rounded px-2.5 py-1.5 text-white font-mono outline-none tracking-wide`}
+                  value={formData.STANDARD_PIP_BUFFER || ''}
+                  onChange={(e) => setFormData({ ...formData, STANDARD_PIP_BUFFER: e.target.value })}
+                  placeholder="15"
+                />
+                {validationErrors.STANDARD_PIP_BUFFER && (
+                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.STANDARD_PIP_BUFFER}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-300 uppercase tracking-widest mb-1">Min Engulfing Body Ratio</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  className={`w-full bg-white/5 border ${validationErrors.MIN_ENGULFING_BODY_RATIO ? 'border-rose-500' : 'border-white/10 focus:border-blue-500/50'} rounded px-2.5 py-1.5 text-white font-mono outline-none tracking-wide`}
+                  value={formData.MIN_ENGULFING_BODY_RATIO || ''}
+                  onChange={(e) => setFormData({ ...formData, MIN_ENGULFING_BODY_RATIO: e.target.value })}
+                  placeholder="0.6"
+                />
+                {validationErrors.MIN_ENGULFING_BODY_RATIO && (
+                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.MIN_ENGULFING_BODY_RATIO}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-300 uppercase tracking-widest mb-1">Double Pattern Tolerance (Pips)</label>
+                <input
+                  type="number"
+                  step="1"
+                  className={`w-full bg-white/5 border ${validationErrors.DOUBLE_PATTERN_TOLERANCE ? 'border-rose-500' : 'border-white/10 focus:border-blue-500/50'} rounded px-2.5 py-1.5 text-white font-mono outline-none tracking-wide`}
+                  value={formData.DOUBLE_PATTERN_TOLERANCE || ''}
+                  onChange={(e) => setFormData({ ...formData, DOUBLE_PATTERN_TOLERANCE: e.target.value })}
+                  placeholder="20"
+                />
+                {validationErrors.DOUBLE_PATTERN_TOLERANCE && (
+                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.DOUBLE_PATTERN_TOLERANCE}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-300 uppercase tracking-widest mb-1">News Window (Minutes)</label>
+                <input
+                  type="number"
+                  step="1"
+                  className={`w-full bg-white/5 border ${validationErrors.NEWS_NO_TRADE_WINDOW ? 'border-rose-500' : 'border-white/10 focus:border-blue-500/50'} rounded px-2.5 py-1.5 text-white font-mono outline-none tracking-wide`}
+                  value={formData.NEWS_NO_TRADE_WINDOW || ''}
+                  onChange={(e) => setFormData({ ...formData, NEWS_NO_TRADE_WINDOW: e.target.value })}
+                  placeholder="15"
+                />
+                {validationErrors.NEWS_NO_TRADE_WINDOW && (
+                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.NEWS_NO_TRADE_WINDOW}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-300 uppercase tracking-widest mb-1">Python Engine URL</label>
+                <input
+                  type="text"
+                  className="w-full bg-white/5 border border-white/10 focus:border-blue-500/50 rounded px-2.5 py-1.5 text-white font-mono outline-none tracking-wide"
+                  value={formData.PYTHON_ENGINE_URL || ''}
+                  onChange={(e) => setFormData({ ...formData, PYTHON_ENGINE_URL: e.target.value })}
+                  placeholder="http://localhost:8000"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-300 uppercase tracking-widest mb-1">Telegram Chat ID</label>
+                <input
+                  type="text"
+                  className="w-full bg-white/5 border border-white/10 focus:border-blue-500/50 rounded px-2.5 py-1.5 text-white font-mono outline-none tracking-wide"
+                  value={formData.TELEGRAM_CHAT_ID || ''}
+                  onChange={(e) => setFormData({ ...formData, TELEGRAM_CHAT_ID: e.target.value })}
+                  placeholder="-100123456789"
+                />
+              </div>
+            </div>
+          </form>
+        </div>
+
         {/* API Status */}
         <div className="bg-black/40 border border-white/10 rounded-md p-2.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl"></div>
@@ -467,7 +732,7 @@ export default function Settings() {
               </div>
             ) : errorConfig ? (
               <div className="text-[11px] text-rose-400 flex flex-col items-center justify-center py-6 bg-rose-500/10 rounded-2xl border border-rose-500/20 gap-3">
-                <span className="text-center font-bold tracking-wide">{errorConfig}</span>
+                <span className="text-center font-bold tracking-wide">{errorConfig?.message || "Error loading config status"}</span>
                 <button onClick={refetchConfig} className="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl font-bold tracking-widest uppercase transition-colors">Retry Connection</button>
               </div>
             ) : configStatus?.env ? (
@@ -509,7 +774,7 @@ export default function Settings() {
               </div>
             ) : errorMetrics ? (
                <div className="text-[11px] text-rose-400 flex flex-col items-center justify-center py-6 bg-rose-500/10 rounded-2xl border border-rose-500/20 gap-3">
-                <span className="text-center font-bold tracking-wide">{errorMetrics}</span>
+                <span className="text-center font-bold tracking-wide">{errorMetrics?.message || "Error loading system metrics"}</span>
                 <button onClick={refetchMetrics} className="px-4 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl font-bold tracking-widest uppercase transition-colors">Retry Connection</button>
               </div>
             ) : metricsData ? (
@@ -596,7 +861,7 @@ export default function Settings() {
               </div>
             ) : errorMcp ? (
               <div className="text-[11px] text-rose-400 col-span-full flex flex-col items-center justify-center py-5 bg-rose-500/10 rounded-xl border border-rose-500/20 gap-2">
-                <span className="text-center font-bold tracking-wide">{errorMcp}</span>
+                <span className="text-center font-bold tracking-wide">{errorMcp?.message || "Error loading MCP status"}</span>
                 <button onClick={refetchMcp} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg font-bold tracking-widest uppercase transition-colors">Retry</button>
               </div>
             ) : (mcpStatus || []).length > 0 ? (
@@ -812,9 +1077,9 @@ export default function Settings() {
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  {logs.filter(log => logSeverity === "all" || log.level === logSeverity).slice(0, 100).map((log, idx) => (
+                  {logs.filter(log => logSeverity === "all" || log.level === logSeverity).slice(0, 100).map((log) => (
                     <div
-                      key={idx}
+                      key={log.id || `${log.timestamp}-${log.level}-${(log.message || '').slice(0, 20)}`}
                       className="flex gap-4 border-b border-white/5 pb-1.5 last:border-0 break-all"
                     >
                       <span className="text-zinc-500 shrink-0 font-bold">

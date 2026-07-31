@@ -321,9 +321,17 @@ export class SupabaseService {
       }
     }
 
-    // Fallback to memorySignalsCache
+    // Check memorySignalsCache
     const cachedActive = Array.from(this.memorySignalsCache.values()).filter(s => s.status === 'SIGNAL_ACTIVE');
-    return cachedActive;
+    if (cachedActive.length > 0) {
+      return cachedActive;
+    }
+
+    if (!this.isConnected()) {
+      return { status: 'not_configured', available: false, reason: 'Database is not configured' };
+    }
+
+    return [];
   }
 
   public async getHistoricalSignals() {
@@ -346,54 +354,21 @@ export class SupabaseService {
         }
       } catch (err: any) {
         logger.warn(`Supabase fetch history warn: ${err.message}`);
+        return { status: 'error', available: false, reason: err.message };
       }
     }
 
-    // Fallback to memoryHistoryCache
+    // Check memoryHistoryCache
     const cachedHistory = Array.from(this.memoryHistoryCache.values());
-    return cachedHistory;
-  }
-
-  private generateDefaultState(strategyId: string) {
-    let candidateRules = {};
-    try {
-      const { getStrategyDefinition } = require('../trading-engine/strategy-registry');
-      const stratDef = getStrategyDefinition(strategyId);
-      const initialPyData = {
-        symbol: 'XAUUSD',
-        timeframe: 'M15',
-        atr: 0,
-        current_price: 0,
-        spread_acceptable: true,
-        news_high_impact_active: false
-      };
-      if (stratDef && typeof stratDef.extractCandidateRules === 'function') {
-        const res = stratDef.extractCandidateRules({ symbol: 'XAUUSD', timeframe: 'M15' }, initialPyData);
-        candidateRules = res.candidateRules || {};
-      }
-    } catch (e) {
-      candidateRules = {};
+    if (cachedHistory.length > 0) {
+      return cachedHistory;
     }
 
-    const stateObj = {
-      strategy_id: strategyId,
-      symbol: 'XAUUSD',
-      timeframe: 'M15',
-      state_name: 'SCANNING',
-      state_status: 'active',
-      reason: 'Scanning market...',
-      created_at: null,
-      updated_at: null,
-      payload_json: {
-        pair: 'XAUUSD',
-        timeframe: 'M15',
-        marketStates: ['SCANNING'],
-        ruleResults: candidateRules,
-        validationSummary: 'Scanning market...'
-      }
-    };
-    this.memoryStateCache.set(strategyId, stateObj);
-    return stateObj;
+    if (!this.isConnected()) {
+      return { status: 'not_configured', available: false, reason: 'Database is not configured' };
+    }
+
+    return [];
   }
 
   public async getStrategyState(strategyId: string) {
@@ -429,7 +404,11 @@ export class SupabaseService {
     const cached = this.memoryStateCache.get(strategyId);
     if (cached) return cached;
 
-    return this.generateDefaultState(strategyId);
+    if (!this.isConnected()) {
+      return { status: 'not_configured', available: false, reason: 'Database is not configured' };
+    }
+
+    return null;
   }
 
   public async insertStrategyState(payload: any) {

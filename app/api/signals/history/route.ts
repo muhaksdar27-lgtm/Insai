@@ -2,51 +2,58 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
 import { ApiResponse } from '@/types';
 import crypto from 'crypto';
 
 export async function GET() {
+  const reqId = crypto.randomUUID();
   try {
-    let data: any = []; try { data = await getSupabaseClient().getHistoricalSignals(); } catch (dbErr: any) { console.warn("Supabase fetch failed for history signals, using fallback:", dbErr.message); }
+    const data: any = await getSupabaseClient().getHistoricalSignals();
     
     if (!Array.isArray(data)) {
-        if (data.status === 'not_configured' || data.status === 'error') {
-           const emptyResponse: ApiResponse<any> = {
-              success: true,
-              data: [],
-              error: null,
-              meta: {
-                 request_id: crypto.randomUUID(),
-                 timestamp: new Date().toISOString(),
-                 ...data
-              }
-           };
-           return NextResponse.json(emptyResponse);
-        }
-        throw new Error(data.reason || 'Failed to fetch history');
+      if (data && (data.status === 'not_configured' || data.status === 'error')) {
+        const errorResponse: ApiResponse<null> = {
+          success: false,
+          data: null,
+          error: {
+            code: data.status === 'not_configured' ? 'DATABASE_NOT_CONFIGURED' : 'HISTORY_FETCH_ERROR',
+            message: data.reason || 'Database is not configured or returning an error state.'
+          },
+          meta: {
+            request_id: reqId,
+            timestamp: new Date().toISOString()
+          }
+        };
+        return NextResponse.json(errorResponse, { status: 503 });
+      }
+      throw new Error(data?.reason || 'Failed to fetch trade history');
     }
 
-    // Map DB schema to UI expected format (similar logic to live signals but specific for history)
-    const formattedData = data.map((item: any) => {
-      // Safely access signals table join data which Supabase returns as nested object
+    // Map DB schema to UI expected format with canonical strategy names and stable IDs
+    const formattedData = data.map((item: any, idx: number) => {
       const signalData = item.signals || {};
+      const closedAt = new Date(item.closed_at || item.created_at || Date.now());
       
-      const closedAt = new Date(item.closed_at || item.created_at || new Date());
-      
+      const rawStrategyId = item.strategy_id || signalData.strategy_id || item.strategyName;
+      const stratDef = getStrategyDefinition(rawStrategyId);
+      const canonicalStrategyName = stratDef ? stratDef.name : (item.strategy_name || rawStrategyId || 'Strategy');
+
       return {
-        id: item.id || crypto.randomUUID(),
-        signalKey: item.signal_key,
+        id: item.id || item.signal_key || `hist-${closedAt.getTime()}-${idx}`,
+        signalKey: item.signal_key || `key-${idx}`,
         pair: item.symbol || 'XAUUSD',
-        direction: (signalData.direction === 'LONG' || signalData.direction === 'buy') ? 'BUY' : (signalData.direction === 'SHORT' || signalData.direction === 'sell') ? 'SELL' : (signalData.direction || 'BUY').toUpperCase(),
+        direction: (signalData.direction === 'LONG' || signalData.direction === 'buy' || item.direction === 'BUY' || item.direction === 'LONG') ? 'BUY' : 'SELL',
         outcome: item.outcome || 'UNKNOWN', // WIN, LOSS, BREAK_EVEN
-        pips: item.pips_result || 0,
+        pips: item.pips_result !== undefined ? item.pips_result : (item.pips || 0),
         closedAtTimestamp: closedAt.getTime(),
         closedAt: closedAt.toLocaleString(),
-        entry: signalData.entry_price || 0,
-        sl: signalData.sl_price || 0,
-        tp1: signalData.tp1_price || 0,
-        strategyName: item.strategy_id || 'Strategy',
-        status: item.status || item.outcome,
+        entry: signalData.entry_price || item.entry || 0,
+        sl: signalData.sl_price || item.sl || 0,
+        tp1: signalData.tp1_price || item.tp1 || 0,
+        strategyName: canonicalStrategyName,
+        strategyId: rawStrategyId || 'strategy-1-smc',
+        status: item.status || item.outcome || 'FINISHED',
         reason: item.reason || ''
       };
     });
@@ -56,25 +63,26 @@ export async function GET() {
       data: formattedData,
       error: null,
       meta: {
-        request_id: crypto.randomUUID(),
+        request_id: reqId,
         timestamp: new Date().toISOString()
       }
     };
     return NextResponse.json(response);
 
   } catch (error: any) {
-    const errorResponse: ApiResponse<any> = {
-      success: true,
-      data: [],
+    const errorResponse: ApiResponse<null> = {
+      success: false,
+      data: null,
       error: {
         code: 'HISTORY_FETCH_ERROR',
-        message: error.message
+        message: error.message || 'Failed to fetch trade history'
       },
       meta: {
-        request_id: crypto.randomUUID(),
+        request_id: reqId,
         timestamp: new Date().toISOString()
       }
     };
-    return NextResponse.json(errorResponse, { status: 200 });
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }
+

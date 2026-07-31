@@ -6,7 +6,6 @@ import {
   Clock,
   AlertTriangle,
   Crosshair,
-  Search,
   ChevronDown,
   ChevronUp,
   History,
@@ -16,7 +15,8 @@ import {
   X,
   Zap,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  RotateCw
 } from "lucide-react";
 import { useFetch } from "@/hooks/use-fetch";
 import { useState, useMemo, useEffect } from "react";
@@ -45,6 +45,14 @@ const itemVariants = {
   show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 300, damping: 24 } }
 };
 
+const CANONICAL_ORDER = [
+  'strategy-1-smc',
+  'strategy-2-snd',
+  'strategy-3-scalping',
+  'strategy-4-news',
+  'strategy-5-smc-sd-confluence'
+];
+
 export default function Monitoring() {
   const { data: rawStrategies, loading, error, refetch } = useFetch<StrategyResponse[]>("/api/strategies", []);
   
@@ -67,10 +75,6 @@ export default function Monitoring() {
     };
   }, [refetch]);
 
-  const [filter, setFilter] = useState("all");
-  const [search, setSearch] = useState("");
-  const [sortField] = useState("updatedAt");
-  const [sortDir, setSortDir] = useState("desc");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [drawerData, setDrawerData] = useState<ReturnType<typeof normalizeStrategy> | null>(null);
   const drawerSetup = drawerData ? buildSetup(drawerData as StrategyResponse) : null;
@@ -83,7 +87,7 @@ export default function Monitoring() {
     
     return (
       <div className="grid grid-cols-2 gap-1.5 mt-1">
-        {Object.entries(evidence).map(([k, v]: [string, unknown], idx) => {
+        {Object.entries(evidence).map(([k, v]: [string, unknown]) => {
           let displayVal = String(v);
           if (typeof v === 'object' && v !== null) {
             const objV = v as Record<string, any>;
@@ -94,7 +98,7 @@ export default function Monitoring() {
             displayVal = v.toFixed(2);
           }
           return (
-            <div key={idx} className="flex flex-col bg-zinc-950/50 p-1.5 rounded-md border border-zinc-800/50 shadow-sm">
+            <div key={k} className="flex flex-col bg-zinc-950/50 p-1.5 rounded-md border border-zinc-800/50 shadow-sm">
               <span className="text-[7px] text-zinc-500 font-medium uppercase tracking-widest">{k.replace(/_/g, ' ')}</span>
               <span className="text-[9px] text-zinc-300 font-mono font-medium truncate mt-[1px]">{displayVal}</span>
             </div>
@@ -110,94 +114,49 @@ export default function Monitoring() {
 
   const filteredStrategies = useMemo(() => {
     const fullList = getAllStrategiesWithFallback(rawStrategies || []);
-    const vms = fullList.map(normalizeStrategy);
-    
-    let result = vms.filter(s => {
-      if (filter !== "all") {
-        if (filter === "active" && ['stopped', 'disabled', 'not configured'].includes(s.status?.toLowerCase())) return false;
-        if (filter !== "active" && s.status?.toLowerCase() !== filter) return false;
-      }
-      if (search) {
-        if (!s.name?.toLowerCase().includes(search.toLowerCase()) && !s.id?.toLowerCase().includes(search.toLowerCase())) return false;
-      }
-      return true;
+    const normalized = fullList.map(normalizeStrategy);
+    return normalized.sort((a, b) => {
+      const idxA = CANONICAL_ORDER.indexOf(a.id);
+      const idxB = CANONICAL_ORDER.indexOf(b.id);
+      return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
     });
-
-    result = result.sort((a, b) => {
-      let aVal: any = a[sortField as keyof StrategyResponse];
-      let bVal: any = b[sortField as keyof StrategyResponse];
-      if (sortField === "updatedAt") {
-        aVal = new Date(a.updatedAt || 0).getTime();
-        bVal = new Date(b.updatedAt || 0).getTime();
-      }
-      if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortDir === "asc" ? 1 : -1;
-      return 0;
-    });
-
-    return result;
-  }, [rawStrategies, filter, search, sortField, sortDir]);
+  }, [rawStrategies]);
 
   return (
     <div className="space-y-2.5 h-full pb-10 relative">
-      {/* Compact summary bar */}
+      {/* Compact canonical summary bar */}
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col gap-2 border-b border-zinc-800/80 pb-2"
       >
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-            <div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
             <h2 className="text-[9px] font-bold text-zinc-100 flex items-center gap-2 tracking-wide">
-                <div className="p-1 rounded-md bg-zinc-900 border border-zinc-800 shadow-sm">
-                  <Activity className="w-2.5 h-2.5 text-blue-400" />
-                </div>
-                SCAN & MONITORING
+              <div className="p-1 rounded-md bg-zinc-900 border border-zinc-800 shadow-sm">
+                <Activity className="w-2.5 h-2.5 text-blue-400" />
+              </div>
+              STRATEGY SETUP SCAN
             </h2>
             <div className="flex items-center gap-1.5 mt-1">
-                <p className="text-[7px] text-zinc-500 tracking-wide">Urutan setup per strategi</p>
-                <span className="text-[9px] text-zinc-700">•</span>
-                <span className="text-[6px] font-bold text-zinc-400 tracking-wider bg-zinc-900 px-1 py-[2px] rounded-[3px] border border-zinc-800">{filteredStrategies?.length || 0} STRATEGIES</span>
+              <p className="text-[7px] text-zinc-500 tracking-wide">Showing exactly the 5 canonical strategies in sequential setup order</p>
+              <span className="text-[9px] text-zinc-700">•</span>
+              <span className="text-[6px] font-bold text-blue-400 tracking-wider bg-blue-500/10 px-1 py-[2px] rounded-[3px] border border-blue-500/20">{filteredStrategies?.length || 0} CANONICAL STRATEGIES</span>
             </div>
-            </div>
-                <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 bg-zinc-900/50 border border-zinc-800/80 rounded-md px-1.5 py-0.5 min-h-[22px] shadow-sm focus-within:border-zinc-600 transition-colors">
-                    <Search className="w-2.5 h-2.5 text-zinc-500" />
-                    <input 
-                      type="text" 
-                      placeholder="Search strategy..." 
-                      className="bg-transparent border-none outline-none text-[7px] font-medium text-zinc-300 w-20 md:w-32 placeholder:text-zinc-600 focus:ring-0 tracking-wide"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <select 
-                        value={filter}
-                        onChange={(e) => setFilter(e.target.value)}
-                        className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-900/50 border border-zinc-800/80 rounded-[3px] text-[7px] font-bold tracking-wide text-zinc-300 hover:bg-zinc-800 transition-colors focus:outline-none min-h-[28px] shadow-sm appearance-none cursor-pointer"
-                    >
-                        <option value="all">Filter: All</option>
-                        <option value="active">Active Only</option>
-                        <option value="stopped">Stopped Only</option>
-                    </select>
-                    <select 
-                        value={sortDir}
-                        onChange={(e) => setSortDir(e.target.value)}
-                        className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-900/50 border border-zinc-800/80 rounded-[3px] text-[7px] font-bold tracking-wide text-zinc-300 hover:bg-zinc-800 transition-colors focus:outline-none min-h-[28px] shadow-sm appearance-none cursor-pointer"
-                    >
-                        <option value="desc">Sort: Newest First</option>
-                        <option value="asc">Sort: Oldest First</option>
-                    </select>
-                </div>
-            </div>
+          </div>
+          <button 
+            onClick={refetch} 
+            className="flex items-center gap-1 text-[7px] font-bold tracking-wider text-zinc-300 hover:text-white bg-zinc-900 border border-zinc-800 px-2 py-1 rounded hover:bg-zinc-800 transition-colors uppercase"
+          >
+            <RotateCw className="w-2.5 h-2.5" /> Refresh
+          </button>
         </div>
       </motion.div>
 
       {loading ? (
         <motion.div variants={listVariants} initial="hidden" animate="show" className="flex flex-col gap-1.5">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-zinc-900/30 border border-zinc-800/80 rounded-md p-3">
+          {["sk-1", "sk-2", "sk-3", "sk-4", "sk-5"].map((skKey) => (
+            <div key={skKey} className="bg-zinc-900/30 border border-zinc-800/80 rounded-md p-3">
               <div className="flex justify-between items-center mb-2.5">
                  <div className="flex items-center gap-2">
                     <div className="h-4 bg-zinc-800/60 rounded w-32 animate-pulse"></div>
@@ -527,8 +486,8 @@ export default function Monitoring() {
                         <div>
                             <h4 className="text-[7px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Rule Evidence Data</h4>
                             <div className="space-y-3">
-                                {(drawerRules || []).map((rule: any, i: number) => (
-                                    <div key={i} className="bg-zinc-900/40 border border-zinc-800/60 rounded-md p-2 shadow-sm">
+                                {(drawerRules || []).map((rule: any) => (
+                                    <div key={rule.ruleId || rule.id || rule.name} className="bg-zinc-900/40 border border-zinc-800/60 rounded-md p-2 shadow-sm">
                                         <div className="flex justify-between items-center mb-2.5 border-b border-zinc-800/50 pb-1.5">
                                             <span className="text-[9px] font-bold text-zinc-200 tracking-wide">{rule.ruleId}</span>
                                             <span className={`text-[6px] uppercase tracking-wider font-bold shadow-sm ${getStatusBadge(rule.status).split(' ')[0]}`}>{rule.status}</span>

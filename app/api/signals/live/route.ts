@@ -18,14 +18,18 @@ export async function GET() {
     }
     
     if (!Array.isArray(data)) {
-      if (data.status === 'not_configured' || data.status === 'error') {
-         return NextResponse.json({
-            success: true,
-            data: [],
-            meta: { ...data }
-         });
-      }
-      throw new Error(data.reason || 'Failed to fetch active signals');
+      const errCode = data?.status === 'not_configured' ? 'DATABASE_NOT_CONFIGURED' : 'DB_ERROR';
+      const errMessage = data?.reason || 'Failed to fetch active signals';
+      const errorResponse: ApiResponse<null> = {
+        success: false,
+        data: null,
+        error: { code: errCode, message: errMessage },
+        meta: {
+          request_id: crypto.randomUUID(),
+          timestamp: new Date().toISOString()
+        }
+      };
+      return NextResponse.json(errorResponse, { status: 503 });
     }
 
     // Fetch strategies to map ID to Name
@@ -143,7 +147,7 @@ export async function GET() {
 
   const response: ApiResponse<any> = {
     success,
-    data: Array.isArray(formattedData) ? formattedData : [],
+    data: success ? (Array.isArray(formattedData) ? formattedData : []) : null,
     error,
     meta: {
       request_id: crypto.randomUUID(),
@@ -151,5 +155,5 @@ export async function GET() {
     }
   };
 
-  return NextResponse.json(response, { status: 200 });
+  return NextResponse.json(response, { status: success ? 200 : 500 });
 }

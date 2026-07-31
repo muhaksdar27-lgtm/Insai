@@ -21,7 +21,8 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
       evtSource.onopen = () => {
         reconnectAttempts = 0; // reset on success
         window.dispatchEvent(new CustomEvent('sse-status', { detail: 'connected' }));
-        window.dispatchEvent(new CustomEvent('app-refetch')); // Trigger global data refresh on reconnect
+        // Trigger deterministic targeted data refresh on reconnect without fan-out flooding
+        window.dispatchEvent(new CustomEvent('app-refetch', { detail: { source: 'sse-reconnect' } }));
       };
 
       evtSource.onmessage = (event) => {
@@ -30,8 +31,8 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           if (data.ping) return;
           const customEvent = new CustomEvent('app-update', { detail: data });
           window.dispatchEvent(customEvent);
-        } catch (e) {
-          console.error("SSE parse error", e);
+        } catch {
+          // Ignore invalid JSON messages silently
         }
       };
 

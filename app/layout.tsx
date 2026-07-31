@@ -45,7 +45,7 @@ export default function RootLayout({
           </header>
           <div className="flex flex-1">
             <Navigation />
-            <main className="flex-1 overflow-y-auto pb-10 md:pb-3 md:pl-[120px] pt-2 px-1.5 md:px-3 max-w-[1400px] mx-auto w-full">
+            <main className="flex-1 overflow-y-auto pb-16 md:pb-6 md:pl-36 pt-2 px-1.5 md:px-3 max-w-[1400px] mx-auto w-full">
               {children}
             </main>
           </div>

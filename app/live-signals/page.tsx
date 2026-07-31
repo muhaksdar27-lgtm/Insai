@@ -6,7 +6,6 @@ import { getStatusBadge } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Radio,
-  ListFilter,
   AlertTriangle,
   ArrowUpRight,
   ArrowDownRight,
@@ -51,9 +50,12 @@ export default function LiveSignals() {
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-1.5 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded text-[6px] font-bold tracking-widest uppercase text-zinc-300 hover:text-white transition-all shadow-sm">
-            <ListFilter className="w-2.5 h-2.5" />
-            Filter
+          <button
+            onClick={refetch}
+            className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded text-[7px] font-bold tracking-widest uppercase text-zinc-300 hover:text-white transition-all shadow-sm"
+          >
+            <Radio className="w-2.5 h-2.5 text-blue-400" />
+            Refresh Signals
           </button>
         </div>
       </motion.div>
@@ -72,7 +74,7 @@ export default function LiveSignals() {
           <AlertTriangle className="w-6 h-6 text-rose-500/80 mb-2" />
           <p className="text-[10px] font-bold text-rose-400 mb-1 tracking-wide">Connection Error</p>
           <p className="text-[6px] text-zinc-500 max-w-[240px] leading-relaxed mb-2.5 font-medium">
-            {error || "Unable to connect."}
+            {error?.message || "Unable to connect."}
           </p>
           <button
             onClick={refetch}
@@ -105,10 +107,10 @@ export default function LiveSignals() {
           animate="show"
           className="grid grid-cols-1 lg:grid-cols-2 gap-2 pb-10"
         >
-          {signals.map((signal, idx) => (
+          {signals.map((signal) => (
             <motion.div
               variants={itemVariants}
-              key={idx}
+              key={signal.id || signal.signalKey || `${signal.pair || 'XAUUSD'}-${signal.strategyName || 'strategy'}-${signal.entry || 'target'}`}
               onClick={() => setSelectedSignal(signal)}
               className="bg-white/5 border border-white/10 rounded-md p-1.5 cursor-pointer hover:border-blue-500/30 hover:bg-white/10 transition-all group shadow-sm backdrop-blur-md relative overflow-hidden"
             >
@@ -253,6 +255,9 @@ export default function LiveSignals() {
             onClick={() => setSelectedSignal(null)}
           >
             <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="live-signal-drawer-title"
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
@@ -261,7 +266,7 @@ export default function LiveSignals() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-2.5">
-                <h3 className="text-[8px] font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-widest">
+                <h3 id="live-signal-drawer-title" className="text-[8px] font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-widest">
                   <div className="p-1 rounded bg-blue-500/10 border border-blue-500/20 shadow-sm relative overflow-hidden">
                     <div className="absolute inset-0 bg-blue-500/20 blur-xl"></div>
                     <Radio className="w-2.5 h-2.5 text-blue-400 relative z-10" />
@@ -270,6 +275,7 @@ export default function LiveSignals() {
                 </h3>
                 <button
                   onClick={() => setSelectedSignal(null)}
+                  aria-label="Close signal detail drawer"
                   className="p-1 hover:bg-white/10 rounded-full text-zinc-500 hover:text-white transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -427,48 +433,51 @@ export default function LiveSignals() {
                           </span>
                           <div className="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1.5 custom-scrollbar">
                             {selectedSignal.aiChecklist && selectedSignal.aiChecklist.length > 0 ? (
-                              selectedSignal.aiChecklist.map((item: any, idx: number) => (
-                                <div key={idx} className="flex flex-col gap-1 pb-2 mb-2 border-b border-white/5 last:border-0 last:pb-0 last:mb-0">
-                                  <div className="flex items-center justify-between text-[8px]">
-                                    <span className="text-zinc-200 font-bold tracking-wide" title={item.rule}>{item.rule}</span>
-                                    <span className={`font-black tracking-widest shadow-sm ${
-                                      item.status === 'PASS' ? 'text-emerald-400' : 
-                                      item.status === 'FAIL' ? 'text-rose-400' : 
-                                      'text-amber-400'
-                                    }`}>
-                                      {item.status}
-                                    </span>
+                              selectedSignal.aiChecklist.map((item: any) => {
+                                const itemKey = item.rule || item.id || `${item.status}-${item.reason}`;
+                                return (
+                                  <div key={itemKey} className="flex flex-col gap-1 pb-2 mb-2 border-b border-white/5 last:border-0 last:pb-0 last:mb-0">
+                                    <div className="flex items-center justify-between text-[8px]">
+                                      <span className="text-zinc-200 font-bold tracking-wide" title={item.rule}>{item.rule}</span>
+                                      <span className={`font-black tracking-widest shadow-sm ${
+                                        item.status === 'PASS' ? 'text-emerald-400' : 
+                                        item.status === 'FAIL' ? 'text-rose-400' : 
+                                        'text-amber-400'
+                                      }`}>
+                                        {item.status}
+                                      </span>
+                                    </div>
+                                    <div className="text-[6px] text-zinc-500 font-medium">
+                                      <span className="text-zinc-600 uppercase tracking-widest text-[6px] mr-1">Reason:</span> {item.reason}
+                                    </div>
+                                    {item.details && (
+                                      <div className="text-[6px] text-zinc-500 mt-1 font-medium bg-black/40 p-1.5 rounded border border-white/5">
+                                        <span className="text-zinc-600 uppercase tracking-widest text-[6px] block mb-0.5">Details:</span> {item.details}
+                                      </div>
+                                    )}
+                                    {(item.rulesExamined && item.rulesExamined.length > 0) && (
+                                      <div className="text-[6px] text-zinc-500 mt-1 font-medium">
+                                        <span className="text-zinc-600 uppercase tracking-widest text-[6px] mr-1">Examined:</span> {item.rulesExamined.join(', ')}
+                                      </div>
+                                    )}
+                                    {(item.rulesFailed && item.rulesFailed.length > 0) && (
+                                      <div className="text-[6px] text-rose-400 mt-1 font-medium bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
+                                        <span className="text-rose-500 uppercase tracking-widest text-[6px] mr-1">Failed:</span> {item.rulesFailed.join(', ')}
+                                      </div>
+                                    )}
+                                    {(item.rulesPassed && item.rulesPassed.length > 0) && (
+                                      <div className="text-[6px] text-emerald-400 mt-1 font-medium bg-emerald-500/10 p-1.5 rounded border border-emerald-500/20">
+                                        <span className="text-emerald-500 uppercase tracking-widest text-[6px] mr-1">Passed:</span> {item.rulesPassed.join(', ')}
+                                      </div>
+                                    )}
+                                    {item.evidence && (
+                                      <div className="text-[6px] text-zinc-500 font-mono font-medium mt-1.5 bg-black/60 p-1.5 rounded border border-white/10 break-words shadow-inner overflow-x-auto custom-scrollbar">
+                                        {typeof item.evidence === 'object' ? JSON.stringify(item.evidence, null, 2) : String(item.evidence)}
+                                      </div>
+                                    )}
                                   </div>
-                                  <div className="text-[6px] text-zinc-500 font-medium">
-                                    <span className="text-zinc-600 uppercase tracking-widest text-[6px] mr-1">Reason:</span> {item.reason}
-                                  </div>
-                                  {item.details && (
-                                    <div className="text-[6px] text-zinc-500 mt-1 font-medium bg-black/40 p-1.5 rounded border border-white/5">
-                                      <span className="text-zinc-600 uppercase tracking-widest text-[6px] block mb-0.5">Details:</span> {item.details}
-                                    </div>
-                                  )}
-                                  {(item.rulesExamined && item.rulesExamined.length > 0) && (
-                                    <div className="text-[6px] text-zinc-500 mt-1 font-medium">
-                                      <span className="text-zinc-600 uppercase tracking-widest text-[6px] mr-1">Examined:</span> {item.rulesExamined.join(', ')}
-                                    </div>
-                                  )}
-                                  {(item.rulesFailed && item.rulesFailed.length > 0) && (
-                                    <div className="text-[6px] text-rose-400 mt-1 font-medium bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
-                                      <span className="text-rose-500 uppercase tracking-widest text-[6px] mr-1">Failed:</span> {item.rulesFailed.join(', ')}
-                                    </div>
-                                  )}
-                                  {(item.rulesPassed && item.rulesPassed.length > 0) && (
-                                    <div className="text-[6px] text-emerald-400 mt-1 font-medium bg-emerald-500/10 p-1.5 rounded border border-emerald-500/20">
-                                      <span className="text-emerald-500 uppercase tracking-widest text-[6px] mr-1">Passed:</span> {item.rulesPassed.join(', ')}
-                                    </div>
-                                  )}
-                                  {item.evidence && (
-                                    <div className="text-[6px] text-zinc-500 font-mono font-medium mt-1.5 bg-black/60 p-1.5 rounded border border-white/10 break-words shadow-inner overflow-x-auto custom-scrollbar">
-                                      {typeof item.evidence === 'object' ? JSON.stringify(item.evidence, null, 2) : String(item.evidence)}
-                                    </div>
-                                  )}
-                                </div>
-                              ))
+                                );
+                              })
                             ) : (
                               <div className="text-[6px] text-zinc-500 font-medium italic text-center py-3 bg-black/20 rounded border border-white/5 border-dashed">No checklist</div>
                             )}
@@ -504,18 +513,6 @@ export default function LiveSignals() {
                         </div>
                       )}
                     </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-[7px] font-bold text-zinc-400 mb-2 flex items-center gap-1.5 uppercase tracking-widest">
-                    <Clock className="w-3 h-3 text-zinc-500" />
-                    History
-                  </h4>
-                  <div className="bg-white/5 border border-white/10 rounded-lg p-3 shadow-sm border-dashed">
-                      <p className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest text-center py-3">
-                          No history
-                      </p>
                   </div>
                 </div>
 

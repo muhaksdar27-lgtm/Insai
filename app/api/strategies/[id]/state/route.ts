@@ -38,9 +38,15 @@ export async function GET(
     
     const { normalizeStrategyFromDB } = require('@/lib/trading-engine/strategy-normalize');
     
-    // Check if data is an error object
-    if (stateData && 'status' in stateData && stateData.status === 'not_configured') {
-       data = normalizeStrategyFromDB(baseStrat, null);
+    // Check if data is an error or not configured
+    if (stateData && typeof stateData === 'object' && ('status' in stateData) && (stateData.status === 'not_configured' || stateData.status === 'error')) {
+       const normalized = normalizeStrategyFromDB(baseStrat, null);
+       data = {
+         ...normalized,
+         status: 'error',
+         freshness: 'stale',
+         errors: [(stateData as any).reason || 'Database state unavailable']
+       };
     } else {
        data = normalizeStrategyFromDB(baseStrat, stateData);
     }

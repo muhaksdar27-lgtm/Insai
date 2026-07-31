@@ -52,6 +52,19 @@ export async function GET() {
             return 'error';
         })(),
       },
+      values: {
+        TELEGRAM_CHAT_ID: getEnv('TELEGRAM_CHAT_ID') || '',
+        PYTHON_ENGINE_URL: getEnv('PYTHON_ENGINE_URL') || '',
+        REDIS_URL: getEnv('REDIS_URL') || '',
+        STANDARD_PIP_BUFFER: getEnv('STANDARD_PIP_BUFFER') || '15',
+        MIN_ENGULFING_BODY_RATIO: getEnv('MIN_ENGULFING_BODY_RATIO') || '0.6',
+        DOUBLE_PATTERN_TOLERANCE: getEnv('DOUBLE_PATTERN_TOLERANCE') || '20',
+        NEWS_NO_TRADE_WINDOW: getEnv('NEWS_NO_TRADE_WINDOW') || '15',
+        TWELVEDATA_API_KEY: getEnv('TWELVEDATA_API_KEY') ? '••••••••' : '',
+        NEWS_API_KEY: getEnv('NEWS_API_KEY') ? '••••••••' : '',
+        TELEGRAM_BOT_TOKEN: getEnv('TELEGRAM_BOT_TOKEN') ? '••••••••' : '',
+        GEMINI_API_KEY: getEnv('GEMINI_API_KEY') ? '••••••••' : '',
+      },
       lastChecked: new Date().toISOString()
     },
     meta: {
@@ -63,3 +76,4 @@ export async function GET() {
 
   return NextResponse.json(response);
 }
+
