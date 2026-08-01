@@ -52,11 +52,6 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
       status: 'valid',
       evidence: { atr, slBufferPips: ((atr * 0.5) * 10).toFixed(1) },
       description: 'ATR (14) Dynamic Buffer'
-    },
-    rule_ai_validation: {
-      status: 'valid',
-      evidence: { note: 'S&D AI Confluence Gate Ready', decision: pyData.aiDecision || 'APPROVED' },
-      description: 'AI Institutional Confluence Audit'
     }
   };
 
@@ -122,7 +117,7 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
     atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,
     confluenceScore,
     confirmationStatus,
-    aiDecision: pyData.aiDecision || 'APPROVED'
+    aiDecision: pyData.aiDecision || 'PENDING'
   };
 
   return {

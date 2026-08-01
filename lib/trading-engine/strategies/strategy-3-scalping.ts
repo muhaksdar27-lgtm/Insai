@@ -123,7 +123,7 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
     atrBuffer50Pct: `${((atr * 0.3) * 10).toFixed(1)} pips`,
     confluenceScore,
     confirmationStatus,
-    aiDecision: pyData.aiDecision || 'APPROVED'
+    aiDecision: pyData.aiDecision || 'PENDING'
   };
 
   return {

@@ -4,6 +4,7 @@ import { ValidationPipelineResult } from './ai-orchestrator';
 import { ConsistencyResult } from './consistency-engine';
 import { logger } from '../../utils/logger';
 import { getSupabaseClient } from '../../supabase/client';
+import { MarketCalendar } from '../../market-data/market-calendar';
 
 export interface QualityGateResult {
   passed: boolean;
@@ -26,6 +27,12 @@ export class QualityGate {
     riskDecision: any
   ): Promise<QualityGateResult> {
     logger.info(`Evaluating Quality Gate for ${strategyId}`);
+
+    // 0. Market Calendar Gate (Market closed / stale data / provider health)
+    const marketStatus = MarketCalendar.getMarketStatus(marketContext?.symbol || 'XAUUSD', marketContext);
+    if (marketStatus.isHardBlocked) {
+      return this.reject(`Market Hard Block: ${marketStatus.blockReason}`);
+    }
     
     // 1. Consistency Result Check
     if (consistencyResult.status === 'block') {
@@ -37,9 +44,9 @@ export class QualityGate {
        return this.reject(`Blocked by Risk Engine: ${riskDecision.reason}`);
     }
 
-    // 3. AI Validation Check
-    if (aiResult.decision === 'REJECTED') {
-       return this.reject(`AI Validation rejected setup. Reason: ${aiResult.reasoning}`);
+    // 3. Mandatory AI Validation Check
+    if (aiResult.decision !== 'APPROVED') {
+       return this.reject(`AI Validation MUST be APPROVED (Current: ${aiResult.decision}). Reason: ${aiResult.reasoning}`);
     }
 
     const aiConfidence = aiResult.aiReview?.confidenceScore || 0;

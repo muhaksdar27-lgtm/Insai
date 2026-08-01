@@ -23,8 +23,8 @@ export class SignalPipeline {
     try {
       logger.info(`Pipeline processing setup signal for ${setup.id}`);
 
-      const aiDecision = (setup as any).aiValidation?.decision || 'AI OFFLINE';
-      const isSuppressed = (setup as any).isSuppressed || aiDecision === 'REJECTED' || (setup as any).qualityGatePassed === false;
+      const aiDecision = (setup as any).aiValidation?.decision || 'REJECTED';
+      const isSuppressed = (setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false;
       const status = isSuppressed ? 'SUPPRESSED' : 'SIGNAL_ACTIVE';
 
       const snapshot = (setup as any).setupSnapshot || {};
@@ -188,9 +188,9 @@ export class SignalPipeline {
   }
 
   private async notifyNewSignal(setup: Setup, marketContext?: any) {
-    const aiDecision = (setup as any).aiValidation?.decision || 'AI OFFLINE';
-    if ((setup as any).isSuppressed || aiDecision === 'REJECTED' || (setup as any).qualityGatePassed === false) {
-      logger.info(`Notification bypassed for rejected/suppressed signal: ${setup.id}`);
+    const aiDecision = (setup as any).aiValidation?.decision || 'REJECTED';
+    if ((setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false) {
+      logger.info(`Notification bypassed for non-APPROVED signal: ${setup.id} (AI Decision: ${aiDecision})`);
       return;
     }
 

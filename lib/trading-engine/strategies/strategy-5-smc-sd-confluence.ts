@@ -47,11 +47,6 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
       status: 'valid',
       evidence: { minRR: '1:2+', detail: 'Risk/Reward Ratio Check Passed (Min 1:2+)' },
       description: 'Min 1:2 Risk/Reward Confluence Gate'
-    },
-    rule_ai_validation: {
-      status: 'valid',
-      evidence: { note: 'Confluence Engine AI Gate Ready', decision: pyData.aiDecision || 'APPROVED' },
-      description: 'AI Institutional Confluence Audit'
     }
   };
 
@@ -116,7 +111,7 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
     atrBuffer50Pct: `${((atr * 0.4) * 10).toFixed(1)} pips`,
     confluenceScore,
     confirmationStatus,
-    aiDecision: pyData.aiDecision || 'APPROVED'
+    aiDecision: pyData.aiDecision || 'PENDING'
   };
 
   return {

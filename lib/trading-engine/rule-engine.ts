@@ -204,43 +204,43 @@ export class RuleEngine {
     const doubleBottom = !!pyData.double_bottom;
 
     if (strategyId === 'strategy-1-smc') {
-      const sweepActive = sweepBull || sweepBear || true;
+      const sweepActive = sweepBull || sweepBear;
       rules['rule_liquidity_sweep'] = this.createRuleResult(
         'rule_liquidity_sweep',
         true,
         sweepActive,
-        sweepBull ? 'Bullish Sweep' : (sweepBear ? 'Bearish Sweep' : 'Aligned Sweep'),
+        sweepBull ? 'Bullish Sweep' : (sweepBear ? 'Bearish Sweep' : 'No Sweep'),
         'Liquidity Sweep Active',
         'No liquidity sweep detected',
         { sweepBull, sweepBear },
         'Asia Liquidity Sweep'
       );
 
-      const chochActive = chochBull || chochBear || true;
+      const chochActive = chochBull || chochBear;
       rules['rule_choch_confirmation'] = this.createRuleResult(
         'rule_choch_confirmation',
         true,
         chochActive,
-        chochBull ? 'Bullish CHoCH' : (chochBear ? 'Bearish CHoCH' : 'Structural CHoCH'),
+        chochBull ? 'Bullish CHoCH' : (chochBear ? 'Bearish CHoCH' : 'No CHoCH'),
         'M15 CHoCH Confirmed',
         'No M15 CHoCH confirmed',
         { chochBull, chochBear },
         'M15 Change of Character'
       );
 
-      const obFvgActive = obFvgBull || obFvgBear || true;
+      const obFvgActive = obFvgBull || obFvgBear;
       rules['rule_ob_fvg_entry'] = this.createRuleResult(
         'rule_ob_fvg_entry',
         true,
         obFvgActive,
-        obFvgBull ? 'Bullish OB/FVG' : (obFvgBear ? 'Bearish OB/FVG' : 'OB/FVG Aligned'),
+        obFvgBull ? 'Bullish OB/FVG' : (obFvgBear ? 'Bearish OB/FVG' : 'No OB/FVG'),
         'OB / FVG Entry Zone',
         'Price outside Order Block / FVG zone',
         { obFvgBull, obFvgBear },
         'Order Block & Fair Value Gap Alignment'
       );
     } else if (strategyId === 'strategy-2-snd') {
-      const zoneActive = sdActive || true;
+      const zoneActive = sdActive;
       rules['rule_sd_zone'] = this.createRuleResult(
         'rule_sd_zone',
         true,
@@ -252,48 +252,48 @@ export class RuleEngine {
         'Supply & Demand Zone Interaction'
       );
 
-      const engulfActive = engulfBull || engulfBear || true;
+      const engulfActive = engulfBull || engulfBear;
       rules['rule_engulfing_trigger'] = this.createRuleResult(
         'rule_engulfing_trigger',
         true,
         engulfActive,
-        engulfBull ? 'Bullish Engulfing' : (engulfBear ? 'Bearish Engulfing' : 'Engulfing Candlestick'),
+        engulfBull ? 'Bullish Engulfing' : (engulfBear ? 'Bearish Engulfing' : 'No Engulfing'),
         'Engulfing Trigger Confirmed',
         'No engulfing candlestick trigger found',
         { engulfBull, engulfBear },
         'M15/M5 Engulfing Candlestick Trigger'
       );
     } else if (strategyId === 'strategy-3-scalping') {
-      const patternActive = doubleTop || doubleBottom || sweepBull || sweepBear || true;
+      const patternActive = doubleTop || doubleBottom || sweepBull || sweepBear;
       rules['rule_scalp_pattern'] = this.createRuleResult(
         'rule_scalp_pattern',
         true,
         patternActive,
-        doubleTop ? 'Double Top' : (doubleBottom ? 'Double Bottom' : 'Scalp Pattern'),
+        doubleTop ? 'Double Top' : (doubleBottom ? 'Double Bottom' : (sweepBull ? 'Bull Sweep' : (sweepBear ? 'Bear Sweep' : 'No Scalp Pattern'))),
         'Double Top/Bottom or Sweep',
         'No scalp structural pattern detected',
         { doubleTop, doubleBottom, sweepBull, sweepBear },
         'M1 Scalp Pattern Formation'
       );
     } else if (strategyId === 'strategy-4-news') {
-      const newsReversal = bosBull || bosBear || sweepBull || sweepBear || true;
+      const newsReversal = (bosBull || bosBear) && (sweepBull || sweepBear);
       rules['rule_news_reversal'] = this.createRuleResult(
         'rule_news_reversal',
         true,
         newsReversal,
-        'Post-News Spike Reversal',
+        newsReversal ? 'Post-News Spike Reversal Confirmed' : 'No Reversal Pattern',
         'Post-News Reversal BOS',
         'No post-news reversal pattern detected',
         { bosBull, bosBear, sweepBull, sweepBear },
         'Post-News Spike Reversal BOS'
       );
     } else {
-      const confluenceActive = bosBull || bosBear || sdActive || sweepBull || sweepBear || true;
+      const confluenceActive = (bosBull || bosBear) && sdActive;
       rules['rule_confluence_overlap'] = this.createRuleResult(
         'rule_confluence_overlap',
         true,
         confluenceActive,
-        'Multi-Zone Confluence Aligned',
+        confluenceActive ? 'Multi-Zone Confluence Aligned' : 'Zone Overlap Insufficient',
         '2 of 3 Zone Overlaps',
         'Confluence overlap threshold not met',
         { bosBull, bosBear, sdActive },

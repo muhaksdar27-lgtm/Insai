@@ -229,36 +229,31 @@ export class AIValidationOrchestrator {
     
     const aiHealth = getProviderRegistry().getProviderHealth("GeminiAI");
     if (aiHealth && aiHealth.circuitBreakerStatus === "open") {
-        logger.warn(`AI Service circuit breaker is open (${aiHealth.healthStatus}). Falling back to deterministic rule-based decision.`);
-        const failedCritical = validatorResults.some(v => v.isCritical && v.status === "FAIL");
-        const fallbackDecision: AIDecision = failedCritical ? "REJECTED" : "AI OFFLINE";
+        logger.warn(`AI Service circuit breaker is open (${aiHealth.healthStatus}). Hard-blocking signal dispatch as AI validation is mandatory.`);
         return {
            strategyName: strategyId,
-           decision: fallbackDecision,
+           decision: "REJECTED",
            checklist: validatorResults,
-           reasoning: "Validated by deterministic engine. AI validation is offline.",
-           evidence: "Validated by deterministic engine.",
-           riskNotes: "AI Offline - Circuit Breaker Open",
+           reasoning: "AI Validation circuit breaker is OPEN. Signal suppressed per quality gate requirement.",
+           evidence: "Circuit breaker open.",
+           riskNotes: "AI UNAVAILABLE - Circuit Breaker Open",
            missingFactors: ["AI Validation"],
-           recommendedAction: fallbackDecision === "REJECTED" ? "block" : "allow_signal",
+           recommendedAction: "block",
            scores: {}
         };
     }
     
     if (!this.isConfigured || !aiClient) {
-       logger.warn('AI Service is not configured (Missing API Key). Falling back to deterministic rule-based decision.');
-       const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-       const fallbackDecision: AIDecision = failedCritical ? 'REJECTED' : 'AI OFFLINE';
-
+       logger.warn('AI Service is not configured (Missing API Key). Hard-blocking signal dispatch as AI validation is mandatory.');
        return {
           strategyName: strategyId,
-          decision: fallbackDecision,
+          decision: "REJECTED",
           checklist: validatorResults,
-          reasoning: "Validated by deterministic engine. AI validation is offline.",
-          evidence: "Validated by deterministic engine.",
-          riskNotes: 'AI Offline - Missing API Key',
+          reasoning: "AI Validation is not configured (Missing GEMINI_API_KEY). Signal suppressed per quality gate requirement.",
+          evidence: "Missing GEMINI_API_KEY.",
+          riskNotes: 'AI UNAVAILABLE - Missing API Key',
           missingFactors: ['AI Validation'],
-          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'allow_signal',
+          recommendedAction: "block",
           scores: {}
        };
     }
@@ -364,19 +359,16 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
 
       const geminiHealth = getProviderRegistry().getProviderHealth('GeminiAI');
       if (geminiHealth?.circuitBreakerStatus === 'open') {
-        logger.warn(`GeminiAI circuit breaker is open. Bypassing Gemini API call for ${strategyId} and using deterministic fallback.`);
-        const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-        const fallbackDecision: AIDecision = failedCritical ? 'REJECTED' : 'AI OFFLINE';
-
+        logger.warn(`GeminiAI circuit breaker is open. Hard blocking AI validation for ${strategyId}.`);
         const fallbackResult: ValidationPipelineResult = {
           strategyName: strategyId,
-          decision: fallbackDecision,
+          decision: 'REJECTED',
           checklist: validatorResults,
-          reasoning: "Validated by deterministic engine. AI validation is offline.",
-          evidence: "Validated by deterministic engine.",
-          riskNotes: 'AI Offline - Circuit Breaker Open',
+          reasoning: "AI Validation circuit breaker is open. Signal dispatch suppressed.",
+          evidence: "Circuit breaker open.",
+          riskNotes: 'AI UNAVAILABLE - Circuit Breaker Open',
           missingFactors: ['AI Validation'],
-          recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'allow_signal',
+          recommendedAction: 'block',
           scores: {}
         };
         this.cache.set(cacheKey, fallbackResult);
@@ -425,20 +417,17 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
       const isTimeout = error.message.toLowerCase().includes('timed out');
 
-      logger.warn(`AI Validation failed: ${error.message}. Falling back to deterministic rule-based decision.`);
-      
-      const failedCritical = validatorResults.some(v => v.isCritical && v.status === 'FAIL');
-      const fallbackDecision: AIDecision = failedCritical ? 'REJECTED' : 'AI OFFLINE';
+      logger.warn(`AI Validation failed: ${error.message}. Hard-blocking signal dispatch as AI validation is mandatory.`);
 
       const fallbackRes: ValidationPipelineResult = {
          strategyName: strategyId,
-         decision: fallbackDecision,
+         decision: 'REJECTED',
          checklist: validatorResults,
-         reasoning: "Validated by deterministic engine. AI validation is offline.",
-         evidence: "Validated by deterministic engine.",
-         riskNotes: isQuotaExceeded ? 'AI Offline - Quota Exceeded' : (isTimeout ? 'AI Offline - Request Timeout' : 'AI Offline - System Error'),
+         reasoning: `AI Validation failed (${error.message}). Signal suppressed per quality gate requirement.`,
+         evidence: "AI Validation failed.",
+         riskNotes: isQuotaExceeded ? 'AI UNAVAILABLE - Quota Exceeded' : (isTimeout ? 'AI UNAVAILABLE - Request Timeout' : 'AI UNAVAILABLE - System Error'),
          missingFactors: ['AI Validation'],
-         recommendedAction: fallbackDecision === 'REJECTED' ? 'block' : 'allow_signal',
+         recommendedAction: 'block',
          scores: {}
       };
 

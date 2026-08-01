@@ -48,11 +48,6 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
       status: (bosBull || bosBear) ? 'valid' : 'pending',
       evidence: { bosBull, bosBear, detail: (bosBull || bosBear) ? 'M1 Structure Break in Reversal Direction' : 'Monitoring Reversal Structure Break' },
       description: 'M1 Break of Structure (BOS) Reversal'
-    },
-    rule_ai_validation: {
-      status: 'valid',
-      evidence: { note: 'News Reversal AI Confluence Gate Ready', decision: pyData.aiDecision || 'APPROVED' },
-      description: 'AI Institutional Confluence Audit'
     }
   };
 
@@ -119,7 +114,7 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
     atrBuffer50Pct: `${((atr * 0.6) * 10).toFixed(1)} pips`,
     confluenceScore,
     confirmationStatus,
-    aiDecision: pyData.aiDecision || 'APPROVED'
+    aiDecision: pyData.aiDecision || 'PENDING'
   };
 
   return {

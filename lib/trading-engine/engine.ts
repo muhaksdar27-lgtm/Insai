@@ -13,6 +13,7 @@ import { RuleEngine } from './rule-engine';
 import { CandidateEvaluator } from './candidate-evaluator';
 import { SignalBuilder } from './signal-builder';
 import { getMarketDataService } from '../market-data/market-data-service';
+import { MarketCalendar } from '../market-data/market-calendar';
 import crypto from 'crypto';
 
 export class TradingEngine {
@@ -61,14 +62,14 @@ export class TradingEngine {
           direction,
           rr: rr || '1:2.0',
           timeframe: setupDetails?.timeframe || context.timeframe || 'M15',
-          session: setupDetails?.session || 'London',
-          marketBias: setupDetails?.marketBias || setupDetails?.bias || 'BULLISH',
-          bias: setupDetails?.bias || setupDetails?.marketBias || 'BULLISH',
+          session: setupDetails?.session || 'Off-Session',
+          marketBias: setupDetails?.marketBias || setupDetails?.bias || 'NEUTRAL',
+          bias: setupDetails?.bias || setupDetails?.marketBias || 'NEUTRAL',
           marketStates: marketStates || [],
           validationSummary: validationSummary,
           validationLogSummary: validationSummary,
           ruleResults: ruleResults || {},
-          aiDecision: setupDetails?.aiDecision || 'APPROVED'
+          aiDecision: setupDetails?.aiDecision || 'PENDING'
       };
   }
 
@@ -136,6 +137,24 @@ export class TradingEngine {
   }
 
   private async runDetectionCycle(context: RuleEvaluationContext, activeStrategyIds: string[]) {
+    // 0. Market Calendar & Feed Health Check (Hard Block)
+    const marketStatus = MarketCalendar.getMarketStatus(context.symbol, context.marketData);
+    if (marketStatus.isHardBlocked) {
+      logger.warn(`[HARD_BLOCK_CYCLE_ABORT] Market status hard blocked for ${context.symbol}: ${marketStatus.blockReason}`);
+      const fallbackStrategies = activeStrategyIds.length > 0 ? activeStrategyIds : ['strategy-1-smc', 'strategy-2-snd', 'strategy-3-scalping', 'strategy-4-news', 'strategy-5-smc-sd-confluence'];
+      for (const stratId of fallbackStrategies) {
+        await this.syncState(
+          stratId,
+          STEPS.FAILED,
+          'hard_blocked',
+          `Market Hard Block: ${marketStatus.blockReason}`,
+          null,
+          this.buildSetupSnapshot(context, { validationSummary: marketStatus.blockReason || undefined, setupDetails: { aiDecision: 'REJECTED' } })
+        );
+      }
+      return;
+    }
+
     // 1. Market State Classification
     const marketStates = this.marketStateEngine.classifyState(context);
     logger.info(`Market States detected: ${marketStates.join(', ')}`);
