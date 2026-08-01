@@ -159,28 +159,28 @@ export class SetupDetector {
     }
 
     const snapshot: Record<string, any> = {
-       _assumptions_flagged: false,
+       _assumptions_flagged: !pyData.current_price && !pyData.entry_price,
        pair: pyData.symbol || 'XAUUSD',
        timeframe: pyData.timeframe || 'M15',
-       session: pyData.current_session || 'London',
-       bias: pyData.trend_h1 || pyData.trend || 'bullish',
-       sweepStatus: pyData.liq_sweep_status || (pyData.liq_sweep_bull ? "Bullish Sweep" : (pyData.liq_sweep_bear ? "Bearish Sweep" : "None")),
-       confirmationStatus: pyData.confirmation_status || (pyData.choch_bull ? "Bullish CHoCH" : (pyData.choch_bear ? "Bearish CHoCH" : "Confirmed")),
-       zoneStatus: pyData.zone_status || (pyData.sd_zone_active ? "S&D Active" : "Active Zone"),
-       newsStatus: pyData.news_status || (pyData.news_high_impact_active ? "High Impact Active" : "Clear"),
-       confluenceScore: pyData.confluence_score || 100,
-       entry: pyData.entry_price || pyData.current_price || 2750.0,
-       sl: pyData.sl_price,
-       tp: pyData.tp_price || pyData.tp1_price,
-       direction: pyData.signal_direction || pyData.direction || 'buy'
+       session: pyData.current_session || pyData.session || 'Off-Session',
+       bias: pyData.trend_h1 || pyData.trend || 'Undetermined',
+       sweepStatus: pyData.liq_sweep_status || (pyData.liq_sweep_bull ? "Bullish Sweep" : (pyData.liq_sweep_bear ? "Bearish Sweep" : "No Sweep")),
+       confirmationStatus: pyData.confirmation_status || (pyData.choch_bull ? "Bullish CHoCH" : (pyData.choch_bear ? "Bearish CHoCH" : (pyData.bos_bull ? "Bullish BOS" : (pyData.bos_bear ? "Bearish BOS" : "Unconfirmed")))),
+       zoneStatus: pyData.zone_status || (pyData.sd_zone_active ? "S&D Active" : "Inactive"),
+       newsStatus: pyData.news_status || (pyData.news_high_impact_active ? "High Impact Active" : "Normal"),
+       confluenceScore: pyData.confluence_score ?? 0,
+       entry: pyData.entry_price || pyData.current_price || undefined,
+       sl: pyData.sl_price || undefined,
+       tp: pyData.tp_price || pyData.tp1_price || undefined,
+       direction: pyData.signal_direction || pyData.direction || undefined
     };
 
-    if (snapshot.entry && snapshot.sl && snapshot.tp) {
+    if (snapshot.entry && snapshot.sl && snapshot.tp && Math.abs(snapshot.entry - snapshot.sl) > 0) {
         const risk = Math.abs(snapshot.entry - snapshot.sl);
         const reward = Math.abs(snapshot.tp - snapshot.entry);
-        snapshot.rr = risk > 0 ? Number((reward / risk).toFixed(2)) : 2.0;
+        snapshot.rr = Number((reward / risk).toFixed(2));
     } else {
-        snapshot.rr = 2.0;
+        snapshot.rr = undefined;
     }
 
     return snapshot;

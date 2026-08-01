@@ -56,13 +56,11 @@ class QuantScorer:
             return "WAIT"
         return "REJECTED"
 
-    def score_setup(self) -> Tuple[str, int, List[str], float, float]:
+    def score_setup(self) -> Tuple[str, int, List[str], float, float, List[str], List[str], int, Dict[str, Any]]:
         logger.info(f"Calculating metrics and RR for setup for strategy {self.strategy_id}...")
         self.calculate_metrics()
         
-        # Pass analysis directly to Strategy Engine
-        # The specific strategy will calculate the score and give reasons based ONLY on its rules.
-        strat_score, strat_reasons = self.strategy_engine.run_all(
+        eval_res = self.strategy_engine.evaluate_strategy_detailed(
             direction=self.direction,
             analysis=self.analysis,
             z_score=self.z_score,
@@ -72,19 +70,39 @@ class QuantScorer:
             tp=self.tp_price,
             target_strat_id=self.strategy_id
         )
-        
-        if strat_score != 0 or strat_reasons:
-            self.score = strat_score
-            self.reasons = strat_reasons
-        else:
-            logger.warning("No specific strategy matched or rules yielded 0.")
-            self.score = -100
-            self.reasons = ["Pending Confirmation: Strategi tidak ditemukan atau tidak kompatibel"]
 
-        decision = self.get_decision()
+        self.score = eval_res.score
+        self.reasons = eval_res.reasons
         
-        if decision == "WAIT":
-             self.reasons.append("Pending Confirmation: Kondisi abu-abu")
-             
-        logger.info(f"Scoring completed. Final Decision: {decision}, Score: {self.score}")
-        return decision, self.score, self.reasons, self.z_score, self.rr_ratio
+        if eval_res.passed:
+            if eval_res.score >= 80:
+                decision = "APPROVED"
+            elif eval_res.score >= 50:
+                decision = "WAIT"
+            else:
+                decision = "REJECTED"
+        else:
+            decision = "REJECTED"
+
+        explainability = {
+            "strategy_id": eval_res.strategy_id,
+            "weighted_breakdown": eval_res.weighted_breakdown,
+            "rule_checks": {
+                "passed": eval_res.passed_rules,
+                "failed": eval_res.failed_rules
+            }
+        }
+
+        logger.info(f"Scoring completed. Final Decision: {decision}, Score: {self.score}, Confidence: {eval_res.confidence}")
+        return (
+            decision, 
+            self.score, 
+            self.reasons, 
+            self.z_score, 
+            self.rr_ratio,
+            eval_res.passed_rules,
+            eval_res.failed_rules,
+            eval_res.confidence,
+            explainability
+        )
+

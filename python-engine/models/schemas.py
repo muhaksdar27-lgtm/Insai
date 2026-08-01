@@ -18,6 +18,10 @@ class ValidationRequest(BaseModel):
     tp_price: float
     candles: List[Candle]
     strategy_id: Optional[str] = None
+    spread: Optional[float] = 0.0
+    news_active: Optional[bool] = False
+    session: Optional[str] = None
+    multi_tf_candles: Optional[Dict[str, List[Candle]]] = None
 
 class AnalysisResult(BaseModel):
     fvg_bull_active: bool
@@ -57,7 +61,12 @@ class ValidationResponseMetrics(BaseModel):
 
 class ValidationResponse(BaseModel):
     status: str
-    decision: str
+    decision: str  # "APPROVED" | "WAIT" | "REJECTED"
     quant_score: int
-    metrics: ValidationResponseMetrics
+    confidence: int
+    passed_rules: List[str]
+    failed_rules: List[str]
     reasons: List[str]
+    metrics: ValidationResponseMetrics
+    explainability: Optional[Dict[str, Any]] = None
+

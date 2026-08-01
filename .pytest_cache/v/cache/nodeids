@@ -1,0 +1,17 @@
+[
+  "python-engine/tests/test_api.py::test_health_endpoint",
+  "python-engine/tests/test_api.py::test_ready_endpoint",
+  "python-engine/tests/test_core.py::test_core_engine_analyze_minimal",
+  "python-engine/tests/test_core.py::test_core_engine_initialization",
+  "python-engine/tests/test_core_engine.py::test_analyze_empty_data",
+  "python-engine/tests/test_core_engine.py::test_analyze_trend_and_volatility",
+  "python-engine/tests/test_core_engine.py::test_cache_key_generation",
+  "python-engine/tests/test_core_engine.py::test_engulfing_detection",
+  "python-engine/tests/test_core_engine.py::test_execution_latency",
+  "python-engine/tests/test_core_engine.py::test_fvg_detection",
+  "python-engine/tests/test_strategies.py::test_confluence_strategy_pass_and_fail",
+  "python-engine/tests/test_strategies.py::test_news_strategy_pass_and_fail",
+  "python-engine/tests/test_strategies.py::test_scalping_strategy_pass_and_fail",
+  "python-engine/tests/test_strategies.py::test_smc_strategy_pass_and_fail",
+  "python-engine/tests/test_strategies.py::test_snd_strategy_pass_and_fail"
+]

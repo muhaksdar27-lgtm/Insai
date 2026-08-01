@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from models.schemas import ValidationResponse, ValidationResponseMetrics
 
 def build_validation_response(
@@ -7,7 +7,11 @@ def build_validation_response(
     reasons: List[str], 
     z_score: float, 
     rr_ratio: float, 
-    analysis: Dict[str, Any]
+    analysis: Dict[str, Any],
+    passed_rules: Optional[List[str]] = None,
+    failed_rules: Optional[List[str]] = None,
+    confidence: Optional[int] = None,
+    explainability: Optional[Dict[str, Any]] = None
 ) -> ValidationResponse:
     
     metrics = ValidationResponseMetrics(
@@ -24,11 +28,20 @@ def build_validation_response(
         choch_bull=analysis.get('choch_bull', False),
         choch_bear=analysis.get('choch_bear', False)
     )
+
+    p_rules = passed_rules or []
+    f_rules = failed_rules or []
+    conf = confidence if confidence is not None else max(0, min(100, score))
     
     return ValidationResponse(
         status="success",
         decision=decision,
         quant_score=score,
+        confidence=conf,
+        passed_rules=p_rules,
+        failed_rules=f_rules,
+        reasons=reasons,
         metrics=metrics,
-        reasons=reasons
+        explainability=explainability
     )
+

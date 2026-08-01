@@ -47,10 +47,22 @@ def validate_signal(req: ValidationRequest) -> ValidationResponse:
             strategy_engine=strategy_engine_instance
         )
         
-        decision, score, reasons, z_score, rr_ratio = scorer.score_setup()
-        response = build_validation_response(decision, score, reasons, z_score, rr_ratio, analysis)
+        decision, score, reasons, z_score, rr_ratio, passed_rules, failed_rules, confidence, explainability = scorer.score_setup()
+        response = build_validation_response(
+            decision=decision, 
+            score=score, 
+            reasons=reasons, 
+            z_score=z_score, 
+            rr_ratio=rr_ratio, 
+            analysis=analysis,
+            passed_rules=passed_rules,
+            failed_rules=failed_rules,
+            confidence=confidence,
+            explainability=explainability
+        )
         logger.info(f"Validation successful. Final decision: {decision}")
         return response
+
     except Exception as e:
         logger.error(f"Error in scoring setup: {e}")
         raise InsaiValidationException(f"Scoring failed: {str(e)}")

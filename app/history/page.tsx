@@ -243,9 +243,17 @@ export default function History() {
           className="flex flex-col items-center justify-center py-10 text-center border border-dashed border-rose-900/40 rounded-lg bg-rose-950/20 shadow-sm"
         >
           <AlertTriangle className="w-6 h-6 text-rose-500/80 mb-2" />
-          <p className="text-[8px] font-bold text-rose-400 mb-1 tracking-wide">Connection Error</p>
+          <p className="text-[8px] font-bold text-rose-400 mb-1 tracking-wide">
+            {error?.message?.includes("Closed") ? "Market Closed" :
+             error?.message?.includes("Stale") ? "Data Stale" :
+             error?.message?.includes("Offline") ? "Provider Offline" :
+             error?.message?.includes("Supabase") ? "Supabase Down" :
+             error?.message?.includes("Redis") ? "Redis Down" :
+             error?.message?.includes("AI") ? "AI Validation Failed" :
+             "Backend Service Error"}
+          </p>
           <p className="text-[8px] text-zinc-500 max-w-[240px] leading-relaxed mb-2.5 font-medium">
-            Unable to connect to the database.
+            {error?.message || "Unable to connect to database."}
           </p>
           <button
             onClick={refetch}

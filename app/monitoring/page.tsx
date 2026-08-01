@@ -180,9 +180,17 @@ export default function Monitoring() {
           className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-rose-900/40 rounded-2xl bg-rose-950/20 shadow-sm"
         >
           <AlertTriangle className="w-10 h-10 text-rose-500/80 mb-5" />
-          <p className="text-[13px] font-bold text-rose-400 mb-2 tracking-wide">Scanner Disconnected</p>
+          <p className="text-[13px] font-bold text-rose-400 mb-2 tracking-wide">
+            {error?.message?.includes("Closed") ? "Market Closed" :
+             error?.message?.includes("Stale") ? "Data Stale" :
+             error?.message?.includes("Offline") ? "Provider Offline" :
+             error?.message?.includes("Supabase") ? "Supabase Down" :
+             error?.message?.includes("Redis") ? "Redis Down" :
+             error?.message?.includes("AI") ? "AI Validation Failed" :
+             "Scanner Disconnected"}
+          </p>
           <p className="text-[11px] text-zinc-500 max-w-[280px] leading-relaxed mb-6 font-medium">
-            Unable to connect to trading engine backend service.
+            {error?.message || "Unable to connect to trading engine backend service."}
           </p>
           <button
             onClick={refetch}

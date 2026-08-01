@@ -176,14 +176,15 @@ export class RuleEngine {
     }
 
     // 3. Trend Alignment Rule
-    const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
+    const h1Trend = pyData.trend_h1 || pyData.trend;
+    const hasValidTrend = h1Trend === 'bullish' || h1Trend === 'bearish' || h1Trend === 'BULLISH' || h1Trend === 'BEARISH';
     rules['rule_h1_trend'] = this.createRuleResult(
       'rule_h1_trend',
       true,
-      true,
-      h1Trend,
+      hasValidTrend ? true : 'WAIT',
+      h1Trend || 'Undetermined',
       'bullish or bearish',
-      'H1 trend undefined',
+      'H1 trend undefined or neutral',
       { trend: h1Trend, timeframe: 'H1' },
       'H1 Higher Timeframe Trend Alignment'
     );
@@ -326,14 +327,22 @@ export class RuleEngine {
       'ATR SL Dynamic Buffer'
     );
 
+    const entryVal = pyData.entry_price || pyData.current_price;
+    const slVal = pyData.sl_price;
+    const tpVal = pyData.tp_price || pyData.tp1_price;
+    let actualRR = 0;
+    if (entryVal && slVal && tpVal && Math.abs(entryVal - slVal) > 0) {
+      actualRR = Math.abs(tpVal - entryVal) / Math.abs(entryVal - slVal);
+    }
+    const hasValidRR = actualRR >= 1.5;
     rules['rule_risk_reward'] = this.createRuleResult(
       'rule_risk_reward',
       true,
-      true,
-      '1:2.0',
+      actualRR > 0 ? hasValidRR : 'WAIT',
+      actualRR > 0 ? `1:${actualRR.toFixed(2)}` : 'Undefined RR',
       '>= 1:1.5',
-      'Risk/Reward ratio below minimum threshold',
-      { rr: '1:2.0' },
+      'Risk/Reward ratio below minimum threshold (1:1.5)',
+      { rr: actualRR > 0 ? `1:${actualRR.toFixed(2)}` : 'Pending calculation' },
       'Minimum Risk/Reward Gate'
     );
 

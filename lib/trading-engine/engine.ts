@@ -40,13 +40,13 @@ export class TradingEngine {
       const slPrice = setupDetails?.slPrice ?? setupDetails?.sl;
       const tp1Price = setupDetails?.tpPrice ?? setupDetails?.tp1Price ?? setupDetails?.tp1;
       const dirRaw = setupDetails?.direction ? String(setupDetails.direction).toLowerCase() : undefined;
-      const direction = (dirRaw === 'long' || dirRaw === 'buy') ? 'buy' : (dirRaw === 'short' || dirRaw === 'sell') ? 'sell' : (dirRaw || 'buy');
+      const direction = dirRaw ? ((dirRaw === 'long' || dirRaw === 'buy') ? 'buy' : (dirRaw === 'short' || dirRaw === 'sell') ? 'sell' : dirRaw) : undefined;
       
       let rr = setupDetails?.rr;
       if (!rr && entryPrice && slPrice && tp1Price) {
         const risk = Math.abs(entryPrice - slPrice);
         const reward = Math.abs(tp1Price - entryPrice);
-        if (risk > 0) rr = `1:${(reward / risk).toFixed(1)}`;
+        if (risk > 0) rr = `1:${(reward / risk).toFixed(2)}`;
       }
 
       return {
@@ -60,11 +60,11 @@ export class TradingEngine {
           tp2Price: setupDetails?.tp2Price ?? setupDetails?.tp2,
           tp3Price: setupDetails?.tp3Price ?? setupDetails?.tp3,
           direction,
-          rr: rr || '1:2.0',
-          timeframe: setupDetails?.timeframe || context.timeframe || 'M15',
+          rr: rr || undefined,
+          timeframe: setupDetails?.timeframe || context.timeframe,
           session: setupDetails?.session || 'Off-Session',
-          marketBias: setupDetails?.marketBias || setupDetails?.bias || 'NEUTRAL',
-          bias: setupDetails?.bias || setupDetails?.marketBias || 'NEUTRAL',
+          marketBias: setupDetails?.marketBias || setupDetails?.bias || 'Undetermined',
+          bias: setupDetails?.bias || setupDetails?.marketBias || 'Undetermined',
           marketStates: marketStates || [],
           validationSummary: validationSummary,
           validationLogSummary: validationSummary,
@@ -225,6 +225,18 @@ export class TradingEngine {
     }
 
     // Process all active strategies through the deterministic pipeline
+    const approvedCandidates: Array<{
+      setup: any;
+      sm: StateMachine;
+      strategyId: string;
+      translatedSnapshot: any;
+      validationResult: any;
+      evaluatedRules: any;
+      score: number;
+      confidence: number;
+      rrVal: number;
+    }> = [];
+
     await Promise.allSettled(relevantStrategies.map(async (strategyId) => {
       const sm = new StateMachine(strategyId, STEPS.INITIALIZING);
       
@@ -265,7 +277,7 @@ export class TradingEngine {
         }
 
         // Candidate accepted -> Proceed deterministically
-        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, pyData);
+        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, pyData, context);
         (setup as any).setupSnapshot = translatedSnapshot;
 
         // Step 2: SCANNING
@@ -275,16 +287,26 @@ export class TradingEngine {
         if (setup.status === 'scanning') {
           setup = this.setupDetector.transitionState(setup.id, 'candidate', 'Setup parameters identified');
         }
+        logger.info(`[SETUP FOUND] Strategy ${strategyId} setup detected on ${context.symbol}`);
         await this.advanceStateMachine(sm, STEPS.SETUP_FOUND, 'Setup parameters & key levels identified', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
 
         // Step 4: RULE_VALIDATION
+        logger.info(`[RULE PASS] Strategy ${strategyId} all mandatory candidate rules passed.`);
         await this.advanceStateMachine(sm, STEPS.RULE_VALIDATION, 'All mandatory strategy rules passed', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
 
         // Step 5: RISK_VALIDATION
-        let direction = translatedSnapshot.direction || 'buy';
-        let entryPrice = translatedSnapshot.entry || pyData.current_price || (lastCandle ? lastCandle.close : 2750.0);
+        let direction = translatedSnapshot.direction;
+        let entryPrice = translatedSnapshot.entry || pyData.current_price || (lastCandle ? lastCandle.close : undefined);
         let slPrice = translatedSnapshot.sl;
-        let tpPrice = translatedSnapshot.tp1 || translatedSnapshot.tp;
+        let tpPrice = translatedSnapshot.tp;
+
+        if (!entryPrice || !direction) {
+          const failMsg = 'Missing entry price or signal direction';
+          logger.warn(`[FAILED] Strategy ${strategyId} rejected: ${failMsg}`);
+          this.setupDetector.transitionState(setup.id, 'expired', failMsg);
+          await this.advanceStateMachine(sm, STEPS.FAILED, failMsg, setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
+          return;
+        }
 
         const atr = pyData.atr || 4.5;
         const riskDistance = atr * 0.5;
@@ -297,14 +319,27 @@ export class TradingEngine {
         // Step 6: AI_VALIDATION
         setup = this.setupDetector.transitionState(setup.id, 'validation', 'Passed candidate pattern matching');
         const validationState = sm.lastTransitionState || { stateName: STEPS.AI_VALIDATION } as any;
+        
+        logger.info(`[AI START] Strategy ${strategyId} running AI confluence gate...`);
         await this.advanceStateMachine(sm, STEPS.AI_VALIDATION, 'Running AI confluence gate...', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
         
         const validationResult = await this.aiOrchestrator.runPipeline(strategyId, validationState, evaluatedRules, context);
 
+        if (validationResult.decision !== 'APPROVED') {
+          const aiFailMsg = `AI Validation Rejected: ${validationResult.reasoning || 'Confluence threshold not met'}`;
+          logger.warn(`[AI REJECTED] Strategy ${strategyId} ${aiFailMsg}`);
+          this.setupDetector.transitionState(setup.id, 'expired', aiFailMsg);
+          await this.advanceStateMachine(sm, STEPS.FAILED, aiFailMsg, setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: 'REJECTED', direction, entryPrice, slPrice, tpPrice } });
+          return;
+        }
+
+        const confidenceVal = validationResult.aiReview?.confidenceScore || validationResult.scores?.confidence || 85;
+        logger.info(`[AI APPROVED] Strategy ${strategyId} AI confluence gate approved setup (Confidence: ${confidenceVal}%)`);
+
         validationState.context = { ...(validationState.context || {}), direction, entryPrice, slPrice, tpPrice, tp1Price: tpPrice };
         const consResult = await consistencyEngine.evaluate(strategyId, validationState, evaluatedRules, validationResult, context);
         if (consResult.status === 'block') {
-            logger.warn(`Setup ${setup.id} blocked by Consistency Engine: ${consResult.reasoning}`);
+            logger.warn(`[CONSISTENCY BLOCKED] Setup ${setup.id} blocked by Consistency Engine: ${consResult.reasoning}`);
             this.setupDetector.transitionState(setup.id, 'expired', `Consistency Blocked: ${consResult.reasoning}`);
             await this.advanceStateMachine(sm, STEPS.FAILED, consResult.reasoning, setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: 'REJECTED', direction, entryPrice, slPrice, tpPrice } });
             return;
@@ -313,32 +348,31 @@ export class TradingEngine {
         const riskDecision = { status: 'pass' };
         const qgResult = await qualityGate.evaluate(strategyId, validationState, context, evaluatedRules, validationResult, consResult, riskDecision);
         if (!qgResult.passed) {
-            logger.warn(`Setup ${setup.id} blocked by Quality Gate: ${qgResult.reason}`);
+            logger.warn(`[QUALITY GATE BLOCKED] Setup ${setup.id} blocked by Quality Gate: ${qgResult.reason}`);
             this.setupDetector.transitionState(setup.id, 'expired', `Quality Gate Blocked: ${qgResult.reason}`);
             await this.advanceStateMachine(sm, STEPS.FAILED, qgResult.reason || 'Quality gate blocked', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: 'REJECTED', direction, entryPrice, slPrice, tpPrice } });
             return;
         }
 
-        // Step 7: SIGNAL_READY (Mandatory rules passed and verified)
-        setup = this.setupDetector.transitionState(setup.id, 'ready', 'Setup confirmed and priced');
-        (setup as any).aiValidation = validationResult;
-        (setup as any).qualityGatePassed = true;
-        (setup as any).marketStates = marketStates;
-        (setup as any).candidateRules = evaluatedRules;
+        logger.info(`[QUALITY GATE] Strategy ${strategyId} passed quality gate.`);
 
-        await this.advanceStateMachine(sm, STEPS.SIGNAL_READY, 'Signal assembled with single source of truth', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: validationResult.decision, direction, entryPrice, slPrice, tpPrice } });
+        // Calculate RR ratio
+        let rrVal = 2.0;
+        if (entryPrice && slPrice && tpPrice && Math.abs(entryPrice - slPrice) > 0) {
+          rrVal = Math.abs(tpPrice - entryPrice) / Math.abs(entryPrice - slPrice);
+        }
 
-        // Step 8: DISPATCHED
-        setup = this.setupDetector.transitionState(setup.id, 'signal', 'Signal emitted');
-        await this.advanceStateMachine(sm, STEPS.DISPATCHED, 'Signal dispatched to dashboard and execution feeds', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: validationResult.decision, direction, entryPrice, slPrice, tpPrice } });
-        
-        logger.info(`🚨 SIGNAL GENERATED & DISPATCHED: ${setup.id} [${setup.direction?.toUpperCase()} ${setup.symbol}] Entry: ${setup.entryPrice}`);
-        
-        // Dispatch via SignalBuilder
-        await SignalBuilder.buildAndDispatchSignal(setup, context);
-
-        this.setupDetector.transitionState(setup.id, 'archived', 'Signal processing complete');
-        await getSupabaseClient().archiveToHistory(setup.id, 'FINISHED', 25.0, 'WIN', context.correlationId).catch(() => null);
+        approvedCandidates.push({
+          setup,
+          sm,
+          strategyId,
+          translatedSnapshot,
+          validationResult,
+          evaluatedRules,
+          score: candidateEval.score || 80,
+          confidence: confidenceVal,
+          rrVal
+        });
 
       } catch (err) {
         if (err instanceof SetupLifecycleError) {
@@ -348,6 +382,68 @@ export class TradingEngine {
         }
       }
     }));
+
+    // Step 7: Cross-Strategy Signal Deduplication & Final Dispatch
+    const candidateGroups: Record<string, typeof approvedCandidates> = {};
+    for (const cand of approvedCandidates) {
+      const groupKey = `${cand.setup.symbol}_${cand.setup.direction}`.toUpperCase();
+      if (!candidateGroups[groupKey]) candidateGroups[groupKey] = [];
+      candidateGroups[groupKey].push(cand);
+    }
+
+    for (const [groupKey, candidates] of Object.entries(candidateGroups)) {
+      if (candidates.length === 0) continue;
+
+      // Sort candidates by confidence -> score -> Risk/Reward to pick single best winner
+      candidates.sort((a, b) => {
+        if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+        if (b.score !== a.score) return b.score - a.score;
+        return b.rrVal - a.rrVal;
+      });
+
+      const winner = candidates[0];
+
+      // Suppress duplicate candidates
+      for (let i = 1; i < candidates.length; i++) {
+        const dup = candidates[i];
+        const suppressReason = `Suppressed: Duplicate strategy signal for same market event (lower confluence score than winner Strategy ${winner.strategyId})`;
+        logger.info(`[SUPPRESSED DUPLICATE] Strategy ${dup.strategyId} suppressed in favor of Strategy ${winner.strategyId} for ${groupKey}`);
+        this.setupDetector.transitionState(dup.setup.id, 'expired', suppressReason);
+        await this.advanceStateMachine(dup.sm, STEPS.FAILED, suppressReason, dup.setup.id, context, {
+          marketStates,
+          ruleResults: dup.evaluatedRules,
+          setupDetails: { ...dup.translatedSnapshot, aiDecision: 'SUPPRESSED' }
+        });
+      }
+
+      // Process Winner Dispatch
+      logger.info(`[SIGNAL CREATED] Strategy ${winner.strategyId} canonical signal object created for ${groupKey}`);
+
+      let winnerSetup = this.setupDetector.transitionState(winner.setup.id, 'ready', 'Setup confirmed and priced');
+      (winnerSetup as any).aiValidation = winner.validationResult;
+      (winnerSetup as any).qualityGatePassed = true;
+      (winnerSetup as any).marketStates = marketStates;
+      (winnerSetup as any).candidateRules = winner.evaluatedRules;
+
+      await this.advanceStateMachine(winner.sm, STEPS.SIGNAL_READY, 'Signal assembled with single source of truth', winnerSetup.id, context, {
+        marketStates,
+        ruleResults: winner.evaluatedRules,
+        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: winnerSetup.direction, entryPrice: winnerSetup.entryPrice, slPrice: winnerSetup.slPrice, tpPrice: winnerSetup.tpPrice }
+      });
+
+      winnerSetup = this.setupDetector.transitionState(winnerSetup.id, 'signal', 'Signal emitted');
+      await this.advanceStateMachine(winner.sm, STEPS.DISPATCHED, 'Signal dispatched to dashboard and execution feeds', winnerSetup.id, context, {
+        marketStates,
+        ruleResults: winner.evaluatedRules,
+        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: winnerSetup.direction, entryPrice: winnerSetup.entryPrice, slPrice: winnerSetup.slPrice, tpPrice: winnerSetup.tpPrice }
+      });
+
+      // Dispatch signal (triggers [HISTORY SAVED], [LIVE SENT], and [TELEGRAM SENT])
+      await SignalBuilder.buildAndDispatchSignal(winnerSetup, context);
+
+      this.setupDetector.transitionState(winnerSetup.id, 'archived', 'Signal processing complete');
+      await getSupabaseClient().archiveToHistory(winnerSetup.id, 'FINISHED', 25.0, 'WIN', context.correlationId).catch(() => null);
+    }
 
     this.setupDetector.audit();
   }

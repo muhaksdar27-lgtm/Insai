@@ -60,6 +60,7 @@ export class NotificationEngine {
 
       if (success) {
         payload.status = 'sent';
+        logger.info(`[TELEGRAM SENT] Telegram message sent for signal ${payload.signal_key}`);
         this.notifiedSignals.add(payload.signal_key);
         // Prevent unbounded memory growth
         if (this.notifiedSignals.size > this.maxHistorySize) {

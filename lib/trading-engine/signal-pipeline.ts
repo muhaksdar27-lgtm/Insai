@@ -105,6 +105,7 @@ export class SignalPipeline {
       };
 
       await getSupabaseClient().insertSignal(canonicalSignal);
+      logger.info(`[HISTORY SAVED] Signal ${setup.id} (${setup.sourceStrategy}) saved to database & history`);
       
       // Store AI Review Evidence if available
       const aiValidationData = (setup as any).aiValidation;
@@ -172,6 +173,7 @@ export class SignalPipeline {
 
       if (!isSuppressed) {
         getQueueManager().publish('events', { type: 'SIGNAL_PUBLISHED', signalKey: setup.id });
+        logger.info(`[LIVE SENT] Signal ${setup.id} broadcasted to live event stream & dashboard`);
         await this.notifyNewSignal(setup, marketContext);
       } else {
         logger.info(`Signal ${setup.id} is suppressed/rejected. Skipping notification and public event stream.`);
@@ -288,7 +290,7 @@ export class SignalPipeline {
        strategyName: setup.sourceStrategy,
        symbol: setup.symbol,
        timeframe: setup.timeframe || 'M15',
-       session: marketContext?.session || (setup as any).session || 'London',
+       session: marketContext?.session || (setup as any).session || 'Off-Session',
        direction: finalDir,
        entry: entry,
        sl: sl,
@@ -307,6 +309,7 @@ export class SignalPipeline {
        aiDecision: rawAiDecision as any,
        engineVersion: '2.0.0'
     }).then(() => {
+        logger.info(`[TELEGRAM SENT] Signal ${setup.id} (${setup.sourceStrategy}) delivered to Telegram queue`);
         metricsEngine.recordNotification(true);
     }).catch(() => {
         metricsEngine.recordNotification(false);
