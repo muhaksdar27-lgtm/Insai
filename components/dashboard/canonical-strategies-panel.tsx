@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useState } from "react";
-import { ListFilter, ChevronDown, ChevronUp, ArrowRight, Shield, Crosshair, AlertTriangle } from "lucide-react";
+import { ListFilter, ChevronDown, ChevronUp, ArrowRight, AlertTriangle } from "lucide-react";
 import { StrategyResponse } from "@/types";
 import { buildSetup, buildRules, buildTimeline, getAllStrategiesWithFallback } from "@/lib/strategyViewModel";
 import { SetupCard, TimelineCard, RuleTable } from "@/components/strategy-ui";

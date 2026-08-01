@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Cpu, Server, Database, Radio, Zap, Activity } from "lucide-react";
+import { Cpu, Server, Database, Radio, Zap } from "lucide-react";
 import { DashboardSnapshotEngine, DashboardSnapshotSystem } from "@/types";
 
 interface EngineStatusPanelProps {

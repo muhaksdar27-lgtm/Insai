@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { History, Award, TrendingUp, TrendingDown, ArrowRight, ShieldCheck } from "lucide-react";
+import { History, Award, ArrowRight } from "lucide-react";
 import { DashboardSnapshotPerformance } from "@/types";
 import { useRouter } from "next/navigation";
 import { ClientDate } from "@/components/client-date";

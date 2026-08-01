@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Globe, AlertTriangle } from "lucide-react";
+import { Globe } from "lucide-react";
 import { NewsEvent } from "@/types";
 import { ClientDate } from "@/components/client-date";
 

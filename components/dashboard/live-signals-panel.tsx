@@ -42,11 +42,11 @@ export const LiveSignalsPanel = memo(function LiveSignalsPanel({ signals }: Live
       {/* Signals List */}
       {signals.length > 0 ? (
         <div className="space-y-2">
-          {signals.map((sig) => {
-            const isBuy = sig.direction === 'buy' || sig.direction === 'LONG';
+          {signals.map((sig, idx) => {
+            const isBuy = sig.direction === 'buy';
             return (
               <div
-                key={sig.id || sig.signalKey}
+                key={sig.signalKey || `signal-${idx}`}
                 className="bg-zinc-950/80 border border-zinc-800/80 rounded-md p-2.5 flex flex-col gap-2 hover:border-zinc-700/80 transition-all"
               >
                 <div className="flex items-center justify-between">

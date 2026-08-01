@@ -43,7 +43,7 @@ export function useFetch<T>(url: string, initialData: T, options?: UseFetchOptio
 
       let fetchPromise = inflight.get(url);
       if (!fetchPromise) {
-        fetchPromise = fetch(url, { signal }).then(async (res) => {
+        fetchPromise = fetch(url).then(async (res) => {
           if (!res.ok) {
             let errJson: any = null;
             try {
@@ -85,6 +85,8 @@ export function useFetch<T>(url: string, initialData: T, options?: UseFetchOptio
           }
         });
 
+        fetchPromise.catch(() => {});
+
         inflight.set(url, fetchPromise);
         fetchPromise.finally(() => {
           if (inflight.get(url) === fetchPromise) {
@@ -94,7 +96,13 @@ export function useFetch<T>(url: string, initialData: T, options?: UseFetchOptio
       }
 
       try {
-        return await fetchPromise;
+        const result = await fetchPromise;
+        if (signal.aborted) {
+          const err = new Error('Aborted');
+          err.name = 'AbortError';
+          throw err;
+        }
+        return result;
       } catch (err: any) {
         if (err.name === 'AbortError' || signal.aborted) {
           throw err;
@@ -135,7 +143,11 @@ export function useFetch<T>(url: string, initialData: T, options?: UseFetchOptio
     }
 
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+      try {
+        abortControllerRef.current.abort();
+      } catch {
+        // Ignore abort errors
+      }
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -146,8 +158,14 @@ export function useFetch<T>(url: string, initialData: T, options?: UseFetchOptio
 
     setLoading(true);
 
+    let isTimedOut = false;
     timeoutIdRef.current = setTimeout(() => {
-      controller.abort();
+      isTimedOut = true;
+      try {
+        controller.abort();
+      } catch {
+        // Ignore abort errors
+      }
     }, timeoutMs);
 
     try {
@@ -159,8 +177,15 @@ export function useFetch<T>(url: string, initialData: T, options?: UseFetchOptio
       setError(null);
     } catch (err: any) {
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
-      if (err?.name === 'AbortError' || controller.signal.aborted) {
-        if (controller.signal.aborted) {
+
+      const isAbort =
+        err?.name === 'AbortError' ||
+        err?.name === 'DOMException' ||
+        controller.signal.aborted ||
+        (typeof err?.message === 'string' && err.message.toLowerCase().includes('aborted'));
+
+      if (isAbort) {
+        if (isTimedOut) {
           setError({
             category: 'TIMEOUT',
             message: `Request timed out after ${timeoutMs}ms`

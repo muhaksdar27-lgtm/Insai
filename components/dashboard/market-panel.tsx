@@ -1,8 +1,9 @@
 "use client";
 
 import { memo } from "react";
-import { Activity, Clock, Globe, TrendingUp, TrendingDown, RefreshCw, AlertTriangle } from "lucide-react";
+import { Activity, Clock, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { MarketSnapshot, NewsEvent } from "@/types";
+import { ClientDate } from "@/components/client-date";
 
 interface MarketPanelProps {
   market: MarketSnapshot | null;
@@ -30,7 +31,7 @@ export const MarketPanel = memo(function MarketPanel({ market, newsEvents, times
               MARKET OVERVIEW — XAUUSD
             </h3>
             <p className="text-[9px] text-zinc-400 font-mono">
-              Institutional Feed • {market?.provider || "TwelveData/Yahoo"}
+              Institutional Feed • {market?.provider || "TwelveData/Yahoo"} • <ClientDate date={timestamp} />
             </p>
           </div>
         </div>
