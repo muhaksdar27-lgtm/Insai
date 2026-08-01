@@ -11,6 +11,8 @@ import { FallbackChain } from './fallback-chain';
 import { PriceProvider, NewsProvider, CalendarProvider } from './types';
 import { dataValidator } from './data-validator';
 
+import { MarketCalendar } from './market-calendar';
+
 export class MarketDataService {
   private priceChain: FallbackChain<PriceProvider>;
   private newsChain: FallbackChain<NewsProvider>;
@@ -88,7 +90,10 @@ export class MarketDataService {
     // Gap detection / Freshness check based on the dynamic window
     const snapshotTime = new Date(snapshot.timestamp).getTime();
     if (now - snapshotTime > freshnessWindowMs) {
-       logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
+       const marketStatus = MarketCalendar.getMarketStatus(symbol);
+       if (marketStatus.isOpen) {
+          logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
+       }
        snapshot.freshness = 'stale';
     } else {
        snapshot.freshness = 'live';

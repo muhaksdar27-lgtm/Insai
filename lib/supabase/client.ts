@@ -64,6 +64,19 @@ export class SupabaseService {
     return this.getClient() !== null && !this.circuitOpen;
   }
 
+  public isNetworkError(err: any): boolean {
+    if (!err) return false;
+    const msg = String(err.message || err).toLowerCase();
+    return msg.includes('fetch failed') ||
+           msg.includes('econnrefused') ||
+           msg.includes('enotfound') ||
+           msg.includes('aborterror') ||
+           msg.includes('aborted') ||
+           msg.includes('typeerror') ||
+           msg.includes('circuit breaker') ||
+           msg.includes('schema cache');
+  }
+
   private async withRetry<T>(operation: () => Promise<T>, retries: number = 2): Promise<T> {
     if (this.circuitOpen) {
       throw new Error("Supabase circuit breaker is open");
@@ -77,6 +90,20 @@ export class SupabaseService {
       } catch (err: any) {
         if (err.message === "Supabase circuit breaker is open") throw err;
         
+        if (this.isNetworkError(err)) {
+          this.failures += 2;
+          if (this.failures >= this.maxFailures && !this.circuitOpen) {
+            this.circuitOpen = true;
+            logger.warn(`Supabase network unreachable (${err.message}). Circuit breaker opened for 30s. Operating in memory fallback mode.`);
+            setTimeout(() => {
+               this.circuitOpen = false;
+               this.failures = 0;
+               logger.info('Supabase circuit breaker reset to closed');
+            }, 30000);
+          }
+          throw err;
+        }
+
         if (i === retries) {
           this.failures++;
           if (this.failures >= this.maxFailures && !this.circuitOpen) {
@@ -451,7 +478,7 @@ export class SupabaseService {
       return result || stateObj;
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
-        if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
+        if (this.isNetworkError(err)) {
           logger.warn(`Supabase insert strategy state warn: ${err.message}`);
         } else {
           logger.error(`Supabase insert strategy state error: ${err.message}`);
@@ -483,7 +510,7 @@ export class SupabaseService {
       });
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
-        if (err.message && (err.message.includes('schema cache') || err.message.includes('AbortError'))) {
+        if (this.isNetworkError(err)) {
             logger.warn(`Supabase fetch strategies warn: ${err.message}`);
         } else {
             logger.error(`Supabase fetch strategies error: ${err.message}`);
@@ -509,7 +536,11 @@ export class SupabaseService {
         return data || [];
       });
     } catch (err: any) {
-      logger.error(`Supabase fetch audit logs error: ${err.message}`);
+      if (this.isNetworkError(err)) {
+        logger.warn(`Supabase fetch audit logs warn: ${err.message}`);
+      } else {
+        logger.error(`Supabase fetch audit logs error: ${err.message}`);
+      }
       return { status: 'error', available: false, reason: err.message };
     }
   }
@@ -538,7 +569,7 @@ export class SupabaseService {
       });
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
-        if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
+        if (this.isNetworkError(err)) {
           logger.warn(`Supabase insert audit log warn: ${err.message}`);
         } else {
           logger.error(`Supabase insert audit log error: ${err.message}`);
@@ -577,7 +608,7 @@ export class SupabaseService {
       });
     } catch (err: any) {
       if (!err.message?.includes('circuit breaker')) {
-        if (err.message?.includes('AbortError') || err.message?.includes('aborted')) {
+        if (this.isNetworkError(err)) {
           logger.warn(`Supabase upsert MCP warn: ${err.message}`);
         } else {
           logger.error(`Supabase upsert MCP error: ${err.message}`);
@@ -603,7 +634,11 @@ export class SupabaseService {
         return data || [];
       });
     } catch (err: any) {
-      logger.error(`Supabase fetch MCPs error: ${err.message}`);
+      if (this.isNetworkError(err)) {
+        logger.warn(`Supabase fetch MCPs warn: ${err.message}`);
+      } else {
+        logger.error(`Supabase fetch MCPs error: ${err.message}`);
+      }
       return { status: 'error', available: false, reason: err.message };
     }
   }

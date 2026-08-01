@@ -4,7 +4,7 @@ import { getProviderRegistry } from '../provider-registry';
 import { logger } from '../../utils/logger';
 import YahooFinance from 'yahoo-finance2';
 
-const yahooFinance = new YahooFinance();
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 export class YahooFinanceProvider implements PriceProvider {
   public name = 'YahooFinance';

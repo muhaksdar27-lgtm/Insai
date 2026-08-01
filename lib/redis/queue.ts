@@ -237,7 +237,7 @@ export class QueueManager {
     try {
       await Promise.race([
          this.client.set(`cache:${key}`, JSON.stringify(value), 'EX', ttlSeconds),
-         new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 3000))
+         new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 5000))
       ]);
     } catch (err: any) {
       this.incrementFailure(); logger.warn(`Failed to set cache for ${key}: ${err.message}`);
@@ -249,7 +249,7 @@ export class QueueManager {
     try {
       const result = await Promise.race([
           this.client.get(`cache:${key}`),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 3000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Cache timeout')), 5000))
       ]) as string | null;
       
       if (result) {
@@ -275,7 +275,7 @@ export class QueueManager {
     try {
       const result = await Promise.race([
           this.client.set(`lock:${key}`, '1', 'EX', ttlSeconds, 'NX'),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Lock timeout')), 3000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Lock timeout')), 5000))
       ]);
       return result === 'OK';
     } catch (err: any) {

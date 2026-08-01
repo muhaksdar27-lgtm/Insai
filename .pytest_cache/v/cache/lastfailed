@@ -1,1 +1,3 @@
-{}
+{
+  "python-engine/tests/test_api.py::TestClient": true
+}
