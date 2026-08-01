@@ -344,6 +344,56 @@ export interface CalendarEvent {
   previous?: string;
 }
 
+export interface DashboardSnapshotEngine {
+  status: 'running' | 'idle' | 'paused' | 'error' | 'active';
+  activeStrategyCount: number;
+  currentStep: string;
+  currentPair: string;
+  currentSession: string;
+  lastSignalAt: string | null;
+  nextScanAt: string | null;
+  queueSize: number;
+  latencyMs: number;
+  processingTimeMs: number;
+}
+
+export interface DashboardSnapshotSystem {
+  status: 'healthy' | 'warning' | 'critical' | 'offline' | 'error';
+  services: Array<{ serviceName: string; status: string; message?: string }>;
+  mcp: Array<{ name: string; status: string }>;
+  connections: {
+    market: boolean;
+    supabase: boolean;
+    redis: boolean;
+    realtimeChannel: boolean;
+  };
+}
+
+export interface DashboardSnapshotPerformance {
+  totalTrades: number;
+  winRate: number;
+  profitFactor: number;
+  netProfit: number;
+  avgRr: number;
+  winCount: number;
+  lossCount: number;
+}
+
+export interface DashboardSnapshot {
+  timestamp: string;
+  market: MarketSnapshot | null;
+  strategies: StrategyResponse[];
+  signals: Signal[];
+  history: any[];
+  engine: DashboardSnapshotEngine;
+  system: DashboardSnapshotSystem;
+  performance: DashboardSnapshotPerformance;
+  news: {
+    active_events: NewsEvent[] | any[];
+    status?: string;
+  };
+}
+
 export interface RuleEvaluationContext {
   symbol: string;
   timeframe: string;

@@ -1,6 +1,34 @@
 import { StrategyResponse, DashboardCard, StrategyStep } from "@/types";
-import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName } from "@/lib/trading-engine/state-machine";
+import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName, normalizeStateName } from "@/lib/trading-engine/state-machine";
 import { getStrategyDefinition } from "@/lib/trading-engine/strategy-registry";
+
+export const CANONICAL_STRATEGIES = [
+  {
+    id: 'strategy-1-smc',
+    name: 'STRATEGI 1 — SMC + Sesi London + M15',
+    description: 'SMC Strategy strictly for London session on M15 timeframe. Relies on Asia session liquidity sweep and M15 CHoCH.'
+  },
+  {
+    id: 'strategy-2-snd',
+    name: 'STRATEGI 2 — Supply & Demand + Engulfing',
+    description: 'Supply and Demand zones paired with moving average confluence and engulfing trigger.'
+  },
+  {
+    id: 'strategy-3-scalping',
+    name: 'STRATEGI 3 — Scalping SMC + Liquidity Sweep + Double Top/Bottom',
+    description: 'Aggressive M1 scalping aligned with H1 trend, requiring liquidity sweep before double top/bottom structural formation.'
+  },
+  {
+    id: 'strategy-4-news',
+    name: 'STRATEGI 4 — News Liquidity Sweep Reversal',
+    description: 'Trades the post-news liquidity sweep. Strictly avoids the initial news candle, waiting for structural reversal.'
+  },
+  {
+    id: 'strategy-5-smc-sd-confluence',
+    name: 'STRATEGI 5 — SMC-SD Pattern Confluence',
+    description: 'High-probability confluence engine requiring overlaps between market structure, SD zones, and liquidity sweeps.'
+  }
+] as const;
 
 export function normalizeStrategy(strategy: StrategyResponse) {
   const s = strategy;
@@ -43,45 +71,41 @@ export function normalizeStrategy(strategy: StrategyResponse) {
 }
 
 export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
-  // Use canonical flow to build the timeline and update status based on current progress
   const canonical = getStrategyFlow(strategy.id);
-  if (!canonical) return strategy.steps || [];
+  const flow = canonical?.steps || [];
+  if (!flow.length) return strategy.steps || [];
 
-  const currentStep = strategy.currentStep || 'IDLE';
-  const flow = canonical.steps;
-  
-  // Build sequential path to determine past/current/future steps
-  const sequentialPath: string[] = [];
-  let current: string | null = 'IDLE';
-  while (current && !sequentialPath.includes(current)) {
-    sequentialPath.push(current);
-    const step = flow.find(s => s.id === current);
-    current = step?.next || null;
+  const sequentialSteps = flow.filter(s => s.id !== 'FAILED');
+  const sequentialIds = sequentialSteps.map(s => s.id);
+
+  const currentStep = strategy.currentStep || 'INITIALIZING';
+  const normCurrent = normalizeStateName(currentStep);
+  const isFailed = normCurrent === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed';
+
+  let currentIdx = sequentialIds.indexOf(normCurrent as any);
+  if (currentIdx === -1) {
+    if (normCurrent === 'DISPATCHED') currentIdx = sequentialIds.length - 1;
+    else currentIdx = 0;
   }
 
-  const currentIdx = sequentialPath.indexOf(currentStep);
-  const isTerminal = ['FINISHED', 'REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(currentStep);
-
-  return flow.filter(s => s.status !== 'terminal' || s.id === currentStep).map(step => {
-    const idx = sequentialPath.indexOf(step.id);
+  return sequentialSteps.map((stepConfig) => {
+    const idx = sequentialIds.indexOf(stepConfig.id);
     let status = 'awaiting';
-    
-    if (step.id === currentStep) {
-      status = isTerminal ? 'failed' : 'active';
-      if (currentStep === 'FINISHED') status = 'finished';
-    } else if (idx !== -1 && currentIdx !== -1 && idx < currentIdx) {
+    if (isFailed) {
+      if (idx < currentIdx) status = 'finished';
+      else if (idx === currentIdx) status = 'failed';
+      else status = 'awaiting';
+    } else if (normCurrent === 'DISPATCHED') {
       status = 'finished';
-    } else if (isTerminal) {
-       // if terminal and this is not the terminal step, but it was in the path
-       if (idx !== -1 && idx < sequentialPath.indexOf(currentStep)) {
-           status = 'finished';
-       } else {
-           status = 'awaiting';
-       }
+    } else {
+      if (idx < currentIdx) status = 'finished';
+      else if (idx === currentIdx) status = 'active';
+      else status = 'awaiting';
     }
 
     return {
-      name: step.title,
+      id: stepConfig.id,
+      name: stepConfig.title,
       status: status
     };
   });
@@ -360,15 +384,52 @@ export function getValidationRules(strategyId: string): string[] {
 
 
 export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]): StrategyResponse[] {
-  if (!rawStrategies || !Array.isArray(rawStrategies)) return [];
+  const mapByCanonicalId = new Map<string, StrategyResponse>();
+  if (Array.isArray(rawStrategies)) {
+    for (const raw of rawStrategies) {
+      if (raw && raw.id) {
+        mapByCanonicalId.set(raw.id, raw);
+      }
+    }
+  }
 
-  return rawStrategies.map((found: StrategyResponse) => {
-    const cfg = getStrategyConfig(found.id);
+  return CANONICAL_STRATEGIES.map((canon) => {
+    const existing = mapByCanonicalId.get(canon.id);
+    if (existing) {
+      return {
+        ...existing,
+        id: canon.id,
+        name: canon.name,
+        description: canon.description,
+        status: existing.status || 'active',
+        updatedAt: existing.updatedAt || null,
+      };
+    }
+
     return {
-      ...found,
-      name: cfg?.name || found.name || found.id,
-      description: cfg?.description || found.description || "",
-      updatedAt: found.updatedAt || null
+      id: canon.id,
+      name: canon.name,
+      description: canon.description,
+      status: 'active',
+      progress: 0,
+      currentStep: 'INITIALIZING',
+      steps: [
+        { name: 'Standby / Initializing', status: 'current' },
+        { name: 'Waiting Market', status: 'awaiting' },
+        { name: 'Market Scanning', status: 'awaiting' },
+        { name: 'Setup Identification', status: 'awaiting' },
+        { name: 'Rule Engine Validation', status: 'awaiting' },
+        { name: 'Risk & Price Parameters', status: 'awaiting' },
+        { name: 'AI Confluence Gate', status: 'awaiting' },
+        { name: 'Signal Assembly', status: 'awaiting' },
+        { name: 'Signal Dispatched', status: 'awaiting' },
+      ],
+      setupSnapshot: {},
+      ruleResults: {},
+      signal: null,
+      freshness: 'live',
+      updatedAt: null,
+      errors: undefined
     };
   });
 }

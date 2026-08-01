@@ -123,51 +123,51 @@ export default function Monitoring() {
   }, [rawStrategies]);
 
   return (
-    <div className="space-y-2.5 h-full pb-10 relative">
+    <div className="space-y-3 h-full pb-10 relative">
       {/* Compact canonical summary bar */}
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col gap-2 border-b border-zinc-800/80 pb-2"
+        className="flex flex-col gap-2 border-b border-zinc-800/80 pb-3"
       >
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-[9px] font-bold text-zinc-100 flex items-center gap-2 tracking-wide">
+            <h2 className="text-[11px] font-extrabold text-zinc-100 flex items-center gap-2 tracking-wide font-mono">
               <div className="p-1 rounded-md bg-zinc-900 border border-zinc-800 shadow-sm">
-                <Activity className="w-2.5 h-2.5 text-blue-400" />
+                <Activity className="w-3 h-3 text-blue-400" />
               </div>
-              STRATEGY SETUP SCAN
+              REALTIME STRATEGY SCANNER
             </h2>
             <div className="flex items-center gap-1.5 mt-1">
-              <p className="text-[7px] text-zinc-500 tracking-wide">Showing exactly the 5 canonical strategies in sequential setup order</p>
+              <p className="text-[9px] text-zinc-400 tracking-wide font-medium">5 Canonical Strategies Engine</p>
               <span className="text-[9px] text-zinc-700">•</span>
-              <span className="text-[6px] font-bold text-blue-400 tracking-wider bg-blue-500/10 px-1 py-[2px] rounded-[3px] border border-blue-500/20">{filteredStrategies?.length || 0} CANONICAL STRATEGIES</span>
+              <span className="text-[8px] font-bold text-blue-400 tracking-wider bg-blue-500/10 px-1.5 py-[2px] rounded-[3px] border border-blue-500/20">5/5 ACTIVE</span>
             </div>
           </div>
           <button 
             onClick={refetch} 
-            className="flex items-center gap-1 text-[7px] font-bold tracking-wider text-zinc-300 hover:text-white bg-zinc-900 border border-zinc-800 px-2 py-1 rounded hover:bg-zinc-800 transition-colors uppercase"
+            className="flex items-center gap-1.5 text-[8px] font-bold tracking-wider text-zinc-300 hover:text-white bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 rounded-md hover:bg-zinc-800 transition-colors uppercase shadow-sm active:scale-95"
           >
-            <RotateCw className="w-2.5 h-2.5" /> Refresh
+            <RotateCw className="w-3 h-3 text-blue-400" /> Refresh State
           </button>
         </div>
       </motion.div>
 
       {loading ? (
-        <motion.div variants={listVariants} initial="hidden" animate="show" className="flex flex-col gap-1.5">
+        <motion.div variants={listVariants} initial="hidden" animate="show" className="flex flex-col gap-2">
           {["sk-1", "sk-2", "sk-3", "sk-4", "sk-5"].map((skKey) => (
-            <div key={skKey} className="bg-zinc-900/30 border border-zinc-800/80 rounded-md p-3">
+            <div key={skKey} className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-3">
               <div className="flex justify-between items-center mb-2.5">
                  <div className="flex items-center gap-2">
-                    <div className="h-4 bg-zinc-800/60 rounded w-32 animate-pulse"></div>
+                    <div className="h-4 bg-zinc-800/60 rounded w-48 animate-pulse"></div>
                     <div className="h-4 bg-zinc-800/60 rounded w-16 animate-pulse"></div>
                  </div>
                  <div className="h-4 bg-zinc-800/60 rounded w-6 animate-pulse"></div>
               </div>
               <div className="flex gap-2">
-                 <div className="h-3 bg-zinc-800/60 rounded w-12 animate-pulse"></div>
                  <div className="h-3 bg-zinc-800/60 rounded w-16 animate-pulse"></div>
-                 <div className="h-3 bg-zinc-800/60 rounded w-14 animate-pulse"></div>
+                 <div className="h-3 bg-zinc-800/60 rounded w-20 animate-pulse"></div>
+                 <div className="h-3 bg-zinc-800/60 rounded w-16 animate-pulse"></div>
               </div>
               <div className="h-1.5 bg-zinc-800/60 rounded w-full animate-pulse mt-3"></div>
             </div>
@@ -180,48 +180,31 @@ export default function Monitoring() {
           className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-rose-900/40 rounded-2xl bg-rose-950/20 shadow-sm"
         >
           <AlertTriangle className="w-10 h-10 text-rose-500/80 mb-5" />
-          <p className="text-[13px] font-bold text-rose-400 mb-2 tracking-wide">Connection Error</p>
+          <p className="text-[13px] font-bold text-rose-400 mb-2 tracking-wide">Scanner Disconnected</p>
           <p className="text-[11px] text-zinc-500 max-w-[280px] leading-relaxed mb-6 font-medium">
-            Unable to connect to the database or service.
+            Unable to connect to trading engine backend service.
           </p>
           <button
             onClick={refetch}
             className="px-5 py-2.5 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-[9px] font-bold tracking-wide rounded-xl transition-all shadow-sm active:scale-95"
           >
-            Try Again
+            Reconnect Engine
           </button>
-        </motion.div>
-      ) : filteredStrategies?.length === 0 ? (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center justify-center py-24 text-center border border-dashed border-zinc-800/80 rounded-2xl bg-zinc-900/20 shadow-sm"
-        >
-          <div className="w-14 h-14 rounded-2xl bg-zinc-900/80 flex items-center justify-center mb-5 border border-zinc-800/80 shadow-sm">
-            <Activity className="w-6 h-6 text-zinc-600" />
-          </div>
-          <p className="text-[13px] font-bold text-zinc-300 mb-2 tracking-wide">
-            No strategies match filter
-          </p>
-          <p className="text-[11px] text-zinc-500 max-w-[300px] leading-relaxed font-medium">
-            Adjust your filters or search term to see more strategies.
-          </p>
         </motion.div>
       ) : (
         <motion.div 
           variants={listVariants}
           initial="hidden"
           animate="show"
-          className="flex flex-col gap-1.5"
+          className="flex flex-col gap-2.5"
         >
-          {filteredStrategies.slice(0, 50).map((strategy) => {
+          {filteredStrategies.map((strategy, index) => {
             const setup = buildSetup(strategy);
             const rulesArray = buildRules(strategy);
             const timeline = buildTimeline(strategy);
             const setupStatus = strategy.setupStatus;
             const isCollapsed = collapsed[strategy.id];
             
-            // Calculate progress
             const progressInfo = buildProgress(strategy.id, strategy);
             const timeStr = <ClientDate date={strategy.updatedAt} format="toLocaleTimeString" />;
 
@@ -229,23 +212,26 @@ export default function Monitoring() {
               <motion.div
                 variants={itemVariants}
                 key={strategy.id}
-                className={`bg-zinc-900/30 border border-zinc-800/80 rounded-md flex flex-col transition-all hover:border-zinc-700/80 hover:bg-zinc-900/60 shadow-sm backdrop-blur-sm ${strategy.status === "stopped" ? "opacity-60 grayscale-[50%]" : ""}`}
+                className={`bg-zinc-900/40 border border-zinc-800/80 rounded-lg flex flex-col transition-all hover:border-zinc-700/80 shadow-md backdrop-blur-sm overflow-hidden ${strategy.status === "stopped" ? "opacity-60 grayscale-[50%]" : ""}`}
               >
                 {/* Header (Collapsible) */}
                 <div 
-                    className="p-2 border-b border-zinc-800/60 flex justify-between items-start cursor-pointer transition-colors group"
+                    className="p-3 border-b border-zinc-800/60 flex justify-between items-start cursor-pointer transition-colors hover:bg-zinc-900/60 group"
                     onClick={() => toggleCollapse(strategy.id)}
                 >
                   <div className="flex-1 pr-3">
-                    <div className="flex items-center gap-2 mb-1.5">
-                        <h3 className="text-[8px] font-bold text-zinc-100 flex items-center gap-1 tracking-wide group-hover:text-white transition-colors">
-                        {strategy.name || strategy.id}
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="text-[8px] font-mono font-black text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded uppercase">
+                          CANONICAL {index + 1}/5
+                        </span>
+                        <h3 className="text-[10px] font-bold text-zinc-100 flex items-center gap-1 tracking-wide group-hover:text-white transition-colors">
+                          {strategy.name || strategy.id}
                         </h3>
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[6px] font-bold border uppercase py-[2px] px-1 rounded-[3px] tracking-wider shadow-sm ${getStatusBadge(setupStatus)}`}>
-                        {setupStatus}
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[7px] font-bold border uppercase tracking-wider shadow-sm ${getStatusBadge(setupStatus)}`}>
+                          {setupStatus}
                         </span>
                         {strategy.freshness && (
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[6px] font-bold border uppercase py-[2px] px-1 rounded-[3px] tracking-wider shadow-sm ${getStatusBadge(strategy.freshness)}`}>
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[7px] font-bold border uppercase tracking-wider shadow-sm ${getStatusBadge(strategy.freshness)}`}>
                             {strategy.freshness}
                             </span>
                         )}
@@ -262,31 +248,31 @@ export default function Monitoring() {
                     </div>
                     
                     {/* Mini Status Chips */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-[6px] text-zinc-500 font-medium">
-                        <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5 text-zinc-600" /> TF: <span className="text-zinc-300 font-mono">{setup.timeframe || 'N/A'}</span></span>
-                        <span className="flex items-center gap-1"><Timer className="w-2.5 h-2.5 text-zinc-600" /> Session: <span className="text-zinc-300">{setup.session || 'N/A'}</span></span>
-                        <span className="flex items-center gap-1">
-                            {setup.marketBias === 'buy' ? <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> : setup.marketBias === 'sell' ? <TrendingDown className="w-2.5 h-2.5 text-rose-500" /> : <Activity className="w-2.5 h-2.5 text-zinc-600" />}
-                            Bias: <span className="text-zinc-300 capitalize">{setup.marketBias || setup.bias || 'N/A'}</span>
+                    <div className="flex flex-wrap items-center gap-2 text-[8px] text-zinc-400 font-medium">
+                        <span className="flex items-center gap-1 bg-zinc-950/60 px-1.5 py-0.5 rounded border border-zinc-800/60"><Clock className="w-2.5 h-2.5 text-zinc-500" /> TF: <span className="text-zinc-200 font-mono font-bold">{setup.timeframe || 'N/A'}</span></span>
+                        <span className="flex items-center gap-1 bg-zinc-950/60 px-1.5 py-0.5 rounded border border-zinc-800/60"><Timer className="w-2.5 h-2.5 text-zinc-500" /> Session: <span className="text-zinc-200 font-bold">{setup.session || 'N/A'}</span></span>
+                        <span className="flex items-center gap-1 bg-zinc-950/60 px-1.5 py-0.5 rounded border border-zinc-800/60">
+                            {setup.marketBias === 'buy' ? <TrendingUp className="w-2.5 h-2.5 text-emerald-400" /> : setup.marketBias === 'sell' ? <TrendingDown className="w-2.5 h-2.5 text-rose-400" /> : <Activity className="w-2.5 h-2.5 text-zinc-500" />}
+                            Bias: <span className="text-zinc-200 font-bold capitalize">{setup.marketBias || setup.bias || 'N/A'}</span>
                         </span>
-                        <span className="flex items-center gap-1"><History className="w-2.5 h-2.5 text-zinc-600" /> Updated: <span className="text-zinc-300 font-mono">{timeStr}</span></span>
+                        <span className="flex items-center gap-1 bg-zinc-950/60 px-1.5 py-0.5 rounded border border-zinc-800/60"><History className="w-2.5 h-2.5 text-zinc-500" /> Updated: <span className="text-zinc-200 font-mono">{timeStr}</span></span>
                     </div>
 
                     {/* Progress Indicator */}
-                    <div className="mt-2 flex items-center gap-2">
-                        <div className="flex-1 h-1 bg-zinc-950/80 rounded-full overflow-hidden border border-zinc-800/80 shadow-inner">
+                    <div className="mt-2.5 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/80 shadow-inner">
                             <div className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all duration-700 ease-out relative" style={{ width: `${progressInfo.percentage}%` }}>
                                 <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite]"></div>
                             </div>
                         </div>
-                        <span className="text-[8px] text-zinc-400 font-mono font-bold w-6 text-right tracking-wide">{Math.round(progressInfo.percentage)}%</span>
+                        <span className="text-[9px] text-zinc-300 font-mono font-bold w-8 text-right tracking-wide">{Math.round(progressInfo.percentage)}%</span>
                     </div>
 
                   </div>
                   
                   <div className="flex items-center pt-1">
-                      <div className="p-1 rounded hover:bg-zinc-800 transition-colors">
-                        {isCollapsed ? <ChevronDown className="w-2.5 h-2.5 text-zinc-500 group-hover:text-zinc-300" /> : <ChevronUp className="w-2.5 h-2.5 text-zinc-500 group-hover:text-zinc-300" />}
+                      <div className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors bg-zinc-900 border border-zinc-800/80">
+                        {isCollapsed ? <ChevronDown className="w-3 h-3 text-zinc-400 group-hover:text-zinc-200" /> : <ChevronUp className="w-3 h-3 text-zinc-400 group-hover:text-zinc-200" />}
                       </div>
                   </div>
                 </div>
@@ -300,23 +286,23 @@ export default function Monitoring() {
                         exit={{ height: 0, opacity: 0 }}
                         className="overflow-hidden"
                       >
-                        <div className="p-2 md:p-2.5 flex flex-col lg:flex-row gap-3 flex-1 bg-zinc-950/20">
+                        <div className="p-3 flex flex-col lg:flex-row gap-3 flex-1 bg-zinc-950/30 border-t border-zinc-800/40">
                           
                           {/* Left Column: Timeline */}
-                          <div className="flex flex-col gap-2 w-full lg:w-1/3">
+                          <div className="flex flex-col gap-2.5 w-full lg:w-1/3">
                               {strategy.assumptions_flagged && (
-                                  <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400/90 text-[7px] font-bold p-1.5 rounded-[3px] uppercase tracking-wider shadow-sm flex items-start gap-1">
-                                      <AlertTriangle className="w-2.5 h-2.5 shrink-0 mt-0.5" />
+                                  <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400/90 text-[8px] font-bold p-2 rounded-md uppercase tracking-wider shadow-sm flex items-start gap-1.5">
+                                      <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
                                       <span>ASUMSI PERLU KONFIRMASI: {strategy.assumptions_flagged}</span>
                                   </div>
                               )}
-                              <h4 className="text-[7px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest">
-                                <ListFilter className="w-2.5 h-2.5 text-zinc-500" /> Step Timeline
+                              <h4 className="text-[8px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest font-mono">
+                                <ListFilter className="w-3 h-3 text-zinc-500" /> Sequential Step Setup
                               </h4>
                               <TimelineCard steps={timeline} />
                               
-                              <h4 className="text-[7px] font-bold text-zinc-400 mt-2 flex items-center gap-1 uppercase tracking-widest">
-                                <Crosshair className="w-2.5 h-2.5 text-zinc-500" /> Setup Params
+                              <h4 className="text-[8px] font-bold text-zinc-400 mt-2 flex items-center gap-1 uppercase tracking-widest font-mono">
+                                <Crosshair className="w-3 h-3 text-zinc-500" /> Setup Parameters
                               </h4>
                               <SetupCard 
                                 pair={setup.pair}
@@ -335,29 +321,29 @@ export default function Monitoring() {
                           </div>
 
                           {/* Right Column: Rules & AI */}
-                          <div className="flex flex-col gap-2 w-full lg:w-2/3">
+                          <div className="flex flex-col gap-2.5 w-full lg:w-2/3">
                               <div className="flex items-center justify-between">
-                                  <h4 className="text-[8px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest">
-                                      <CheckSquare className="w-2.5 h-2.5 text-zinc-500" /> Rule Validations
+                                  <h4 className="text-[8px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest font-mono">
+                                      <CheckSquare className="w-3 h-3 text-zinc-500" /> Rule Engine Validation
                                   </h4>
                                   <button 
                                       onClick={() => setDrawerData(strategy)}
-                                      className="flex items-center gap-1 text-[8px] font-bold tracking-wide text-zinc-400 hover:text-zinc-200 transition-colors bg-zinc-900/50 hover:bg-zinc-800 px-1.5 py-1 rounded border border-zinc-800/80 shadow-sm"
+                                      className="flex items-center gap-1 text-[8px] font-bold tracking-wide text-zinc-300 hover:text-white transition-colors bg-zinc-900 hover:bg-zinc-800 px-2 py-1 rounded border border-zinc-800 shadow-sm active:scale-95"
                                   >
-                                      <FileSearch className="w-2.5 h-2.5" /> View Evidence
+                                      <FileSearch className="w-3 h-3 text-blue-400" /> View Evidence
                                   </button>
                               </div>
-                              <div className="flex-1 overflow-y-auto max-h-[300px]">
+                              <div className="flex-1 overflow-y-auto max-h-[320px]">
                                   <RuleTable rules={rulesArray} />
                               </div>
 
                               {/* Validation Engine Result */}
                               {(strategy.aiDecision || setup.confidence || setup.aiConfidence || setup.aiDecision) && (
                                   <div className="flex-shrink-0 mt-2">
-                                      <h4 className="text-[8px] font-bold text-zinc-400 mb-1.5 flex items-center gap-1 uppercase tracking-widest">
-                                          <Zap className="w-2.5 h-2.5 text-amber-500" /> Validation Engine Result
+                                      <h4 className="text-[8px] font-bold text-zinc-400 mb-1.5 flex items-center gap-1 uppercase tracking-widest font-mono">
+                                          <Zap className="w-3 h-3 text-amber-500" /> Validation Engine Decision
                                       </h4>
-                                      <div className={`p-2.5 rounded-[3px] border shadow-sm ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'bg-emerald-500/10 border-emerald-500/20' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'bg-rose-500/10 border-rose-500/20' : 'bg-blue-500/10 border-blue-500/20'}`}>
+                                      <div className={`p-2.5 rounded-md border shadow-sm ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'bg-emerald-500/10 border-emerald-500/30' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'bg-rose-500/10 border-rose-500/30' : 'bg-blue-500/10 border-blue-500/30'}`}>
                                           <div className="flex items-center justify-between mb-1.5">
                                               <span className={`text-[9px] font-black tracking-wider uppercase ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'text-emerald-400' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'text-rose-400' : 'text-blue-400'}`}>
                                                   Engine Result: {strategy.aiDecision || setup.aiDecision || 'PENDING'}
@@ -368,8 +354,8 @@ export default function Monitoring() {
                                                   </span>
                                               )}
                                           </div>
-                                          <p className="text-[9px] text-zinc-300 font-medium italic opacity-80">
-                                              Validation complete. Check evidence drawer for deep reasoning if rejected.
+                                          <p className="text-[9px] text-zinc-300 font-medium italic opacity-90">
+                                              Validation complete. Check evidence drawer for deep reasoning log.
                                           </p>
                                       </div>
                                   </div>
