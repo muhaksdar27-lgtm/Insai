@@ -289,12 +289,11 @@ export default function Settings() {
     setLogError(null);
     try {
       const res = await fetch("/api/system/logs", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load logs");
       const data = await res.json();
-      if (data.success || data.status === "success") {
-        setLogs(data.data);
+      if (data && (data.success || data.status === "success" || Array.isArray(data.data))) {
+        setLogs(Array.isArray(data.data) ? data.data : []);
       } else {
-        throw new Error(data.error?.message || "Unknown API error");
+        throw new Error(data?.error?.message || "Failed to load logs");
       }
     } catch (e: any) {
       console.error(e);

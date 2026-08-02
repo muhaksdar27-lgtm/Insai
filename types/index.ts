@@ -306,7 +306,7 @@ export interface MarketSnapshot extends ProviderStatus {
   price: number | null;
   timestamp: string;
   provider: string;
-  freshness: 'live' | 'cached' | 'stale';
+  freshness: 'live' | 'cached' | 'stale' | 'closed';
   session?: string;
   bias?: string;
 }

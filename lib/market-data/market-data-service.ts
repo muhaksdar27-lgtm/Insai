@@ -66,7 +66,13 @@ export class MarketDataService {
     if (cachedData) {
       // Re-evaluate freshness based on the requested window
       const snapshotTime = new Date(cachedData.data.timestamp).getTime();
-      const freshness = (now - snapshotTime > freshnessWindowMs) ? 'stale' : 'cached';
+      const marketStatus = MarketCalendar.getMarketStatus(symbol);
+      let freshness = cachedData.data.freshness;
+      if (!marketStatus.isOpen) {
+        freshness = 'closed';
+      } else {
+        freshness = (now - snapshotTime > freshnessWindowMs) ? 'stale' : 'cached';
+      }
       return { ...cachedData.data, freshness };
     }
 
@@ -87,16 +93,16 @@ export class MarketDataService {
       } as any
     );
 
-    // Gap detection / Freshness check based on the dynamic window
+    // Gap detection / Freshness check based on market status & window
     const snapshotTime = new Date(snapshot.timestamp).getTime();
-    if (now - snapshotTime > freshnessWindowMs) {
-       const marketStatus = MarketCalendar.getMarketStatus(symbol);
-       if (marketStatus.isOpen) {
-          logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
-       }
-       snapshot.freshness = 'stale';
+    const marketStatus = MarketCalendar.getMarketStatus(symbol);
+    if (!marketStatus.isOpen) {
+      snapshot.freshness = 'closed';
+    } else if (now - snapshotTime > freshnessWindowMs) {
+      logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
+      snapshot.freshness = 'stale';
     } else {
-       snapshot.freshness = 'live';
+      snapshot.freshness = 'live';
     }
     
     const currentHour = new Date().getUTCHours();

@@ -13,10 +13,11 @@ interface MarketPanelProps {
 }
 
 export const MarketPanel = memo(function MarketPanel({ market, newsEvents, timestamp, isStale }: MarketPanelProps) {
-  const isLive = market && (market.freshness === "live" || market.freshness === "cached") && !isStale;
+  const isClosed = market?.freshness === "closed";
+  const isLive = market && (market.freshness === "live" || market.freshness === "cached") && !isStale && !isClosed;
   const isUp = (market?.price || 0) > 4000; // or trend
-  const session = market?.session || "London";
-  const bias = market?.bias || "BULLISH";
+  const session = isClosed ? "Market Closed" : (market?.session || "London");
+  const bias = market?.bias || "NEUTRAL";
 
   return (
     <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-lg p-3 shadow-md backdrop-blur-md space-y-3">
@@ -37,7 +38,11 @@ export const MarketPanel = memo(function MarketPanel({ market, newsEvents, times
         </div>
 
         <div className="flex items-center gap-2">
-          {isStale ? (
+          {isClosed ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-bold bg-blue-500/10 border border-blue-500/30 text-blue-400 uppercase tracking-wider">
+              <Clock className="w-2.5 h-2.5" /> MARKET CLOSED
+            </span>
+          ) : isStale ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 uppercase tracking-wider">
               <AlertTriangle className="w-2.5 h-2.5" /> STALE DATA
             </span>
