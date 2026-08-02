@@ -139,9 +139,9 @@ export class SupabaseService {
       tp1_price: signal.tp1Price || signal.tp1_price || 0,
       tp2_price: signal.tp2Price || signal.tp2_price || 0,
       tp3_price: signal.tp3Price || signal.tp3_price || 0,
-      ai_decision: signal.aiDecision || signal.ai_decision || 'APPROVED',
-      ai_reasoning: signal.aiReasoning || signal.ai_reasoning || 'Passed Quality Gate & AI Validation',
-      status: signal.status || 'SIGNAL_ACTIVE',
+      ai_decision: signal.aiDecision || signal.ai_decision || 'REJECTED',
+      ai_reasoning: signal.aiReasoning || signal.ai_reasoning || 'Default unconfirmed status',
+      status: signal.status || 'SUPPRESSED',
       correlation_id: signal.correlationId || signal.correlation_id || crypto.randomUUID(),
       created_at: signal.createdAt || signal.created_at || new Date().toISOString()
     };

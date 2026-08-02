@@ -15,7 +15,11 @@ export class SignalBuilder {
     logger.info(`SignalBuilder: Assembling and publishing signal for setup ${setup.id} (${setup.sourceStrategy})`);
 
     // 1. Emit signal through pipeline
-    await this.signalPipeline.emitSignal(setup, marketContext);
+    const isEmitted = await this.signalPipeline.emitSignal(setup, marketContext);
+    if (!isEmitted) {
+      logger.info(`SignalBuilder: Signal ${setup.id} was suppressed or rejected. Skipping event publication and state dispatch.`);
+      return false;
+    }
 
     // 2. Directly publish event: signal.created
     try {

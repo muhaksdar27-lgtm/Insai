@@ -67,6 +67,7 @@ function startPythonEngine() {
 }
 
 let isReady = false;
+let isInitFailed = false;
 let isShuttingDown = false;
 let isAppPrepared = false;
 const app = next({ dev, hostname, port, turbopack });
@@ -119,6 +120,11 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         if (isShuttingDown) {
           res.writeHead(503, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'not_ready', isShuttingDown, timestamp: new Date().toISOString() }));
+          return;
+        }
+        if (isInitFailed) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'unhealthy', error: 'Backend initialization failed', timestamp: new Date().toISOString() }));
           return;
         }
         if (!isReady) {
@@ -265,7 +271,8 @@ server.listen(port, hostname, () => {
           
         } catch (initErr: any) {
           logger.error(`Critical error during backend initialization: ${initErr.message}`);
-          isReady = true; // Still true so health check can report UNAVAILABLE
+          isReady = false;
+          isInitFailed = true;
         }
       });
     })

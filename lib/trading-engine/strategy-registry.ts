@@ -47,9 +47,9 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         canonicalFlow: 'strategy-1-smc',
         setupFields: ['h1Trend', 'asiaLiquiditySweep', 'm15Choch', 'obFvgAlignment', 'londonSessionFilter', 'atr14Buffer'],
         validationRules: [
-            'rule_pair_xauusd', 'rule_session_london', 'rule_h1_trend', 
-            'rule_asia_liquidity_sweep', 'rule_choch_confirmation', 
-            'rule_ob_fvg_entry', 'rule_atr_sl_buffer', 'rule_ai_validation'
+            'rule_pair_restriction', 'rule_session_restriction', 'rule_h1_trend', 
+            'rule_liquidity_sweep', 'rule_choch_confirmation', 
+            'rule_ob_fvg_entry', 'rule_spread_check', 'rule_atr_sl_buffer', 'rule_risk_reward'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
         uiLabels: {
@@ -74,8 +74,8 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         canonicalFlow: 'strategy-2-snd',
         setupFields: ['movingAverageTrend', 'supplyDemandZone', 'candlestickEngulfing', 'spreadCheck', 'atrBuffer'],
         validationRules: [
-            'rule_pair_xauusd', 'rule_ma_trend', 'rule_sd_zone_touch',
-            'rule_engulfing_confirm', 'rule_spread_check', 'rule_atr_sl_buffer', 'rule_ai_validation'
+            'rule_pair_restriction', 'rule_session_restriction', 'rule_h1_trend',
+            'rule_sd_zone', 'rule_engulfing_trigger', 'rule_spread_check', 'rule_atr_sl_buffer', 'rule_risk_reward'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
         uiLabels: {
@@ -99,8 +99,8 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         canonicalFlow: 'strategy-3-scalping',
         setupFields: ['h1Trend', 'm15Retracement', 'scalpLiquiditySweep', 'm1DoubleTopBottom', 'necklineBreakout', 'newsFilter'],
         validationRules: [
-            'rule_h1_trend', 'rule_m15_retracement', 'rule_liquidity_sweep',
-            'rule_m1_double_top_bottom', 'rule_neckline_break', 'rule_rr_min_1_3', 'rule_news_filter'
+            'rule_pair_restriction', 'rule_session_restriction', 'rule_h1_trend', 
+            'rule_scalp_pattern', 'rule_spread_check', 'rule_atr_sl_buffer', 'rule_risk_reward'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
         uiLabels: {
@@ -125,8 +125,8 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         canonicalFlow: 'strategy-4-news',
         setupFields: ['highImpactNewsFilter', 'spreadWideFilter', 'postNewsLiquiditySweep', 'rejectionCandleWick', 'm1BosReversal'],
         validationRules: [
-            'rule_news_high_impact', 'rule_spread_wide_filter', 'rule_liquidity_sweep',
-            'rule_rejection_confirmation', 'rule_bos_reversal', 'rule_ai_validation'
+            'rule_pair_restriction', 'rule_session_restriction', 'rule_news_reversal',
+            'rule_spread_check', 'rule_atr_sl_buffer', 'rule_risk_reward'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
         uiLabels: {
@@ -150,8 +150,8 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
         canonicalFlow: 'strategy-5-smc-sd-confluence',
         setupFields: ['h1M15Structure', 'sdZoneOverlap2of3', 'confluenceLiquiditySweep', 'rejectionTrigger', 'minRR2plus'],
         validationRules: [
-            'rule_h1_m15_structure', 'rule_zone_overlap_2_of_3', 'rule_liquidity_sweep',
-            'rule_entry_trigger', 'rule_rr_gate', 'rule_ai_validation'
+            'rule_pair_restriction', 'rule_session_restriction', 'rule_h1_trend',
+            'rule_confluence_overlap', 'rule_spread_check', 'rule_atr_sl_buffer', 'rule_risk_reward'
         ],
         outputFields: ['entryPrice', 'slPrice', 'tpPrice', 'rr'],
         uiLabels: {

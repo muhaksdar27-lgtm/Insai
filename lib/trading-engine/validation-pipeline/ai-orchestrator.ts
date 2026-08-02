@@ -97,17 +97,25 @@ export class AIValidationOrchestrator {
     for (const vName of activeValidators) {
       const ruleData = ruleResults[vName];
       if (ruleData) {
-         const status = ruleData.status === 'valid' ? 'PASS' : (ruleData.status === 'invalid' ? 'FAIL' : 'WAIT');
+         const rawStatus: any = ruleData.status;
+         const isPass = rawStatus === 'PASS' || rawStatus === 'valid' || rawStatus === true;
+         const isFail = rawStatus === 'FAIL' || rawStatus === 'invalid' || rawStatus === false;
+         const status = isPass ? 'PASS' : (isFail ? 'FAIL' : 'WAIT');
+         const isMandatory = (ruleData as any).mandatory !== false;
+         
          const res: ValidatorResult = {
              rule: vName,
              status: status,
-             reason: status === 'PASS' ? 'Rule met' : 'Rule not met',
+             reason: status === 'PASS' ? 'Rule met' : ((ruleData as any).description || 'Rule not met'),
              evidence: JSON.stringify(ruleData.evidence || {}),
-             isCritical: false // We can treat all as equal or define critical in registry
+             isCritical: isMandatory
          };
          validatorResults.push(res);
          if (res.status === 'FAIL') {
              failedRules.push(res.rule);
+             if (isMandatory) {
+                 criticalFail = true;
+             }
          }
       } else {
          validatorResults.push({ rule: vName, status: 'WAIT', reason: 'Rule result missing', evidence: '', isCritical: false });
@@ -206,10 +214,25 @@ export class AIValidationOrchestrator {
                          validatorResults.push({
                              rule: 'Python Quant Engine',
                              status: pyData.decision === 'APPROVED' ? 'PASS' : (pyData.decision === 'WAIT' ? 'WAIT' : 'FAIL'),
-                             reason: pyData.reasons.join(', '),
-                             evidence: JSON.stringify(pyData.metrics),
-                             isCritical: false
+                             reason: (pyData.reasons || []).join(', '),
+                             evidence: JSON.stringify(pyData.metrics || {}),
+                             isCritical: true
                          });
+
+                         if (pyData.decision === 'REJECTED') {
+                             logger.warn(`[PYTHON ENGINE REJECTED] Strategy ${strategyId} rejected by Python Quant Engine: ${(pyData.reasons || []).join(', ')}`);
+                             return {
+                                strategyName: strategyId,
+                                decision: 'REJECTED',
+                                checklist: validatorResults,
+                                reasoning: `Python Quant Engine REJECTED setup: ${(pyData.reasons || []).join(', ')}`,
+                                evidence: JSON.stringify(pyData.metrics || {}),
+                                riskNotes: 'Rejected by Python Quant Scorer',
+                                missingFactors: [],
+                                recommendedAction: 'block',
+                                scores: { score: pyData.score }
+                             };
+                         }
                      } else {
                          const errData = await pyRes.text();
                          logger.warn(`Python Engine /validate returned ${pyRes.status}: ${errData}`);

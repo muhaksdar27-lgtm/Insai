@@ -2,6 +2,7 @@ import { getSupabaseClient } from "../supabase/client";
 import { healthCheckEngine } from "../observability/health-check";
 import { TradingEngine } from './engine';
 import { getMarketDataService } from '../market-data/market-data-service';
+import { MarketCalendar } from '../market-data/market-calendar';
 import { logger } from '../utils/logger';
 import crypto from "crypto";
 import { getQueueManager } from '../redis/queue';
@@ -220,7 +221,25 @@ export class MarketScanner {
       const baseContext = await getMarketDataService().getContextData("XAUUSD", "M15");
       const correlationId = crypto.randomUUID();
       const context = { ...baseContext, correlationId };
-      
+
+      // 2b. Hard Gate: Check Market Calendar & Data Freshness
+      const marketStatus = MarketCalendar.getMarketStatus("XAUUSD", context);
+      if (marketStatus.isHardBlocked) {
+        logger.info(`[HARD_BLOCK_SCAN_SKIPPED] Market scan skipped for XAUUSD: ${marketStatus.blockReason}`);
+        return;
+      }
+
+      const candles = context.candles || [];
+      if (candles.length > 0) {
+        const latestCandleTime = new Date(candles[candles.length - 1].timestamp).getTime();
+        const now = Date.now();
+        // If data is older than 15 minutes while market is open, treat as stale
+        if (now - latestCandleTime > 15 * 60 * 1000) {
+          logger.warn(`[STALE_DATA_SCAN_SKIPPED] Market scan skipped for XAUUSD: Latest candle timestamp (${candles[candles.length - 1].timestamp}) is stale.`);
+          return;
+        }
+      }
+
       // 3. Pass to engine
       await this.engine.processMarketData('XAUUSD', 'M15', context, activeStrategyIds);
       

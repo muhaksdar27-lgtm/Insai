@@ -10,21 +10,41 @@ export class SignalPipeline {
   constructor() {
   }
 
-  public async emitSignal(setup: Setup, marketContext: any) {
+  public async emitSignal(setup: Setup, marketContext: any): Promise<boolean> {
     const lockKey = `${setup.sourceStrategy}_${setup.symbol}_${setup.timeframe}`;
     
     // Distributed In-flight lock deduplication
     const lockAcquired = await getQueueManager().acquireLock(lockKey, 30);
     if (!lockAcquired) {
       logger.warn(`Signal generation for ${lockKey} is already in-flight (Distributed Lock). Suppressing duplicate.`);
-      return;
+      return false;
     }
 
     try {
       logger.info(`Pipeline processing setup signal for ${setup.id}`);
 
       const aiDecision = (setup as any).aiValidation?.decision || 'REJECTED';
-      const isSuppressed = (setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false;
+      
+      // Global Cross-Strategy Market Setup Hash Deduplication
+      const dir = (setup.direction || 'buy').toLowerCase();
+      const entryRounded = Math.round((setup.entryPrice || 0) * 100);
+      const slRounded = Math.round((setup.slPrice || 0) * 100);
+      const snapshotTs = marketContext?.timestamp ? Math.floor(new Date(marketContext.timestamp).getTime() / 60000) : '';
+      const setupHash = crypto.createHash('sha256').update(`${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}_${snapshotTs}_${aiDecision}`).digest('hex').substring(0, 16);
+      
+      const GLOBAL_COOLDOWN_SECONDS = 300; // 5 minute global cross-strategy cooldown for exact same setup
+      const globalDedupKey = `global_signal_cooldown_${setupHash}`;
+      
+      let isDuplicateGlobalSetup = false;
+      if (aiDecision === 'APPROVED' && !(setup as any).isSuppressed && (setup as any).qualityGatePassed !== false) {
+        const isGlobalNew = await getQueueManager().deduplicate(globalDedupKey, GLOBAL_COOLDOWN_SECONDS);
+        if (!isGlobalNew) {
+          logger.info(`[GLOBAL DEDUP] Signal ${setup.id} suppressed: Duplicate setup hash ${setupHash} across strategies.`);
+          isDuplicateGlobalSetup = true;
+        }
+      }
+
+      const isSuppressed = (setup as any).isSuppressed || aiDecision !== 'APPROVED' || (setup as any).qualityGatePassed === false || isDuplicateGlobalSetup;
       const status = isSuppressed ? 'SUPPRESSED' : 'SIGNAL_ACTIVE';
 
       const snapshot = (setup as any).setupSnapshot || {};
@@ -175,11 +195,13 @@ export class SignalPipeline {
         getQueueManager().publish('events', { type: 'SIGNAL_PUBLISHED', signalKey: setup.id });
         logger.info(`[LIVE SENT] Signal ${setup.id} broadcasted to live event stream & dashboard`);
         await this.notifyNewSignal(setup, marketContext);
+        metricsEngine.recordSignalProcessed(false, false);
+        return true;
       } else {
         logger.info(`Signal ${setup.id} is suppressed/rejected. Skipping notification and public event stream.`);
+        metricsEngine.recordSignalProcessed(false, false);
+        return false;
       }
-      
-      metricsEngine.recordSignalProcessed(false, false);
 
     } catch (e: any) {
       metricsEngine.recordSignalProcessed(false, true);

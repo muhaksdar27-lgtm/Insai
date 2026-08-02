@@ -9,6 +9,7 @@ import { healthCheckEngine } from '@/lib/observability/health-check';
 import { getMcpRegistry } from '@/lib/mcp/registry';
 import { getMcpManager } from '@/lib/mcp/mcp-manager';
 import { PythonEngineManager } from '@/lib/mcp/engines/deployment';
+import { getQueueManager } from '@/lib/redis/queue';
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +110,7 @@ export async function GET(req: Request) {
       getSupabaseClient().getActiveSignals().catch(() => []),
       getSupabaseClient().getHistoricalSignals().catch(() => []),
       getMarketDataService().getLatestNews().catch(() => []),
-      Promise.resolve(0)
+      getQueueManager().getQueueSize().catch(() => 0)
     ]);
 
     // Parse Market
@@ -153,7 +154,7 @@ export async function GET(req: Request) {
         tp1Price: signalData.tp1_price || item.tp1 || 0,
         tp2Price: signalData.tp2_price || item.tp2 || 0,
         tp3Price: signalData.tp3_price || item.tp3 || 0,
-        aiDecision: signalData.ai_decision || item.aiDecision || 'APPROVED',
+        aiDecision: signalData.ai_decision || item.aiDecision || 'REJECTED',
         aiReasoning: signalData.ai_reasoning || item.aiReasoning || '',
         status: item.status || 'SIGNAL_ACTIVE',
         createdAt: createdAt

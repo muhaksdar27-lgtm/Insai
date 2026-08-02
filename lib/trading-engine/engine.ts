@@ -155,6 +155,16 @@ export class TradingEngine {
       return;
     }
 
+    // 0b. Data Stale Hard Block
+    if (context.candles && context.candles.length > 0) {
+      const latestCandleTime = new Date(context.candles[context.candles.length - 1].timestamp).getTime();
+      const now = Date.now();
+      if (now - latestCandleTime > 15 * 60 * 1000) {
+        logger.warn(`[STALE_DATA_CYCLE_ABORT] Market candles for ${context.symbol} are stale (${context.candles[context.candles.length - 1].timestamp}). Aborting detection cycle.`);
+        return;
+      }
+    }
+
     // 1. Market State Classification
     const marketStates = this.marketStateEngine.classifyState(context);
     logger.info(`Market States detected: ${marketStates.join(', ')}`);

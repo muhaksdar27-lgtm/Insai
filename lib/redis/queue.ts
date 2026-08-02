@@ -405,6 +405,16 @@ export class QueueManager {
     poll();
     return stop;
   }
+
+  public async getQueueSize(stream: string = 'stream:events'): Promise<number> {
+    if (!this.isConnected() || !this.client) return 0;
+    try {
+      const len = await this.client.xlen(stream);
+      return typeof len === 'number' ? len : 0;
+    } catch {
+      return 0;
+    }
+  }
 }
 
 let _queueManager: QueueManager | null = null;
