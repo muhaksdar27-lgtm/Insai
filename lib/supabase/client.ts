@@ -129,19 +129,19 @@ export class SupabaseService {
     const payload = {
       id: signal.id || crypto.randomUUID(),
       signal_key: key,
-      strategy_id: signal.strategyId || signal.strategy_id || 'strategy-1-smc',
-      symbol: signal.symbol || 'XAUUSD',
-      session: signal.session || 'London',
-      timeframe: signal.timeframe || 'M15',
-      direction: signal.direction || 'BUY',
-      entry_price: signal.entryPrice || signal.entry_price || 0,
-      sl_price: signal.slPrice || signal.sl_price || 0,
-      tp1_price: signal.tp1Price || signal.tp1_price || 0,
-      tp2_price: signal.tp2Price || signal.tp2_price || 0,
-      tp3_price: signal.tp3Price || signal.tp3_price || 0,
-      ai_decision: signal.aiDecision || signal.ai_decision || 'REJECTED',
-      ai_reasoning: signal.aiReasoning || signal.ai_reasoning || 'Default unconfirmed status',
-      status: signal.status || 'SUPPRESSED',
+      strategy_id: signal.strategyId || signal.strategy_id || null,
+      symbol: signal.symbol || null,
+      session: signal.session || null,
+      timeframe: signal.timeframe || null,
+      direction: signal.direction || null,
+      entry_price: signal.entryPrice ?? signal.entry_price ?? null,
+      sl_price: signal.slPrice ?? signal.sl_price ?? null,
+      tp1_price: signal.tp1Price ?? signal.tp1_price ?? null,
+      tp2_price: signal.tp2Price ?? signal.tp2_price ?? null,
+      tp3_price: signal.tp3Price ?? signal.tp3_price ?? null,
+      ai_decision: signal.aiDecision || signal.ai_decision || null,
+      ai_reasoning: signal.aiReasoning || signal.ai_reasoning || null,
+      status: signal.status || null,
       correlation_id: signal.correlationId || signal.correlation_id || crypto.randomUUID(),
       created_at: signal.createdAt || signal.created_at || new Date().toISOString()
     };
@@ -238,7 +238,7 @@ export class SupabaseService {
     }
   }
 
-  public async archiveToHistory(signalKey: string, finalState: string, pipsResult: number = 0, outcome: string = 'WIN', correlationId?: string) {
+  public async archiveToHistory(signalKey: string, finalState: string, pipsResult: number = 0, outcome?: string, correlationId?: string, rrRealized?: number) {
     let signalData = this.memorySignalsCache.get(signalKey);
 
     const supabase = this.getClient();
@@ -268,15 +268,26 @@ export class SupabaseService {
     signalData.status = finalState;
     this.memorySignalsCache.set(signalKey, signalData);
 
+    const computedOutcome = outcome || (pipsResult > 0 ? 'WIN' : (pipsResult < 0 ? 'LOSS' : 'BREAK_EVEN'));
+    let computedRr = rrRealized;
+    if (computedRr === undefined && signalData) {
+      const entry = signalData.entry_price || signalData.entryPrice || 0;
+      const sl = signalData.sl_price || signalData.slPrice || 0;
+      const tp = signalData.tp1_price || signalData.tp1Price || 0;
+      const risk = Math.abs(entry - sl);
+      const reward = Math.abs(tp - entry);
+      computedRr = risk > 0 ? Math.round((reward / risk) * 100) / 100 : 0;
+    }
+
     const historyRecord = { 
        id: crypto.randomUUID(),
        signal_key: signalData.signal_key,
        strategy_id: signalData.strategy_id,
-       symbol: signalData.symbol || 'XAUUSD',
+       symbol: signalData.symbol,
        status: finalState,
-       outcome: outcome,
+       outcome: computedOutcome,
        pips_result: pipsResult,
-       rr_realized: 1.5,
+       rr_realized: computedRr ?? 0,
        reason: finalState,
        correlation_id: correlationId || signalData.correlation_id,
        closed_at: new Date().toISOString(),
@@ -441,8 +452,8 @@ export class SupabaseService {
   public async insertStrategyState(payload: any) {
     const stateObj = {
       strategy_id: payload.strategy_id,
-      symbol: payload.symbol || 'XAUUSD',
-      timeframe: payload.timeframe || 'M15',
+      symbol: payload.symbol || null,
+      timeframe: payload.timeframe || null,
       state_name: payload.state_name,
       state_status: payload.state_status,
       signal_key: payload.signal_key,
@@ -462,8 +473,8 @@ export class SupabaseService {
           .from('strategy_states')
           .insert([{
              strategy_id: payload.strategy_id,
-             symbol: payload.symbol || 'XAUUSD',
-             timeframe: payload.timeframe || 'M15',
+             symbol: payload.symbol || null,
+             timeframe: payload.timeframe || null,
              state_name: payload.state_name,
              state_status: payload.state_status,
              signal_key: payload.signal_key,

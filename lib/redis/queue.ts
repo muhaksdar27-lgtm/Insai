@@ -407,12 +407,12 @@ export class QueueManager {
   }
 
   public async getQueueSize(stream: string = 'stream:events'): Promise<number> {
-    if (!this.isConnected() || !this.client) return 0;
+    if (!this.isConnected() || !this.client) return -1;
     try {
       const len = await this.client.xlen(stream);
-      return typeof len === 'number' ? len : 0;
+      return typeof len === 'number' ? len : -1;
     } catch {
-      return 0;
+      return -1;
     }
   }
 }

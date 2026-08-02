@@ -50,7 +50,9 @@ export const EngineStatusPanel = memo(function EngineStatusPanel({ engine, syste
 
         <div className="bg-zinc-950/80 border border-zinc-800/80 rounded p-2 flex flex-col justify-between">
           <span className="text-zinc-500 font-mono uppercase">Queue Size</span>
-          <span className="text-xs font-mono font-bold text-zinc-200">{engine.queueSize} events</span>
+          <span className={`text-xs font-mono font-bold ${engine.queueSize >= 0 ? 'text-zinc-200' : 'text-zinc-500'}`}>
+            {engine.queueSize >= 0 ? `${engine.queueSize} events` : 'N/A (Offline)'}
+          </span>
         </div>
 
         <div className="bg-zinc-950/80 border border-zinc-800/80 rounded p-2 flex flex-col justify-between">

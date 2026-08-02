@@ -10,6 +10,7 @@ import { getMcpRegistry } from '@/lib/mcp/registry';
 import { getMcpManager } from '@/lib/mcp/mcp-manager';
 import { PythonEngineManager } from '@/lib/mcp/engines/deployment';
 import { getQueueManager } from '@/lib/redis/queue';
+import { metricsEngine } from '@/lib/observability/metrics-engine';
 
 export const dynamic = "force-dynamic";
 
@@ -110,7 +111,7 @@ export async function GET(req: Request) {
       getSupabaseClient().getActiveSignals().catch(() => []),
       getSupabaseClient().getHistoricalSignals().catch(() => []),
       getMarketDataService().getLatestNews().catch(() => []),
-      getQueueManager().getQueueSize().catch(() => 0)
+      getQueueManager().getQueueSize().catch(() => -1)
     ]);
 
     // Parse Market
@@ -203,10 +204,11 @@ export async function GET(req: Request) {
     const newsData: any = newsResult.status === 'fulfilled' ? newsResult.value : [];
     const active_events = Array.isArray(newsData) ? newsData : (newsData?.active_events || []);
 
-    // Engine status calculation
-    const queueSize = queueSizeResult.status === 'fulfilled' ? queueSizeResult.value : 0;
+    // Engine status calculation using real metrics
+    const queueSize = queueSizeResult.status === 'fulfilled' ? queueSizeResult.value : -1;
     const activeStrategies = strategies.filter(s => s.status === 'active' || s.status === 'live');
     const mostActiveStrat = strategies.find(s => s.currentStep && s.currentStep !== 'INITIALIZING' && s.currentStep !== 'IDLE') || strategies[0];
+    const currentMetrics = metricsEngine.getMetrics();
 
     const engineStatus: DashboardSnapshot['engine'] = {
       status: activeStrategies.length > 0 ? 'running' : 'idle',
@@ -215,21 +217,21 @@ export async function GET(req: Request) {
       currentPair: 'XAUUSD',
       currentSession: market?.session || 'London',
       lastSignalAt: signals[0]?.createdAt || history[0]?.closedAt || null,
-      nextScanAt: new Date(Date.now() + 15000).toISOString(),
+      nextScanAt: null,
       queueSize: queueSize,
-      latencyMs: market?.price ? 12 : 120,
-      processingTimeMs: 45
+      latencyMs: currentMetrics.marketDataLatencyMs || (market?.price ? 12 : 0),
+      processingTimeMs: currentMetrics.scannerDurationMs || 0
     };
 
-    // Connections verification
-    const supabaseService = services.find((s: any) => s.serviceName === 'supabase' || s.serviceName === 'database');
-    const marketService = services.find((s: any) => s.serviceName === 'twelvedata' || s.serviceName === 'yahoofinance' || s.serviceName === 'marketdata');
-    const redisService = services.find((s: any) => s.serviceName === 'redis');
+    // Connections verification matching health check service names case-insensitively
+    const supabaseService = services.find((s: any) => s.serviceName?.toLowerCase() === 'supabase' || s.serviceName?.toLowerCase() === 'database');
+    const marketService = services.find((s: any) => s.serviceName?.toLowerCase() === 'marketdata' || s.serviceName?.toLowerCase() === 'twelvedata' || s.serviceName?.toLowerCase() === 'yahoofinance');
+    const redisService = services.find((s: any) => s.serviceName?.toLowerCase() === 'redis');
 
     const connections = {
       market: marketService ? marketService.status === 'ONLINE' : (market !== null && typeof market.price === 'number' && market.price > 0),
-      supabase: supabaseService ? supabaseService.status === 'ONLINE' : true,
-      redis: redisService ? redisService.status === 'ONLINE' : true,
+      supabase: supabaseService ? supabaseService.status === 'ONLINE' : getSupabaseClient().isConnected(),
+      redis: redisService ? redisService.status === 'ONLINE' : getQueueManager().isConnected(),
       realtimeChannel: true
     };
 

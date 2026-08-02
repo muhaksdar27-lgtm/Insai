@@ -1,4 +1,3 @@
-
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
 import next from 'next';
@@ -16,7 +15,21 @@ const hostname = '0.0.0.0';
 const port = parseInt(process.env.PORT || "3000", 10);
 const turbopack = false;
 
+export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed' | 'shutting_down';
+
+let serverStatus: ServerLifecycleStatus = 'starting';
+let initErrorMessage: string | null = null;
+let isAppPrepared = false;
 let pyProcess: ChildProcess | null = null;
+const degradedComponents = new Map<string, string>();
+
+function registerDegradedComponent(name: string, reason: string) {
+  degradedComponents.set(name, reason);
+  if (serverStatus === 'ready') {
+    serverStatus = 'degraded';
+    logger.warn(`Server lifecycle status changed to DEGRADED [${name}]: ${reason}`);
+  }
+}
 
 function startPythonEngine() {
   const pythonPort = process.env.PYTHON_PORT || '8181';
@@ -49,12 +62,14 @@ function startPythonEngine() {
     pyProcess.on('error', (err: any) => {
       logger.error(`Failed to start local Python Engine: ${err.message}. Running in DEGRADED mode.`);
       pyProcess = null;
+      registerDegradedComponent('pythonEngine', `Failed to start process: ${err.message}`);
     });
 
     pyProcess.on('close', (code: any) => {
-      if (isShuttingDown) return;
+      if (serverStatus === 'shutting_down') return;
       if (code !== 0 && code !== null) {
         logger.error(`Local Python Engine exited unexpectedly with code ${code}. Running in DEGRADED mode.`);
+        registerDegradedComponent('pythonEngine', `Exited unexpectedly with code ${code}`);
       } else {
         logger.info('Local Python Engine exited normally.');
       }
@@ -63,13 +78,10 @@ function startPythonEngine() {
   } catch (err: any) {
     logger.error(`Failed to spawn Python Engine: ${err.message}. Running in DEGRADED mode.`);
     pyProcess = null;
+    registerDegradedComponent('pythonEngine', `Spawn exception: ${err.message}`);
   }
 }
 
-let isReady = false;
-let isInitFailed = false;
-let isShuttingDown = false;
-let isAppPrepared = false;
 const app = next({ dev, hostname, port, turbopack });
 const handle = app.getRequestHandler();
 
@@ -111,25 +123,47 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 
       // Health checks endpoints (before Next.js handle)
       if (pathname === '/health/liveness') {
+        if (serverStatus === 'shutting_down') {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'shutting_down', timestamp: new Date().toISOString() }));
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
         return;
       }
       
       if (pathname === '/health/readiness') {
-        if (isShuttingDown) {
+        if (serverStatus === 'shutting_down') {
           res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'not_ready', isShuttingDown, timestamp: new Date().toISOString() }));
+          res.end(JSON.stringify({ status: 'not_ready', isShuttingDown: true, timestamp: new Date().toISOString() }));
           return;
         }
-        if (isInitFailed) {
+        if (serverStatus === 'failed') {
           res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'unhealthy', error: 'Backend initialization failed', timestamp: new Date().toISOString() }));
+          res.end(JSON.stringify({
+            status: 'failed',
+            error: initErrorMessage || 'Backend initialization failed',
+            timestamp: new Date().toISOString()
+          }));
           return;
         }
-        if (!isReady) {
+        if (serverStatus === 'starting' || !isAppPrepared) {
           res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'starting', timestamp: new Date().toISOString() }));
+          res.end(JSON.stringify({ status: 'starting', isAppPrepared, timestamp: new Date().toISOString() }));
+          return;
+        }
+        if (serverStatus === 'degraded') {
+          const degradedDetails: Record<string, string> = {};
+          degradedComponents.forEach((reason, name) => {
+            degradedDetails[name] = reason;
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            status: 'degraded',
+            degradedComponents: degradedDetails,
+            timestamp: new Date().toISOString()
+          }));
           return;
         }
 
@@ -138,7 +172,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         return;
       }
 
-      if (isShuttingDown) {
+      if (serverStatus === 'shutting_down') {
         res.writeHead(503, { 'Content-Type': 'application/json', 'Connection': 'close' });
         res.end(JSON.stringify({ error: 'Server is shutting down' }));
         return;
@@ -170,9 +204,9 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 
 // Setup graceful shutdown
 const gracefulShutdown = async (signal: string) => {
-  if (isShuttingDown) return;
+  if (serverStatus === 'shutting_down') return;
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
-  isShuttingDown = true;
+  serverStatus = 'shutting_down';
   
   // Cleanup Python Process
   if (pyProcess && !pyProcess.killed) {
@@ -223,6 +257,16 @@ const gracefulShutdown = async (signal: string) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+process.on('uncaughtException', (err: Error) => {
+  logger.error(`Uncaught Exception: ${err.message}`, { stack: err.stack });
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  logger.error(`Unhandled Rejection: ${message}`, { stack });
+});
+
 server.on('error', (err: NodeJS.ErrnoException) => {
   logger.error(`Server error: ${err.message}`, { stack: err.stack });
   if (err.code === 'EADDRINUSE') {
@@ -230,6 +274,65 @@ server.on('error', (err: NodeJS.ErrnoException) => {
     process.exit(1);
   }
 });
+
+async function initializeBackendServices() {
+  if (serverStatus === 'shutting_down') return;
+
+  logger.info('Initializing backend services...');
+
+  try {
+    // 1. Environment validation
+    try {
+      validateEnvironment();
+    } catch (envErr: any) {
+      logger.error(`Environment validation error: ${envErr.message}`);
+      serverStatus = 'failed';
+      initErrorMessage = `Environment validation failed: ${envErr.message}`;
+      return;
+    }
+
+    // 2. Local Python Engine
+    try {
+      startPythonEngine();
+    } catch (pyErr: any) {
+      logger.error(`Failed to start Python Engine: ${pyErr.message}`);
+      registerDegradedComponent('pythonEngine', pyErr.message);
+    }
+
+    // 3. Ingestion Service
+    try {
+      await getIngestionService().start('XAUUSD');
+      logger.info('Ingestion Service started successfully.');
+    } catch (e: any) {
+      logger.error(`Failed to start Ingestion Service: ${e.message}`);
+      registerDegradedComponent('ingestionService', e.message);
+    }
+
+    // 4. Market Scanner
+    try {
+      await getMarketScanner().start();
+      logger.info('Market Scanner started successfully.');
+    } catch (e: any) {
+      logger.error(`Failed to start Market Scanner: ${e.message}`);
+      registerDegradedComponent('marketScanner', e.message);
+    }
+
+    if ((serverStatus as ServerLifecycleStatus) === 'shutting_down') return;
+
+    if (degradedComponents.size > 0) {
+      serverStatus = 'degraded';
+      logger.warn(`Backend services initialized in DEGRADED mode (${degradedComponents.size} component(s) degraded).`);
+    } else {
+      serverStatus = 'ready';
+      logger.info('Backend services initialized successfully. Server is READY.');
+    }
+
+  } catch (initErr: any) {
+    logger.error(`Critical error during backend initialization: ${initErr.message}`, { stack: initErr.stack });
+    serverStatus = 'failed';
+    initErrorMessage = initErr.message || 'Unknown backend initialization error';
+  }
+}
 
 server.listen(port, hostname, () => {
   logger.info(`> Listening on http://${hostname}:${port} (Next.js preparing...)`);
@@ -239,45 +342,16 @@ server.listen(port, hostname, () => {
       isAppPrepared = true;
       logger.info(`> Next.js prepared successfully`);
       
-      // Initialize systems asynchronously to avoid blocking startup
-      Promise.resolve().then(async () => {
-        try {
-          startPythonEngine();
-          try {
-            validateEnvironment();
-          } catch (envErr: any) {
-            logger.error(`Environment validation failed: ${envErr.message}`);
-            process.exit(1);
-          }
-          logger.info('Services initialized asynchronously.');
-          
-          try {
-            setTimeout(() => { getMarketScanner().start().catch(err => logger.error(`marketScanner error: ${err.message}`)); }, 3000);
-          } catch (e: any) {
-            logger.error(`Failed to start market scanner: ${e.message}`);
-          }
-          
-          try {
-             getIngestionService().start('XAUUSD').catch(err => logger.error(`IngestionService start error: ${err.message}`));
-          } catch (e: any) {
-             logger.error(`Failed to start Ingestion Service: ${e.message}`);
-          }
-          
-          // Wait for a brief moment for async startups like Redis to connect before declaring ready
-          setTimeout(() => {
-             isReady = true;
-             logger.info('Server marked as ready for healthchecks.');
-          }, 3000);
-          
-        } catch (initErr: any) {
-          logger.error(`Critical error during backend initialization: ${initErr.message}`);
-          isReady = false;
-          isInitFailed = true;
-        }
+      initializeBackendServices().catch((err: any) => {
+        logger.error(`Unhandled error during backend initialization: ${err.message}`, { stack: err.stack });
+        serverStatus = 'failed';
+        initErrorMessage = err.message || 'Unhandled error during backend initialization';
       });
     })
     .catch((err: any) => {
       logger.error(`Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
+      serverStatus = 'failed';
+      initErrorMessage = `Next.js preparation failed: ${err.message}`;
       process.exit(1);
     });
 });

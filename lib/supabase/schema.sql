@@ -178,6 +178,8 @@ CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at);
 CREATE INDEX IF NOT EXISTS idx_history_strategy_id ON history(strategy_id);
 CREATE INDEX IF NOT EXISTS idx_history_symbol ON history(symbol);
 CREATE INDEX IF NOT EXISTS idx_history_created_at ON history(created_at);
+CREATE INDEX IF NOT EXISTS idx_history_signal_key ON history(signal_key);
+CREATE INDEX IF NOT EXISTS idx_signal_evidence_signal_key ON signal_evidence(signal_key);
 CREATE INDEX IF NOT EXISTS idx_strategy_states_strategy_id ON strategy_states(strategy_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_market_snapshots_symbol ON market_snapshots(symbol);
