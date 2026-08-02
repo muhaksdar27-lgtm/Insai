@@ -12,6 +12,212 @@ export class DatabaseService {
   private failures: number = 0;
   private circuitOpen: boolean = false;
   private readonly maxFailures = 10;
+  private isSchemaEnsured: boolean = false;
+  private schemaInitPromise: Promise<void> | null = null;
+
+  public async ensureSchema(): Promise<void> {
+    if (this.isSchemaEnsured) return;
+    if (this.schemaInitPromise) return this.schemaInitPromise;
+
+    this.schemaInitPromise = (async () => {
+      const pool = this.getPool();
+      if (!pool) return;
+      try {
+        const schemaSql = `
+          DO $$ 
+          BEGIN
+            CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END $$;
+
+          CREATE TABLE IF NOT EXISTS strategies (
+            id VARCHAR(100) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            status VARCHAR(50) NOT NULL,
+            enabled BOOLEAN DEFAULT false,
+            config JSONB,
+            priority INT DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS signals (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            signal_key VARCHAR(255) UNIQUE NOT NULL,
+            strategy_id VARCHAR(100) REFERENCES strategies(id),
+            symbol VARCHAR(20) NOT NULL,
+            session VARCHAR(50),
+            timeframe VARCHAR(10),
+            direction VARCHAR(10) NOT NULL,
+            entry_price NUMERIC,
+            sl_price NUMERIC,
+            tp1_price NUMERIC,
+            tp2_price NUMERIC,
+            tp3_price NUMERIC,
+            ai_decision VARCHAR(50),
+            ai_reasoning TEXT,
+            status VARCHAR(50) NOT NULL,
+            correlation_id VARCHAR(255),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS strategy_states (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            strategy_id VARCHAR(100) REFERENCES strategies(id),
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            state_name VARCHAR(50) NOT NULL,
+            state_status VARCHAR(50) NOT NULL,
+            signal_key VARCHAR(255),
+            payload_json JSONB,
+            reason TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS signal_evidence (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            signal_key VARCHAR(255) REFERENCES signals(signal_key),
+            rule_id VARCHAR(100),
+            engine_name VARCHAR(100),
+            evidence_type VARCHAR(50),
+            details JSONB,
+            passed BOOLEAN,
+            reason TEXT,
+            payload_json JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS market_snapshots (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            close NUMERIC NOT NULL,
+            high NUMERIC,
+            low NUMERIC,
+            open NUMERIC,
+            volume NUMERIC,
+            price_live NUMERIC,
+            provider VARCHAR(100),
+            timestamp TIMESTAMPTZ,
+            indicators_json JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            signal_key VARCHAR(255) REFERENCES signals(signal_key),
+            strategy_id VARCHAR(100) REFERENCES strategies(id),
+            symbol VARCHAR(20) NOT NULL,
+            status VARCHAR(50) NOT NULL,
+            outcome VARCHAR(50),
+            pips_result NUMERIC,
+            rr_realized NUMERIC,
+            reason TEXT,
+            correlation_id VARCHAR(255),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            closed_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS alerts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            type VARCHAR(50),
+            severity VARCHAR(50),
+            target VARCHAR(255),
+            message TEXT,
+            payload_json JSONB,
+            status VARCHAR(50),
+            alert_key VARCHAR(255) UNIQUE NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS risk_events (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            signal_key VARCHAR(255),
+            strategy_id VARCHAR(100),
+            decision VARCHAR(50),
+            reason TEXT,
+            threshold_json JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS audit_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            actor VARCHAR(255),
+            actor_id UUID,
+            action VARCHAR(100) NOT NULL,
+            entity_type VARCHAR(100),
+            entity_id VARCHAR(255),
+            payload_json JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS mcp_services (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name VARCHAR(100) UNIQUE NOT NULL,
+            category VARCHAR(50),
+            purpose TEXT,
+            source_type VARCHAR(50),
+            status VARCHAR(50) NOT NULL,
+            health_status VARCHAR(50),
+            dependency VARCHAR(100),
+            fallback_status VARCHAR(50),
+            last_checked_at TIMESTAMPTZ,
+            last_error TEXT,
+            notes TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS news_events (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            event_id VARCHAR(100) UNIQUE NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            currency VARCHAR(10),
+            impact VARCHAR(20),
+            forecast VARCHAR(50),
+            previous VARCHAR(50),
+            actual VARCHAR(50),
+            published_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS provider_health (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            provider_name VARCHAR(100) NOT NULL,
+            category VARCHAR(50),
+            health_status VARCHAR(50),
+            last_success_at TIMESTAMPTZ,
+            last_error TEXT,
+            circuit_breaker_status VARCHAR(50),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          );
+
+          INSERT INTO strategies (id, name, description, status, enabled, priority)
+          VALUES 
+          ('strategy-1-smc', 'SMC Logic', 'Smart Money Concepts including BOS, CHoCH, and Liquidity Sweeps', 'active', true, 10),
+          ('strategy-2-snd', 'Supply & Demand', 'Order Blocks, Fair Value Gaps, and Support/Resistance Zones', 'active', true, 20),
+          ('strategy-3-scalping', 'Scalping Trends', 'High momentum short-term trend scalping', 'active', true, 30),
+          ('strategy-4-news', 'News Volatility', 'High-impact news filter and volatility breakout', 'active', true, 40),
+          ('strategy-5-smc-sd-confluence', 'SMC & S/D Confluence', '4-Layer multi-timeframe confluence logic', 'active', true, 50)
+          ON CONFLICT (id) DO UPDATE SET 
+            status = EXCLUDED.status,
+            enabled = EXCLUDED.enabled;
+        `;
+        await pool.query(schemaSql);
+        this.isSchemaEnsured = true;
+        logger.info('PostgreSQL schema auto-initialized successfully');
+      } catch (err: any) {
+        logger.warn(`PostgreSQL schema initialization warning: ${err.message}`);
+      } finally {
+        this.schemaInitPromise = null;
+      }
+    })();
+
+    return this.schemaInitPromise;
+  }
 
   public getPool(): Pool | null {
     const dbUrl = getEnv("DATABASE_URL") || getEnv("POSTGRES_URL") || getEnv("SUPABASE_DB_URL") || '';
@@ -88,6 +294,11 @@ export class DatabaseService {
         return result;
       } catch (err: any) {
         if (err.message === "PostgreSQL circuit breaker is open") throw err;
+
+        if (err.message && (err.message.includes('relation') || err.message.includes('does not exist')) && !this.isSchemaEnsured) {
+          logger.info(`Missing database relation detected (${err.message}). Auto-initializing schema...`);
+          await this.ensureSchema();
+        }
 
         if (this.isNetworkError(err)) {
           this.failures += 2;
@@ -533,13 +744,25 @@ export class DatabaseService {
   }
 
   public async getStrategies() {
+    const defaultStrats = [
+      { id: 'strategy-1-smc', name: 'SMC Logic', description: 'Smart Money Concepts including BOS, CHoCH, and Liquidity Sweeps', status: 'active', parameters: {}, enabled: true },
+      { id: 'strategy-2-snd', name: 'Supply & Demand', description: 'Order Blocks, Fair Value Gaps, and Support/Resistance Zones', status: 'active', parameters: {}, enabled: true },
+      { id: 'strategy-3-scalping', name: 'Scalping Trends', description: 'High momentum short-term trend scalping', status: 'active', parameters: {}, enabled: true },
+      { id: 'strategy-4-news', name: 'News Volatility', description: 'High-impact news filter and volatility breakout', status: 'active', parameters: {}, enabled: true },
+      { id: 'strategy-5-smc-sd-confluence', name: 'SMC & S/D Confluence', description: '4-Layer multi-timeframe confluence logic', status: 'active', parameters: {}, enabled: true }
+    ];
+
     if (!this.isConnected()) {
-      return { status: 'not_configured', available: false, reason: 'Database is not configured or circuit open' };
+      return defaultStrats;
     }
     try {
+      await this.ensureSchema();
       return await this.withRetry(async (pool) => {
         const { rows } = await pool.query('SELECT * FROM strategies ORDER BY priority ASC, id ASC');
-        return (rows || []).map((row: any) => ({
+        if (!rows || rows.length === 0) {
+          return defaultStrats;
+        }
+        return rows.map((row: any) => ({
           id: row.id,
           name: row.name,
           description: row.description || row.config?.description || '',
@@ -552,7 +775,7 @@ export class DatabaseService {
       if (!err.message?.includes('circuit breaker')) {
         logger.error(`PostgreSQL fetch strategies error: ${err.message}`);
       }
-      return { status: 'error', available: false, reason: err.message };
+      return defaultStrats;
     }
   }
 
