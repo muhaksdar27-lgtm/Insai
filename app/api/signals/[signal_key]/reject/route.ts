@@ -11,16 +11,6 @@ export async function POST(
   const { signal_key } = await params;
   const reqId = crypto.randomUUID();
 
-  if (process.env.NODE_ENV !== 'development') {
-    const response: ApiResponse<null> = {
-      success: false,
-      data: null,
-      error: { code: 'FORBIDDEN', message: 'Mutation routes are only available in development mode.' },
-      meta: { request_id: reqId, timestamp: new Date().toISOString() }
-    };
-    return NextResponse.json(response, { status: 403 });
-  }
-
   let success = false;
   let error = null;
 
@@ -48,5 +38,6 @@ export async function POST(
     }
   };
 
-  return NextResponse.json(response, { status: 200 });
+  return NextResponse.json(response, { status: success ? 200 : 500 });
 }
+
