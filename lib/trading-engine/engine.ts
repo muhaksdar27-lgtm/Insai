@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "../supabase/client";
+import { getDatabaseClient } from "../db/client";
 import { RuleEvaluationContext } from '@/types';
 import { AIValidationOrchestrator } from './validation-pipeline/ai-orchestrator';
 import { consistencyEngine } from './validation-pipeline/consistency-engine';
@@ -111,7 +111,7 @@ export class TradingEngine {
          
          this.lastSyncedState[syncKey] = { stateName, status, reason };
          
-         await getSupabaseClient().insertStrategyState({
+         await getDatabaseClient().insertStrategyState({
              strategy_id: strategyId,
              symbol: payload?.context?.symbol || payload?.symbol || 'XAUUSD',
              state_name: stateName,
@@ -452,7 +452,7 @@ export class TradingEngine {
       await SignalBuilder.buildAndDispatchSignal(winnerSetup, context);
 
       this.setupDetector.transitionState(winnerSetup.id, 'archived', 'Signal processing complete');
-      await getSupabaseClient().archiveToHistory(winnerSetup.id, 'FINISHED', 25.0, 'WIN', context.correlationId).catch(() => null);
+      await getDatabaseClient().archiveToHistory(winnerSetup.id, 'FINISHED', 25.0, 'WIN', context.correlationId).catch(() => null);
     }
 
     this.setupDetector.audit();

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getDatabaseClient } from '@/lib/db/client';
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +12,9 @@ export async function GET() {
   let data: any = [];
   try {
     try {
-      data = await getSupabaseClient().getActiveSignals();
+      data = await getDatabaseClient().getActiveSignals();
     } catch (dbErr: any) {
-      console.warn(`Supabase fetch failed for active signals, using fallback:`, dbErr.message);
+      console.warn(`Database fetch failed for active signals, using fallback:`, dbErr.message);
     }
     
     if (!Array.isArray(data)) {
@@ -33,7 +33,7 @@ export async function GET() {
     }
 
     // Fetch strategies to map ID to Name
-    const strategies = await getSupabaseClient().getStrategies();
+    const strategies = await getDatabaseClient().getStrategies();
     const strategyMap = new Map();
     if (Array.isArray(strategies)) {
         strategies.forEach(s => strategyMap.set(s.id, s.name));
@@ -41,18 +41,23 @@ export async function GET() {
 
     // Fetch latest market snapshot for XAUUSD to calculate pips
     let latestPrice = 0;
-    const supabase = getSupabaseClient().getClient();
-    if (getSupabaseClient().isConnected() && supabase) {
-        const { data: snapshot } = await supabase
-            .from('market_snapshots')
-            .select('close, timestamp')
-            .eq('symbol', 'XAUUSD')
-            .order('timestamp', { ascending: false })
-            .limit(1)
-            .single();
-        if (snapshot && snapshot.close) {
-            latestPrice = snapshot.close;
+    if (getDatabaseClient().isConnected()) {
+      try {
+        const pool = getDatabaseClient().getPool();
+        if (pool) {
+          const { rows } = await pool.query(`
+            SELECT close, timestamp FROM market_snapshots
+            WHERE symbol = 'XAUUSD'
+            ORDER BY timestamp DESC
+            LIMIT 1;
+          `);
+          if (rows && rows[0] && rows[0].close) {
+            latestPrice = Number(rows[0].close);
+          }
         }
+      } catch (e) {
+        // ignore snapshot fetch error
+      }
     }
 
     // Map DB schema to UI expected format

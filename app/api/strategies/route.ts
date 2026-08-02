@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse, StrategyResponse } from '@/types';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getDatabaseClient } from '@/lib/db/client';
 import { normalizeStrategyFromDB } from '@/lib/trading-engine/strategy-normalize';
 import { getAllStrategies } from '@/lib/trading-engine/strategy-registry';
 import crypto from 'crypto';
@@ -20,7 +20,7 @@ export async function GET() {
       status: 'active',
     }));
 
-    const strategiesRes = await getSupabaseClient().getStrategies().catch(() => null);
+    const strategiesRes = await getDatabaseClient().getStrategies().catch(() => null);
     let baseStrategies = configStrategies;
     if (strategiesRes && Array.isArray(strategiesRes)) {
        baseStrategies = [...configStrategies];
@@ -34,7 +34,7 @@ export async function GET() {
 
     // Attach their latest states from the state machine DB table
     const statePromises = baseStrategies.map(strategy =>
-        getSupabaseClient().getStrategyState(strategy.id).catch(() => null)
+        getDatabaseClient().getStrategyState(strategy.id).catch(() => null)
     );
     const states = await Promise.all(statePromises);
 
@@ -89,4 +89,3 @@ export async function GET() {
 
   return NextResponse.json(response, { status: success ? 200 : 500 });
 }
-

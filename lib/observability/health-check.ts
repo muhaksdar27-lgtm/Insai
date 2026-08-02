@@ -2,7 +2,7 @@ import { getQueueManager } from "../redis/queue";
 import { getProviderRegistry } from "../market-data/provider-registry";
 import { getEnv } from "../utils/env";
 import { logger } from '../utils/logger';
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 
 export type ServiceHealthStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'NOT CONFIGURED' | 'RATE LIMITED' | 'UNAVAILABLE' | 'QUOTA_EXCEEDED' | 'DISABLED' | 'DISABLED_BY_DESIGN' | 'UNREACHABLE' | 'RUNTIME_ERROR' | 'SCAN_IN_PROGRESS';
 
@@ -24,7 +24,7 @@ class HealthCheckEngine {
   private services: Record<string, ServiceHealth> = {};
 
   constructor() {
-    this.registerService('Supabase', 'NOT CONFIGURED', 'Pending validation');
+    this.registerService('Database', 'NOT CONFIGURED', 'Pending validation');
     this.registerService('MarketData', 'NOT CONFIGURED', 'Pending validation');
     this.registerService('EconomicCalendar', 'NOT CONFIGURED', 'Pending validation');
     this.registerService('GeminiAI', 'NOT CONFIGURED', 'Pending validation');
@@ -67,51 +67,50 @@ class HealthCheckEngine {
   public async runHealthChecks(): Promise<SystemHealth> {
     // Perform active checks where possible
     
-    // Check Supabase
+    // Check Database (PostgreSQL)
     try {
-        const start = Date.now();
-        const client = getSupabaseClient();
-        if (client.isConnected()) {
-            this.updateServiceHealth('Supabase', 'ONLINE', Date.now() - start);
+        const pingResult = await getDatabaseClient().ping();
+        if (pingResult.connected) {
+            this.updateServiceHealth('Database', 'ONLINE', pingResult.latencyMs);
         } else {
-            this.updateServiceHealth('Supabase', 'NOT CONFIGURED', Date.now() - start, 'Not configured or unavailable');
+            this.updateServiceHealth('Database', 'NOT CONFIGURED', pingResult.latencyMs >= 0 ? pingResult.latencyMs : 0, pingResult.error || 'Not configured or unavailable');
         }
     } catch (e: any) {
-        this.updateServiceHealth('Supabase', 'UNAVAILABLE', 0, e.message);
+        this.updateServiceHealth('Database', 'UNAVAILABLE', 0, e.message);
     }
     
     // Check Market Data
     try {
         const start = Date.now();
         const providers = getProviderRegistry().getAllHealth();
-    let onlineCount = 0;
-    let rateLimited = false;
-    let lastError = null;
-    let configuredCount = 0;
+        let onlineCount = 0;
+        let rateLimited = false;
+        let lastError = null;
+        let configuredCount = 0;
 
-    providers.filter(p => p.category === 'price').forEach(p => {
-        if (p.providerName !== 'yahoo-finance') {
-             configuredCount++;
-             if (p.healthStatus === 'ONLINE') onlineCount++;
-             else if (p.healthStatus === 'RATE LIMITED') rateLimited = true;
-             else if (p.lastError || undefined) lastError = p.lastError;
+        providers.filter(p => p.category === 'price').forEach(p => {
+            if (p.providerName !== 'yahoo-finance') {
+                 configuredCount++;
+                 if (p.healthStatus === 'ONLINE') onlineCount++;
+                 else if (p.healthStatus === 'RATE LIMITED') rateLimited = true;
+                 else if (p.lastError || undefined) lastError = p.lastError;
+            }
+        });
+
+        if (configuredCount === 0) {
+            this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, 'Using YahooFinance fallback');
+        } else if (onlineCount > 0) {
+            this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, onlineCount > 1 ? 'Hybrid Active' : 'Online');
+        } else if (rateLimited) {
+            this.updateServiceHealth('MarketData', 'RATE LIMITED', Date.now() - start, lastError || undefined);
+        } else {
+            this.updateServiceHealth('MarketData', 'UNAVAILABLE', Date.now() - start, lastError || 'All configured providers failed');
         }
-    });
-
-    if (configuredCount === 0) {
-        this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, 'Using YahooFinance fallback');
-    } else if (onlineCount > 0) {
-        this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, onlineCount > 1 ? 'Hybrid Active' : 'Online');
-    } else if (rateLimited) {
-        this.updateServiceHealth('MarketData', 'RATE LIMITED', Date.now() - start, lastError || undefined);
-    } else {
-        this.updateServiceHealth('MarketData', 'UNAVAILABLE', Date.now() - start, lastError || 'All configured providers failed');
+    } catch (e: any) {
+        this.updateServiceHealth('MarketData', 'UNAVAILABLE', 0, e.message);
     }
-} catch (e: any) {
-    this.updateServiceHealth('MarketData', 'UNAVAILABLE', 0, e.message);
-}
 
-// Check Economic Calendar
+    // Check Economic Calendar
     try {
         const start = Date.now();
         const controller = new AbortController();
@@ -230,7 +229,6 @@ class HealthCheckEngine {
             
            const qm = getQueueManager();
            if (qm.isConnected()) {
-              // Try a ping via cache method or acquire lock briefly
               await qm.setCache('health_ping', 'ok', 10);
               const val = await qm.getCache('health_ping');
               if (val === 'ok') {
@@ -253,7 +251,7 @@ class HealthCheckEngine {
     // Determine overall status
     let overallStatus: ServiceHealthStatus = 'ONLINE';
     
-    const criticalServices = ['Redis', 'Supabase'];
+    const criticalServices = ['Redis', 'Database'];
     const criticalFailures = servicesList.filter(s => criticalServices.includes(s.serviceName) && (s.status === 'OFFLINE' || s.status === 'UNAVAILABLE'));
     
     if (criticalFailures.length > 0) {

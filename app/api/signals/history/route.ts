@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getDatabaseClient } from '@/lib/db/client';
 import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
 import { ApiResponse } from '@/types';
 import crypto from 'crypto';
@@ -9,7 +9,7 @@ import crypto from 'crypto';
 export async function GET() {
   const reqId = crypto.randomUUID();
   try {
-    const data: any = await getSupabaseClient().getHistoricalSignals();
+    const data: any = await getDatabaseClient().getHistoricalSignals();
     
     if (!Array.isArray(data)) {
       if (data && (data.status === 'not_configured' || data.status === 'error')) {
@@ -85,4 +85,3 @@ export async function GET() {
     return NextResponse.json(errorResponse, { status: 500 });
   }
 }
-

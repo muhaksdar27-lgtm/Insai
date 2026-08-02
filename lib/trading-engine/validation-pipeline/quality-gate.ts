@@ -3,7 +3,7 @@ import { StrategyState } from '../state-machine';
 import { ValidationPipelineResult } from './ai-orchestrator';
 import { ConsistencyResult } from './consistency-engine';
 import { logger } from '../../utils/logger';
-import { getSupabaseClient } from '../../supabase/client';
+import { getDatabaseClient } from '../../db/client';
 import { MarketCalendar } from '../../market-data/market-calendar';
 
 export interface QualityGateResult {
@@ -60,7 +60,6 @@ export class QualityGate {
     }
 
     // 4. Rule Results Check
-    // Rules are evaluated synchronously so they are only valid, invalid, or unknown.
     const rules = Object.values(ruleResults).filter(r => r && typeof r === 'object' && 'status' in r) as RuleResult[];
     if (rules.some(r => r.status === 'unknown')) {
        return this.reject(`Incomplete Validation: Not all rules have valid data.`);
@@ -70,13 +69,10 @@ export class QualityGate {
     const now = Date.now();
     const dataTimestamp = marketContext?.timestamp ? new Date(marketContext.timestamp).getTime() : 0;
     
-    // If we have a timestamp, check if it's too old
     if (dataTimestamp > 0 && (now - dataTimestamp) > this.MAX_DATA_AGE_MS) {
        return this.reject(`Stale Market Data: Data is older than ${this.MAX_DATA_AGE_MS / 1000 / 60} minutes.`);
     }
 
-    // Check if the signal is expired before it even gets published
-    // (e.g. state transition took too long)
     const stateTransitionTime = state.timestamp ? new Date(state.timestamp).getTime() : now;
     if ((now - stateTransitionTime) > this.MAX_DATA_AGE_MS) {
        return this.reject(`Expired Signal: Pipeline processing took too long.`);
@@ -105,10 +101,9 @@ export class QualityGate {
     }
 
     // 8. Duplicate / Active Signal Check
-    // Prevent publishing if an active signal already exists for the same strategy and symbol
     const symbol = marketContext?.symbol || 'XAUUSD';
     try {
-        const client = getSupabaseClient();
+        const client = getDatabaseClient();
         if (client.isConnected()) {
              const activeResult = await client.getActiveSignals();
              const allActive = Array.isArray(activeResult) ? activeResult : (activeResult as any).data || [];

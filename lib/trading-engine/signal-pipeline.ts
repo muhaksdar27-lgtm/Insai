@@ -2,7 +2,7 @@ import { getQueueManager } from '../redis/queue';
 import { Setup } from '@/types';
 import { logger } from '../utils/logger';
 import { notificationEngine } from '../notifications/notification-engine';
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 import { metricsEngine } from '../observability/metrics-engine';
 import crypto from 'crypto';
 
@@ -124,13 +124,13 @@ export class SignalPipeline {
         createdAt: new Date().toISOString()
       };
 
-      await getSupabaseClient().insertSignal(canonicalSignal);
+      await getDatabaseClient().insertSignal(canonicalSignal);
       logger.info(`[HISTORY SAVED] Signal ${setup.id} (${setup.sourceStrategy}) saved to database & history`);
       
       // Store AI Review Evidence if available
       const aiValidationData = (setup as any).aiValidation;
       if (aiValidationData) {
-        await getSupabaseClient().insertSignalEvidence({
+        await getDatabaseClient().insertSignalEvidence({
            signal_key: setup.id,
            engine_name: 'ai_validation',
            evidence_type: 'ai_review',
@@ -141,7 +141,7 @@ export class SignalPipeline {
 
         if (Array.isArray(aiValidationData.checklist)) {
           for (const item of aiValidationData.checklist) {
-            await getSupabaseClient().insertSignalEvidence({
+            await getDatabaseClient().insertSignalEvidence({
                signal_key: setup.id,
                engine_name: 'validation_pipeline',
                evidence_type: 'checklist_item',
@@ -160,7 +160,7 @@ export class SignalPipeline {
       if (candidateRules && typeof candidateRules === 'object') {
         for (const [ruleKey, ruleVal] of Object.entries(candidateRules)) {
           const valObj = ruleVal as any;
-          await getSupabaseClient().insertSignalEvidence({
+          await getDatabaseClient().insertSignalEvidence({
              signal_key: setup.id,
              engine_name: 'validation_pipeline',
              evidence_type: 'checklist_item',
@@ -177,7 +177,7 @@ export class SignalPipeline {
       // Store validation logs as evidence
       if (setup.validationLog && setup.validationLog.length > 0) {
         setup.validationLog.forEach(log => {
-           getSupabaseClient().insertSignalEvidence({
+           getDatabaseClient().insertSignalEvidence({
               signal_key: setup.id,
               engine_name: 'setup_detector',
               evidence_type: 'lifecycle_log',

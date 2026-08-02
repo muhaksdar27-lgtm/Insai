@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getEnv } from '@/lib/utils/env';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getDatabaseClient } from '@/lib/db/client';
 import { getQueueManager } from '@/lib/redis/queue';
 import crypto from 'crypto';
 
@@ -167,32 +167,31 @@ async function pingAI(): Promise<EnginePingResult> {
 async function pingDatabase(): Promise<EnginePingResult> {
   const start = Date.now();
   try {
-    const client = getSupabaseClient();
-    const isConn = client.isConnected();
-    const latency = Date.now() - start;
+    const dbClient = getDatabaseClient();
+    const pingResult = await dbClient.ping();
 
-    if (isConn) {
+    if (pingResult.connected) {
       return {
         engineId: 'database',
         name: 'Database Engine',
         status: 'ONLINE',
-        latencyMs: latency,
+        latencyMs: pingResult.latencyMs,
         lastChecked: new Date().toISOString(),
-        message: 'Supabase PostgreSQL database connection verified',
-        details: { connected: true, provider: 'Supabase' }
+        message: 'Native PostgreSQL database connection verified',
+        details: { connected: true, provider: 'PostgreSQL' }
       };
     } else {
-      const hasConfig = !!(getEnv("NEXT_PUBLIC_SUPABASE_URL") || getEnv("SUPABASE_SERVICE_ROLE_KEY"));
+      const hasConfig = !!(getEnv("DATABASE_URL") || getEnv("POSTGRES_URL") || getEnv("SUPABASE_DB_URL"));
       return {
         engineId: 'database',
         name: 'Database Engine',
         status: hasConfig ? 'ERROR' : 'OFFLINE',
-        latencyMs: latency,
+        latencyMs: pingResult.latencyMs >= 0 ? pingResult.latencyMs : Date.now() - start,
         lastChecked: new Date().toISOString(),
         message: hasConfig
-          ? 'Database configured but client connection inactive'
-          : 'Database not configured (NEXT_PUBLIC_SUPABASE_URL missing)',
-        details: { configured: hasConfig, connected: false }
+          ? `Database configured but pool connection failed (${pingResult.error || 'Connection inactive'})`
+          : 'Database not configured (DATABASE_URL missing)',
+        details: { configured: hasConfig, connected: false, error: pingResult.error }
       };
     }
   } catch (e: any) {

@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger';
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 import * as crypto from 'crypto';
 
 export interface AlertPayload {
@@ -24,8 +24,8 @@ export class AlertEngine {
 
     // Save to DB (if supported)
     try {
-        if (getSupabaseClient().isConnected()) {
-            await getSupabaseClient().insertAlert(alert);
+        if (getDatabaseClient().isConnected()) {
+            await getDatabaseClient().insertAlert(alert);
         }
     } catch (e: any) {
         logger.error(`Failed to persist alert: ${e.message}`);

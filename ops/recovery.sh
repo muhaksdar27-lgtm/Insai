@@ -19,12 +19,14 @@ fi
 
 echo "Starting recovery process from $BACKUP_DIR..."
 
-if [ -n "$SUPABASE_DB_URL" ] && [ -f "$BACKUP_DIR/db_backup.sql" ]; then
-    echo "Restoring database..."
-    psql "$SUPABASE_DB_URL" < "$BACKUP_DIR/db_backup.sql"
+DB_CONN="${DATABASE_URL:-${POSTGRES_URL:-$SUPABASE_DB_URL}}"
+
+if [ -n "$DB_CONN" ] && [ -f "$BACKUP_DIR/db_backup.sql" ]; then
+    echo "Restoring PostgreSQL database..."
+    psql "$DB_CONN" < "$BACKUP_DIR/db_backup.sql"
     echo "Database restored successfully."
 else
-    echo "Error: Cannot restore DB. Either SUPABASE_DB_URL is unset or backup file missing."
+    echo "Error: Cannot restore DB. Either DATABASE_URL is unset or backup file missing."
     exit 1
 fi
 

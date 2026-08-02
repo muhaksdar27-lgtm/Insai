@@ -1,6 +1,6 @@
 import { SignalPipeline } from './signal-pipeline';
 import { Setup } from '@/types';
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 import { getQueueManager } from '../redis/queue';
 import { logger } from '../utils/logger';
 
@@ -40,7 +40,7 @@ export class SignalBuilder {
 
     // 3. Persist database & state history
     try {
-      await getSupabaseClient().insertStrategyState({
+      await getDatabaseClient().insertStrategyState({
         strategy_id: setup.sourceStrategy,
         symbol: setup.symbol,
         state_name: 'DISPATCHED',

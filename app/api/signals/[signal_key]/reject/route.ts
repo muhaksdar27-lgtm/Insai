@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getDatabaseClient } from '@/lib/db/client';
 import crypto from 'crypto';
 
 export async function POST(
@@ -25,7 +25,7 @@ export async function POST(
   let error = null;
 
   try {
-    await getSupabaseClient().updateSignalState(signal_key, 'REJECTED');
+    await getDatabaseClient().updateSignalState(signal_key, 'REJECTED');
     success = true;
   } catch (err: any) {
     error = { code: 'DB_ERROR', message: err.message };

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getDatabaseClient } from '@/lib/db/client';
 import crypto from 'crypto';
 import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
 
@@ -31,9 +31,9 @@ export async function GET(
 
     let stateData = null;
     try {
-      stateData = await getSupabaseClient().getStrategyState(id);
+      stateData = await getDatabaseClient().getStrategyState(id);
     } catch (dbErr: any) {
-      console.warn(`Supabase fetch failed for ${id}, using fallback:`, dbErr.message);
+      console.warn(`Database fetch failed for ${id}, using fallback:`, dbErr.message);
     }
     
     const { normalizeStrategyFromDB } = require('@/lib/trading-engine/strategy-normalize');

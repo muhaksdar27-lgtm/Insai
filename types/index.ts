@@ -363,7 +363,8 @@ export interface DashboardSnapshotSystem {
   mcp: Array<{ name: string; status: string }>;
   connections: {
     market: boolean;
-    supabase: boolean;
+    database?: boolean;
+    supabase?: boolean;
     redis: boolean;
     realtimeChannel: boolean;
   };

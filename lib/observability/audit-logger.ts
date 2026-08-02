@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 import { logger, requestContext } from '../utils/logger';
 
 export interface AuditLogEntry {
@@ -28,14 +28,12 @@ export class AuditLogger {
   public async log(entry: AuditLogEntry): Promise<void> {
     const correlation_id = requestContext.getStore()?.correlationId;
     try {
-      if (!getSupabaseClient().isConnected()) {
-         // Supabase not configured or table missing, fallback to console logger
+      if (!getDatabaseClient().isConnected()) {
          logger.info(`[AUDIT FALLBACK] ${entry.action} on ${entry.entity}:${entry.entity_id} - ${entry.status}`, { ...entry.details, correlation_id });
          return;
       }
       
-      // Real insert logic
-      await getSupabaseClient().insertAuditLog({
+      await getDatabaseClient().insertAuditLog({
          action: entry.action,
          entity_type: entry.entity,
          entity_id: entry.entity_id,
@@ -56,12 +54,12 @@ export class AuditLogger {
   public async logSignalAudit(payload: SignalAuditPayload): Promise<void> {
     const correlation_id = requestContext.getStore()?.correlationId;
     try {
-      if (!getSupabaseClient().isConnected()) {
+      if (!getDatabaseClient().isConnected()) {
         logger.info(`[SIGNAL AUDIT FALLBACK] Signal ${payload.signalId} decision: ${payload.decision} (${payload.reason})`, { correlation_id });
         return;
       }
 
-      await getSupabaseClient().insertAuditLog({
+      await getDatabaseClient().insertAuditLog({
         action: 'SIGNAL_VALIDATION_AUDIT',
         entity_type: 'signal',
         entity_id: payload.signalId,

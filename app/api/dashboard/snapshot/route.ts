@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { ApiResponse, DashboardSnapshot, StrategyResponse } from '@/types';
 import { getMarketDataService } from '@/lib/market-data/market-data-service';
-import { getSupabaseClient } from '@/lib/supabase/client';
+import { getDatabaseClient } from '@/lib/db/client';
 import { getAllStrategies, getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
 import { normalizeStrategyFromDB } from '@/lib/trading-engine/strategy-normalize';
 import { healthCheckEngine } from '@/lib/observability/health-check';
@@ -56,7 +56,7 @@ export async function GET(req: Request) {
           status: 'active',
         }));
 
-        const dbStrategies = await getSupabaseClient().getStrategies().catch(() => null);
+        const dbStrategies = await getDatabaseClient().getStrategies().catch(() => null);
         let baseStrategies = configStrategies;
         if (dbStrategies && Array.isArray(dbStrategies)) {
           baseStrategies = [...configStrategies];
@@ -69,7 +69,7 @@ export async function GET(req: Request) {
         }
 
         const statePromises = baseStrategies.map(strategy =>
-          getSupabaseClient().getStrategyState(strategy.id).catch(() => null)
+          getDatabaseClient().getStrategyState(strategy.id).catch(() => null)
         );
         const states = await Promise.all(statePromises);
 
@@ -108,8 +108,8 @@ export async function GET(req: Request) {
         }
         return normalizedList;
       })(),
-      getSupabaseClient().getActiveSignals().catch(() => []),
-      getSupabaseClient().getHistoricalSignals().catch(() => []),
+      getDatabaseClient().getActiveSignals().catch(() => []),
+      getDatabaseClient().getHistoricalSignals().catch(() => []),
       getMarketDataService().getLatestNews().catch(() => []),
       getQueueManager().getQueueSize().catch(() => -1)
     ]);
@@ -224,13 +224,14 @@ export async function GET(req: Request) {
     };
 
     // Connections verification matching health check service names case-insensitively
-    const supabaseService = services.find((s: any) => s.serviceName?.toLowerCase() === 'supabase' || s.serviceName?.toLowerCase() === 'database');
+    const dbService = services.find((s: any) => s.serviceName?.toLowerCase() === 'supabase' || s.serviceName?.toLowerCase() === 'database' || s.serviceName?.toLowerCase() === 'postgres');
     const marketService = services.find((s: any) => s.serviceName?.toLowerCase() === 'marketdata' || s.serviceName?.toLowerCase() === 'twelvedata' || s.serviceName?.toLowerCase() === 'yahoofinance');
     const redisService = services.find((s: any) => s.serviceName?.toLowerCase() === 'redis');
 
     const connections = {
       market: marketService ? marketService.status === 'ONLINE' : (market !== null && typeof market.price === 'number' && market.price > 0),
-      supabase: supabaseService ? supabaseService.status === 'ONLINE' : getSupabaseClient().isConnected(),
+      database: dbService ? dbService.status === 'ONLINE' : getDatabaseClient().isConnected(),
+      supabase: dbService ? dbService.status === 'ONLINE' : getDatabaseClient().isConnected(),
       redis: redisService ? redisService.status === 'ONLINE' : getQueueManager().isConnected(),
       realtimeChannel: true
     };

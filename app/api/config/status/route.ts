@@ -30,6 +30,8 @@ export async function GET() {
     return 'configured';
   };
 
+  const hasDbConfig = !!(getEnv('DATABASE_URL') || getEnv('POSTGRES_URL') || getEnv('SUPABASE_DB_URL'));
+
   const response: ApiResponse<any> = {
     success: true,
     data: {
@@ -41,8 +43,7 @@ export async function GET() {
         twitter_bearer_token: getMcpServiceStatus('TWITTER_BEARER_TOKEN', 'Twitter Bearer'),
         telegram_bot_token: getHealthServiceStatus('TELEGRAM_BOT_TOKEN', 'TelegramBot'),
         telegram_chat_id: getEnv('TELEGRAM_CHAT_ID') ? 'configured' : 'not configured',
-        next_public_supabase_url: getHealthServiceStatus('NEXT_PUBLIC_SUPABASE_URL', 'Supabase'),
-        supabase_service_role_key: getHealthServiceStatus('SUPABASE_SERVICE_ROLE_KEY', 'Supabase'),
+        database_url: hasDbConfig ? 'configured' : 'not configured',
         app_url: getEnv('APP_URL') ? 'configured' : 'not configured',
         redis_url: getEnv('REDIS_URL') ? 'configured' : 'not configured',
         python_engine_url: (() => {
@@ -64,6 +65,7 @@ export async function GET() {
         NEWS_API_KEY: getEnv('NEWS_API_KEY') ? '••••••••' : '',
         TELEGRAM_BOT_TOKEN: getEnv('TELEGRAM_BOT_TOKEN') ? '••••••••' : '',
         GEMINI_API_KEY: getEnv('GEMINI_API_KEY') ? '••••••••' : '',
+        DATABASE_URL: hasDbConfig ? '••••••••' : '',
       },
       lastChecked: new Date().toISOString()
     },
@@ -76,4 +78,3 @@ export async function GET() {
 
   return NextResponse.json(response);
 }
-

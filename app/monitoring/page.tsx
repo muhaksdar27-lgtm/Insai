@@ -184,7 +184,7 @@ export default function Monitoring() {
             {error?.message?.includes("Closed") ? "Market Closed" :
              error?.message?.includes("Stale") ? "Data Stale" :
              error?.message?.includes("Offline") ? "Provider Offline" :
-             error?.message?.includes("Supabase") ? "Supabase Down" :
+             (error?.message?.includes("Supabase") || error?.message?.includes("Database") || error?.message?.includes("Postgres")) ? "Database Down" :
              error?.message?.includes("Redis") ? "Redis Down" :
              error?.message?.includes("AI") ? "AI Validation Failed" :
              "Scanner Disconnected"}

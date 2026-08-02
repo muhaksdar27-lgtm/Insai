@@ -13,8 +13,9 @@ const ALLOWED_KEYS = new Set([
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',
   'GEMINI_API_KEY',
-  'NEXT_PUBLIC_SUPABASE_URL',
-  'SUPABASE_SERVICE_ROLE_KEY',
+  'DATABASE_URL',
+  'POSTGRES_URL',
+  'SUPABASE_DB_URL',
   'PYTHON_ENGINE_URL',
   'REDIS_URL',
   'STANDARD_PIP_BUFFER',
@@ -149,4 +150,3 @@ export async function POST(req: Request) {
     return NextResponse.json(errorResponse, { status: 500 });
   }
 }
-

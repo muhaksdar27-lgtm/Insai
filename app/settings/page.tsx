@@ -58,7 +58,7 @@ const ENGINE_DEFINITIONS: EngineCardDef[] = [
   {
     id: 'database',
     name: 'Database Engine',
-    typeLabel: 'Supabase / PostgreSQL',
+    typeLabel: 'PostgreSQL Database',
     description: 'Persistent Trade History, Metrics & Audit Logs',
     icon: Server,
   },

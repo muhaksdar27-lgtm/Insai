@@ -5,7 +5,7 @@ import { StrategyState } from '../state-machine';
 import { logger } from '../../utils/logger';
 import { getProviderRegistry } from '../../market-data/provider-registry';
 import { getEnv } from '../../utils/env';
-import { getSupabaseClient } from '../../supabase/client';
+import { getDatabaseClient } from '../../db/client';
 
 import { getStrategyDefinition } from '../strategy-registry';
 import { ValidatorResult } from './validators';
@@ -300,8 +300,8 @@ export class AIValidationOrchestrator {
           const embedding = embedRes.embeddings?.[0]?.values;
           
           if (embedding && embedding.length > 0) {
-              const supabase = getSupabaseClient();
-              const similarSignals = await supabase.findSimilarHistory(embedding, 0.7, 5);
+              const db = getDatabaseClient();
+              const similarSignals = await db.findSimilarHistory(embedding, 0.7, 5);
               if (similarSignals && similarSignals.length > 0) {
                   const winCount = similarSignals.filter((s: any) => s.outcome === 'WIN').length;
                   const lossCount = similarSignals.filter((s: any) => s.outcome === 'LOSS').length;

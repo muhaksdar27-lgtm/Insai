@@ -1,6 +1,6 @@
 import { RiskContext, RiskDecision, RiskLimits } from './types';
 import { positionSizingEngine } from './position-sizing';
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 import { logger } from '../utils/logger';
 import { 
     DailyRiskEngine, 
@@ -97,46 +97,50 @@ export class RiskEngine {
   }
 
   private async auditRiskDecision(decision: RiskDecision) {
-    if (!getSupabaseClient().isConnected() ) return;
+    if (!getDatabaseClient().isConnected()) return;
     try {
-      await getSupabaseClient().getClient()!.from('risk_events').insert({
-        strategy_id: decision.strategyReference,
-        decision: decision.status,
-        reason: decision.reason,
-        threshold_json: decision.thresholds
-      });
+      const db = getDatabaseClient();
+      const pool = db.getPool();
+      if (pool) {
+        await pool.query(
+          `INSERT INTO risk_events (strategy_id, decision, reason, threshold_json, created_at)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [decision.strategyReference, decision.status, decision.reason, JSON.stringify(decision.thresholds || {})]
+        );
+      }
     } catch (error) {
       logger.error('Error persisting risk decision', { reason: error instanceof Error ? error.message : String(error) });
     }
   }
 
   private async getSignalsCountToday(strategyId: string): Promise<number> {
-    if (!getSupabaseClient().isConnected() ) return 0;
+    if (!getDatabaseClient().isConnected()) return 0;
     try {
       const today = new Date();
       today.setHours(0,0,0,0);
-      const { count } = await getSupabaseClient().getClient()!
-        .from('signals')
-        .select('*', { count: 'exact', head: true })
-        .eq('strategy_id', strategyId)
-        .gte('created_at', today.toISOString());
-      return count || 0;
+      const pool = getDatabaseClient().getPool();
+      if (!pool) return 0;
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int as count FROM signals WHERE strategy_id = $1 AND created_at >= $2`,
+        [strategyId, today.toISOString()]
+      );
+      return rows[0]?.count || 0;
     } catch {
       return 0;
     }
   }
 
   private async getConsecutiveLosses(): Promise<number> {
-    if (!getSupabaseClient().isConnected() ) return 0;
+    if (!getDatabaseClient().isConnected()) return 0;
     try {
-      const { data } = await getSupabaseClient().getClient()!
-        .from('history')
-        .select('outcome')
-        .order('closed_at', { ascending: false })
-        .limit(10);
-      if (!data) return 0;
+      const pool = getDatabaseClient().getPool();
+      if (!pool) return 0;
+      const { rows } = await pool.query(
+        `SELECT outcome FROM history ORDER BY closed_at DESC LIMIT 10`
+      );
+      if (!rows) return 0;
       let lossCount = 0;
-      for (const row of data) {
+      for (const row of rows) {
         if (row.outcome === 'LOSS') lossCount++;
         else break;
       }
@@ -147,24 +151,22 @@ export class RiskEngine {
   }
 
   private async getDailyLoss(): Promise<number> {
-    if (!getSupabaseClient().isConnected() ) return 0;
+    if (!getDatabaseClient().isConnected()) return 0;
     try {
       const today = new Date();
       today.setHours(0,0,0,0);
-      
-      const { data } = await getSupabaseClient().getClient()!
-        .from('history')
-        .select('rr_realized')
-        .gte('closed_at', today.toISOString());
-        
-      if (!data) return 0;
-      
+      const pool = getDatabaseClient().getPool();
+      if (!pool) return 0;
+      const { rows } = await pool.query(
+        `SELECT rr_realized FROM history WHERE closed_at >= $1`,
+        [today.toISOString()]
+      );
+      if (!rows) return 0;
       let totalDailyRr = 0;
-      for (const row of data) {
+      for (const row of rows) {
         const rr = Number(row.rr_realized) || 0;
         totalDailyRr += rr;
       }
-      
       return totalDailyRr < 0 ? Math.abs(totalDailyRr) : 0;
     } catch {
       return 0;
@@ -172,19 +174,19 @@ export class RiskEngine {
   }
 
   private async getCurrentDrawdown(): Promise<number> {
-    if (!getSupabaseClient().isConnected() ) return 0;
+    if (!getDatabaseClient().isConnected()) return 0;
     try {
-      const { data } = await getSupabaseClient().getClient()!
-        .from('history')
-        .select('rr_realized')
-        .order('closed_at', { ascending: true })
-        .limit(100);
-      if (!data || data.length === 0) return 0;
+      const pool = getDatabaseClient().getPool();
+      if (!pool) return 0;
+      const { rows } = await pool.query(
+        `SELECT rr_realized FROM history ORDER BY closed_at ASC LIMIT 100`
+      );
+      if (!rows || rows.length === 0) return 0;
       let balance = 100;
       let peak = balance;
       let maxDrawdown = 0;
       let currentDrawdown = 0;
-      for (const row of data) {
+      for (const row of rows) {
         const rr = Number(row.rr_realized) || 0;
         balance += rr;
         

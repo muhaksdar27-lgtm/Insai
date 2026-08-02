@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger';
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 
 export type MCPStatusType = 'ONLINE' | 'NOT CONFIGURED' | 'DISABLED' | 'UNAVAILABLE' | 'OFFLINE' | 'RATE LIMITED' | 'DEGRADED' | 'QUOTA_EXCEEDED' | 'LOCKED' | 'PROVIDER_ERROR' | 'CACHE_TIMEOUT' | 'INVALID_KEY';
 
@@ -72,20 +72,20 @@ export class MCPRegistry {
     this.registerMCP('RR Optimizer', 'Signal Quality', 'mengecek rasio risiko-imbalan', 'Internal', 'NOT CONFIGURED', '', ['Entry Quality Engine', 'Exit Quality Engine']);
     this.registerMCP('Trade Ranking Engine', 'Signal Quality', 'memberi peringkat setup', 'Internal', 'NOT CONFIGURED', '', ['Signal Score Engine', 'Probability Engine']);
     this.registerMCP('Signal Suppression Engine', 'Signal Quality', 'menahan signal yang lemah', 'Internal', 'NOT CONFIGURED', '', ['Signal Score Engine', 'News Impact Suppression Layer']);
-    this.registerMCP('Anti Overtrade Engine', 'Signal Quality', 'membatasi frekuensi trade', 'Internal', 'NOT CONFIGURED', '', ['Supabase']);
+    this.registerMCP('Anti Overtrade Engine', 'Signal Quality', 'membatasi frekuensi trade', 'Internal', 'NOT CONFIGURED', '', ['PostgreSQL DB']);
     this.registerMCP('Profit Consistency Filter', 'Signal Quality', 'memfilter setup yang tidak konsisten', 'Internal', 'NOT CONFIGURED', '', ['Historical Replay Engine']);
-    this.registerMCP('Signal Quality Score Engine', 'Signal Quality', 'menilai kualitas signal', 'Internal', 'NOT CONFIGURED', '', ['Supabase']);
+    this.registerMCP('Signal Quality Score Engine', 'Signal Quality', 'menilai kualitas signal', 'Internal', 'NOT CONFIGURED', '', ['PostgreSQL DB']);
     this.registerMCP('Quality Gate', 'Signal Quality', 'pemeriksaan akhir sebelum live signal', 'Internal', 'ONLINE', '', ['Consistency Engine']);
 
     // 6) Risk
     this.registerMCP('Position Sizing Engine', 'Risk', 'ukuran posisi', 'Internal', 'ONLINE', '', []);
-    this.registerMCP('Daily Risk Engine', 'Risk', 'batas risiko harian', 'Internal', 'ONLINE', '', ['Supabase']);
-    this.registerMCP('Consecutive Loss Protection', 'Risk', 'proteksi loss beruntun', 'Internal', 'ONLINE', '', ['Supabase']);
-    this.registerMCP('Capital Preservation Engine', 'Risk', 'menjaga modal', 'Internal', 'ONLINE', '', ['Supabase']);
-    this.registerMCP('Drawdown Guard', 'Risk', 'proteksi drawdown', 'Internal', 'ONLINE', '', ['Supabase']);
+    this.registerMCP('Daily Risk Engine', 'Risk', 'batas risiko harian', 'Internal', 'ONLINE', '', ['PostgreSQL DB']);
+    this.registerMCP('Consecutive Loss Protection', 'Risk', 'proteksi loss beruntun', 'Internal', 'ONLINE', '', ['PostgreSQL DB']);
+    this.registerMCP('Capital Preservation Engine', 'Risk', 'menjaga modal', 'Internal', 'ONLINE', '', ['PostgreSQL DB']);
+    this.registerMCP('Drawdown Guard', 'Risk', 'proteksi drawdown', 'Internal', 'ONLINE', '', ['PostgreSQL DB']);
 
     // 7) Database / Memory / Cache
-    this.registerMCP('Supabase', 'Database / Memory / Cache', 'penyimpanan state, history, config, audit', 'Database API', 'NOT CONFIGURED', 'Requires SUPABASE_URL and KEY', []);
+    this.registerMCP('PostgreSQL DB', 'Database / Memory / Cache', 'penyimpanan state, history, config, audit', 'Database API', 'ONLINE', 'Requires DATABASE_URL', []);
 
     // 8) Observability
     this.registerMCP('Logger', 'Observability', 'log event sistem', 'Internal', 'ONLINE', '', []);
@@ -126,11 +126,11 @@ export class MCPRegistry {
   }
 
   public async syncToDatabase() {
-    if (!getSupabaseClient().isConnected()) return;
+    if (!getDatabaseClient().isConnected()) return;
     
     const all = Array.from(this.mcps.values());
     for (const mcp of all) {
-      await getSupabaseClient().upsertMCPService({
+      await getDatabaseClient().upsertMCPService({
         name: mcp.name,
         category: mcp.category,
         purpose: mcp.purpose,
@@ -150,8 +150,8 @@ export class MCPRegistry {
   }
 
   public async getAllStatusAsync(): Promise<any[]> {
-    if (getSupabaseClient().isConnected()) {
-       const dbList = await getSupabaseClient().getMCPServices();
+    if (getDatabaseClient().isConnected()) {
+       const dbList = await getDatabaseClient().getMCPServices();
        if (dbList && Array.isArray(dbList) && dbList.length > 0) {
          return dbList.map((row: any) => ({
            name: row.name,
@@ -182,8 +182,8 @@ export class MCPRegistry {
       mcp.lastError = null;
       logger.info(`MCP ${name} is connected (ONLINE).`);
       
-      if (statusChanged && getSupabaseClient().isConnected()) {
-         await getSupabaseClient().upsertMCPService({
+      if (statusChanged && getDatabaseClient().isConnected()) {
+         await getDatabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,
@@ -204,8 +204,8 @@ export class MCPRegistry {
       mcp.lastError = reason;
       logger.warn(`MCP ${name} is NOT CONFIGURED: ${reason}`);
       
-      if (statusChanged && getSupabaseClient().isConnected()) {
-         await getSupabaseClient().upsertMCPService({
+      if (statusChanged && getDatabaseClient().isConnected()) {
+         await getDatabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,
@@ -224,8 +224,8 @@ export class MCPRegistry {
       mcp.lastError = reason;
       logger.warn(`MCP ${name} is OFFLINE: ${reason}`);
       
-      if (statusChanged && getSupabaseClient().isConnected()) {
-         await getSupabaseClient().upsertMCPService({
+      if (statusChanged && getDatabaseClient().isConnected()) {
+         await getDatabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,
@@ -256,8 +256,8 @@ export class MCPRegistry {
       mcp.lastError = error;
       logger.error(`MCP ${name} encountered an error: ${error}`);
       
-      if (statusChanged && getSupabaseClient().isConnected()) {
-         await getSupabaseClient().upsertMCPService({
+      if (statusChanged && getDatabaseClient().isConnected()) {
+         await getDatabaseClient().upsertMCPService({
            name: mcp.name,
            status: mcp.status,
            last_checked_at: mcp.lastCheck,

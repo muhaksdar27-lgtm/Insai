@@ -1,7 +1,7 @@
 import { getEnv } from "../utils/env";
 import { logger } from '../utils/logger';
 import { getMcpRegistry } from './registry';
-import { getSupabaseClient } from '../supabase/client';
+import { getDatabaseClient } from '../db/client';
 import { PythonEngineManager } from './engines/deployment';
 
 export class MCPManager {
@@ -40,8 +40,6 @@ export class MCPManager {
     // Deployment MCPs
     await this.initDeployment();
 
-    // The rest are marked as not configured in registry. No active initialization needed yet.
-    
     // Sync to database
     await getMcpRegistry().syncToDatabase();
     
@@ -150,28 +148,15 @@ export class MCPManager {
   }
 
   private async initDatabase() {
-    const sb = getSupabaseClient().getClient();
-    if (sb) {
-        try {
-           const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000));
-           const { error } = (await Promise.race([
-             sb.from('strategies').select('id').limit(1),
-             timeoutPromise
-           ])) as any;
-           if (error) {
-               if (error.code === 'PGRST114' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
-                   getMcpRegistry().reportConnected('Supabase');
-               } else {
-                   getMcpRegistry().reportError('Supabase', error.message);
-               }
-           } else {
-               getMcpRegistry().reportConnected('Supabase');
-           }
-        } catch(e: any) {
-           getMcpRegistry().reportError('Supabase', e.message);
-         }
-    } else {
-      getMcpRegistry().reportNotConfigured('Supabase', 'Missing Supabase URL or Service Role Key');
+    try {
+      const pingResult = await getDatabaseClient().ping();
+      if (pingResult.connected) {
+        getMcpRegistry().reportConnected('PostgreSQL DB');
+      } else {
+        getMcpRegistry().reportNotConfigured('PostgreSQL DB', pingResult.error || 'DATABASE_URL not set or connection failed');
+      }
+    } catch (e: any) {
+      getMcpRegistry().reportError('PostgreSQL DB', e.message);
     }
   }
 
@@ -223,7 +208,6 @@ export class MCPManager {
 
     const geminiKey = getEnv("GEMINI_API_KEY");
     if (geminiKey) {
-       // Just doing a simple check. If we want a real ping, we can just fetch models list.
        try {
            const res = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
            const data = await res.json();
@@ -243,14 +227,11 @@ export class MCPManager {
   private async initTwitter() {
     const twitterKey = getEnv("TWITTER_BEARER_TOKEN");
     if (twitterKey) {
-       // Just simple validation for length or we can ping. Usually ping takes time and twitter limits are strict.
        getMcpRegistry().reportConnected('Twitter Bearer');
     } else {
       getMcpRegistry().reportNotConfigured('Twitter Bearer', 'Missing TWITTER_BEARER_TOKEN');
     }
   }
-
-  // Future: Dependency injection and orchestration logic between MCPs will go here.
 }
 
 let _mcpManager: MCPManager | null = null;

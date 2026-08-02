@@ -6,8 +6,7 @@ export function validateEnvironment(): void {
         'GEMINI_API_KEY',
         'TWELVEDATA_API_KEY',
         'POLYGON_API_KEY',
-        'NEXT_PUBLIC_SUPABASE_URL',
-        'SUPABASE_SERVICE_ROLE_KEY',
+        'DATABASE_URL',
         'NEWS_API_KEY',
         'TELEGRAM_BOT_TOKEN',
         'TELEGRAM_CHAT_ID',
@@ -16,8 +15,8 @@ export function validateEnvironment(): void {
     ];
 
     const missingRecommended = recommendedVars.filter(v => {
-        if (v === 'NEXT_PUBLIC_SUPABASE_URL') {
-            return !getEnv('NEXT_PUBLIC_SUPABASE_URL') && !getEnv('SUPABASE_URL');
+        if (v === 'DATABASE_URL') {
+            return !getEnv('DATABASE_URL') && !getEnv('POSTGRES_URL') && !getEnv('SUPABASE_DB_URL');
         }
         return !getEnv(v);
     });

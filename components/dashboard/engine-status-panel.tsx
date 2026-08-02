@@ -11,7 +11,8 @@ interface EngineStatusPanelProps {
 
 export const EngineStatusPanel = memo(function EngineStatusPanel({ engine, system }: EngineStatusPanelProps) {
   const isEngineActive = engine.status === 'running' || engine.status === 'active';
-  const conn = system.connections || { market: true, supabase: true, redis: true, realtimeChannel: true };
+  const conn = system.connections || { market: true, database: true, supabase: true, redis: true, realtimeChannel: true };
+  const isDbConnected = conn.database ?? conn.supabase ?? true;
 
   return (
     <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-lg p-3 shadow-md backdrop-blur-md space-y-3">
@@ -70,11 +71,11 @@ export const EngineStatusPanel = memo(function EngineStatusPanel({ engine, syste
           <span className="font-mono font-bold uppercase">{conn.market ? 'ONLINE' : 'OFFLINE'}</span>
         </div>
 
-        <div className={`flex items-center justify-between p-1.5 rounded border ${conn.supabase ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300' : 'bg-rose-950/20 border-rose-800/40 text-rose-300'}`}>
+        <div className={`flex items-center justify-between p-1.5 rounded border ${isDbConnected ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300' : 'bg-rose-950/20 border-rose-800/40 text-rose-300'}`}>
           <span className="font-mono flex items-center gap-1 font-bold">
-            <Database className="w-2.5 h-2.5 shrink-0" /> Supabase DB
+            <Database className="w-2.5 h-2.5 shrink-0" /> PostgreSQL DB
           </span>
-          <span className="font-mono font-bold uppercase">{conn.supabase ? 'ONLINE' : 'OFFLINE'}</span>
+          <span className="font-mono font-bold uppercase">{isDbConnected ? 'ONLINE' : 'OFFLINE'}</span>
         </div>
 
         <div className={`flex items-center justify-between p-1.5 rounded border ${conn.redis ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-300' : 'bg-rose-950/20 border-rose-800/40 text-rose-300'}`}>

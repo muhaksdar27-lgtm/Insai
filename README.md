@@ -1,12 +1,12 @@
 # AI Studio Trading Applet
 
-A real-time, robust trading engine applet. This system features real data fetching from TwelveData (and Polygon.io fallback), local Python engines for AI operations, Supabase for state management, and Redis for queues and deduplication.
+A real-time, robust trading engine applet. This system features real data fetching from TwelveData (and Polygon.io fallback), local Python engines for AI operations, pure native PostgreSQL for state management, and Redis for queues and deduplication.
 
 ## Features
 
 - **Full-Stack Next.js 15+ App Router**: Powers the user interface and the primary routing mechanisms.
 - **Python Backend Engine**: A FastAPI local service (`python-engine`) optimized for running math-intensive AI operations or indicators.
-- **Durable Persistence**: Built on Supabase for signal history, states, auditing, and market snapshots.
+- **Durable Persistence**: Built on pure native PostgreSQL (`pg` connection pool) for signal history, states, auditing, and market snapshots.
 - **Market Data Pipelines**: Integrates with external APIs (TwelveData, NFS Economic Calendar) in real time.
 - **MCP Integration & AI Orchestrator**: Uses Gemini AI via MCP patterns to generate reasoned decisions on trade signals.
 - **Health Checks & Circuit Breaking**: Robust fault-tolerant architecture handling dependency downtimes without crash-looping.
@@ -15,7 +15,7 @@ A real-time, robust trading engine applet. This system features real data fetchi
 
 1. **Node.js 22+**
 2. **Python 3.11+**
-3. **Supabase & Redis**: Required for distributed queue, state persistence, and audit logging.
+3. **PostgreSQL & Redis**: Required for distributed queue, state persistence, and audit logging.
 
 ## Installation & Setup
 
@@ -37,7 +37,7 @@ A real-time, robust trading engine applet. This system features real data fetchi
    ```
 
 3. **Database Migration**
-   Execute `lib/supabase/schema.sql` against your Supabase SQL editor to create the required tables.
+   Execute `lib/db/schema.sql` against your PostgreSQL database to create the required tables.
 
 4. **Run Development Server**
    ```bash
@@ -49,6 +49,7 @@ A real-time, robust trading engine applet. This system features real data fetchi
 Built and configured to run securely via **Nixpacks** on Railway. `railway.json` and `nixpacks.toml` encapsulate the required build steps automatically.
 
 ```bash
+bash
 npm run build
 npm run start
 ```

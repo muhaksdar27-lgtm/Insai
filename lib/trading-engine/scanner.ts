@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "../supabase/client";
+import { getDatabaseClient } from "../db/client";
 import { healthCheckEngine } from "../observability/health-check";
 import { TradingEngine } from './engine';
 import { getMarketDataService } from '../market-data/market-data-service';
@@ -140,7 +140,7 @@ export class MarketScanner {
       } else {
          try {
            
-           const strats = await getSupabaseClient().getStrategies();
+           const strats = await getDatabaseClient().getStrategies();
            if (Array.isArray(strats) && strats.length > 0) {
              const activeStrats = strats.filter(s => s.enabled);
              if (activeStrats.length > 0) {
