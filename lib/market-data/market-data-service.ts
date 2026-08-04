@@ -2,6 +2,7 @@ import { MarketSnapshot, Candle, NewsEvent, CalendarEvent } from '@/types';
 import { TwelveDataProvider } from './providers/twelvedata';
 import { NewsApiProvider } from './providers/newsapi';
 import { YahooFinanceProvider } from './providers/yahoofinance';
+import { BinanceProvider } from './providers/binance';
 import { TwitterProvider } from './providers/twitter';
 import { ForexFactoryProvider } from './providers/forexfactory';
 import { getProviderRegistry } from './provider-registry';
@@ -20,7 +21,7 @@ export class MarketDataService {
 
   // Cache
   private priceCache: Map<string, { data: MarketSnapshot, expiresAt: number }> = new Map();
-  private readonly PRICE_CACHE_TTL_MS = 30000; // 30 seconds for price cache
+  private readonly PRICE_CACHE_TTL_MS = 10000; // 10 seconds for price cache to ensure freshness
 
   constructor() {
     this.priceChain = new FallbackChain<PriceProvider>();
@@ -32,6 +33,8 @@ export class MarketDataService {
     this.priceChain.addProvider(new TwelveDataProvider(), 'TwelveData');
     // 2. Yahoo Finance (Secondary/Fallback)
     this.priceChain.addProvider(new YahooFinanceProvider(), 'YahooFinance');
+    // 3. Binance (Tertiary/Proxy Fallback)
+    this.priceChain.addProvider(new BinanceProvider(), 'Binance');
 
     // Fallback chain for news
     this.newsChain.addProvider(new NewsApiProvider(), 'NewsAPI');

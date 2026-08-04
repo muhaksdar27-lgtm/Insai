@@ -176,12 +176,12 @@ export class TwelveDataProvider implements PriceProvider {
     const cached = this.latestPrices.get(symbol);
     if (cached) {
       const ageMs = Date.now() - new Date(cached.timestamp).getTime();
-      if (ageMs < 60000) {
+      if (ageMs < 15000) {
         return cached;
       }
     }
 
-    // Fallback to HTTP Polling if WS is stale or not connected
+    // Fallback to HTTP Polling if WS is stale (>15s) or not connected
     try {
       logger.info(`TwelveData REST: Fetching live price (input: ${symbol}, mapped: ${formattedSymbol})`);
       const res = await fetchWithRetry(`https://api.twelvedata.com/price?symbol=${formattedSymbol}&apikey=${this.currentApiKey}`, {
@@ -196,13 +196,15 @@ export class TwelveDataProvider implements PriceProvider {
       }
 
       getProviderRegistry().reportSuccess(this.name);
-      return {
+      const freshSnapshot: MarketSnapshot = {
         symbol,
         price: parseFloat(data.price),
         timestamp: new Date().toISOString(),
         provider: this.name,
         freshness: 'live'
       };
+      this.latestPrices.set(symbol, freshSnapshot);
+      return freshSnapshot;
     } catch (e: any) {
       if (!e.message?.includes('not supported by TwelveData')) {
         getProviderRegistry().reportError(this.name, e.message);
