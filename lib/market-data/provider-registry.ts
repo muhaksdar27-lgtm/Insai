@@ -63,12 +63,12 @@ export class ProviderRegistry {
       provider.healthStatus = 'UNAVAILABLE';
       provider.lastError = error;
       
-      const isRateLimited = error && (error.includes('429') || error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('exhausted'));
-      const isInvalidKey = error && (error.includes('401') || error.includes('403') || error.toLowerCase().includes('invalid key') || error.toLowerCase().includes('unauthorized'));
+      const isRateLimited = error && (error.includes('429') || error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('exhausted') || error.toLowerCase().includes('depleted'));
+      const isInvalidKey = error && (error.includes('401') || error.includes('403') || error.toLowerCase().includes('invalid key') || error.toLowerCase().includes('unauthorized') || error.toLowerCase().includes('forbidden'));
       
       if (isRateLimited) {
         provider.failures = this.cbConfig.failureThreshold; // instantly open circuit breaker
-        if (error.toLowerCase().includes('quota') || error.toLowerCase().includes('exhausted')) {
+        if (error.toLowerCase().includes('quota') || error.toLowerCase().includes('exhausted') || error.toLowerCase().includes('depleted')) {
            provider.healthStatus = 'QUOTA_EXCEEDED';
         } else {
            provider.healthStatus = 'RATE LIMITED';

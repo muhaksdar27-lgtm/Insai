@@ -99,7 +99,11 @@ export class MarketDataService {
     if (!marketStatus.isOpen) {
       snapshot.freshness = 'closed';
     } else if (now - snapshotTime > freshnessWindowMs) {
-      logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
+      if (symbol === 'XAUUSD') {
+        logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
+      } else {
+        logger.info(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
+      }
       snapshot.freshness = 'stale';
     } else {
       snapshot.freshness = 'live';

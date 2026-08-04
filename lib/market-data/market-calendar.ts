@@ -1,5 +1,4 @@
 import { MarketSnapshot } from '@/types';
-import { logger } from '../utils/logger';
 
 export interface MarketCalendarStatus {
   isOpen: boolean;
@@ -79,10 +78,6 @@ export class MarketCalendar {
     }
 
     const isHardBlocked = !isOpen || !isFresh || !isHealthy;
-
-    if (isHardBlocked && blockReason) {
-      logger.warn(`[MARKET_HARD_BLOCK] Symbol: ${symbol} | Reason: ${blockReason}`);
-    }
 
     return {
       isOpen,

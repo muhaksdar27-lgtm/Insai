@@ -155,7 +155,6 @@ export class TwelveDataProvider implements PriceProvider {
     const norm = symbol.toUpperCase().trim();
     if (norm === 'XAUUSD') return 'XAU/USD';
     if (norm === 'DXY' || norm === 'US10Y') {
-        logger.info(`TwelveData mapping failed for input: ${symbol} - not supported by TwelveData directly`);
         throw new Error(`Symbol ${norm} not supported by TwelveData directly (mapping invalid)`);
     }
     return norm;

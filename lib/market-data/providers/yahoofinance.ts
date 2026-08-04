@@ -43,7 +43,7 @@ export class YahooFinanceProvider implements PriceProvider {
       return {
         symbol,
         price: quote.regularMarketPrice,
-        timestamp: (quote.regularMarketTime ? new Date(quote.regularMarketTime) : new Date()).toISOString(),
+        timestamp: new Date().toISOString(),
         provider: this.name,
         freshness: 'live'
       };
