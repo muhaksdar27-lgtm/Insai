@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getDatabaseClient } from '@/lib/db/client';
+import { transformAiChecklist } from '@/lib/utils/rule-transformer';
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +98,7 @@ export async function GET() {
       }
 
       // Extract aiChecklist from signal_evidence
-      const aiChecklist = (signal.signal_evidence || [])
+      const rawChecklistItems = (signal.signal_evidence || [])
         .filter((e: any) => e.engine_name === 'validation_pipeline' && e.evidence_type === 'checklist_item')
         .map((e: any) => ({
            rule: e.details?.rule || e.reason,
@@ -105,6 +106,7 @@ export async function GET() {
            reason: e.reason,
            evidence: e.details?.evidence
         }));
+      const aiChecklist = transformAiChecklist(rawChecklistItems);
 
       // Extract aiReview
       const aiReviewEvidence = (signal.signal_evidence || []).find((e: any) => e.engine_name === 'ai_validation' && e.evidence_type === 'ai_review');

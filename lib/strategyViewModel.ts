@@ -1,6 +1,7 @@
 import { StrategyResponse, DashboardCard, StrategyStep } from "@/types";
 import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName, normalizeStateName } from "@/lib/trading-engine/state-machine";
 import { getStrategyDefinition } from "@/lib/trading-engine/strategy-registry";
+import { transformCandidateRules, RuleValidationResult } from "@/lib/utils/rule-transformer";
 
 export const CANONICAL_STRATEGIES = [
   {
@@ -161,19 +162,21 @@ export function buildSetupSnapshot(strategyId: string, context: any) {
   return base;
 }
 
-export function buildRuleResults(strategyId: string, context: any) {
+export function buildRuleResults(strategyId: string, context: any): RuleValidationResult[] {
   const config = getStrategyConfig(strategyId);
   if (!config) return [];
   
   const rules = context || {};
+  const { rulesPassed } = transformCandidateRules(rules);
   
   return config.validationRules.map((ruleName: string) => {
     const matchedRule = rules[ruleName] || Object.values(rules).find((r: any) => r.ruleId === ruleName || r.name === ruleName);
+    const isPassed = matchedRule ? (matchedRule.passed || matchedRule.status === 'valid') : rulesPassed.includes(ruleName);
     
     return {
       ruleId: ruleName,
-      status: matchedRule ? (matchedRule.status || (matchedRule.passed ? 'valid' : 'invalid')) : "pending",
-      passed: matchedRule ? (matchedRule.passed || matchedRule.status === 'valid') : false,
+      status: matchedRule ? (matchedRule.status || (isPassed ? 'valid' : 'invalid')) : (isPassed ? 'valid' : 'pending'),
+      passed: isPassed,
       invalidations: matchedRule?.invalidations || [],
       evidence: matchedRule?.evidence || matchedRule?.details || null
     };

@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { notificationEngine } from '../notifications/notification-engine';
 import { getDatabaseClient } from '../db/client';
 import { metricsEngine } from '../observability/metrics-engine';
+import { consolidateValidationRules } from '@/lib/utils/rule-transformer';
 import crypto from 'crypto';
 
 export class SignalPipeline {
@@ -49,30 +50,9 @@ export class SignalPipeline {
 
       const snapshot = (setup as any).setupSnapshot || {};
       const candidateRules = (setup as any).candidateRules || (setup as any).context?.candidateRules || {};
-      
-      const rulesPassed: string[] = [];
-      const rulesFailed: string[] = [];
-      if (candidateRules && typeof candidateRules === 'object') {
-        for (const [k, v] of Object.entries(candidateRules)) {
-          const valObj = v as any;
-          if (valObj?.status === 'valid' || valObj?.status === 'PASS' || valObj === true) {
-            rulesPassed.push(k);
-          } else {
-            rulesFailed.push(k);
-          }
-        }
-      }
-
       const aiChecklist = (setup as any).aiValidation?.checklist;
-      if (Array.isArray(aiChecklist)) {
-        for (const item of aiChecklist) {
-          if (item.status === 'PASS' && item.rule && !rulesPassed.includes(item.rule)) {
-            rulesPassed.push(item.rule);
-          } else if (item.status === 'FAIL' && item.rule && !rulesFailed.includes(item.rule)) {
-            rulesFailed.push(item.rule);
-          }
-        }
-      }
+
+      const { rulesPassed, rulesFailed } = consolidateValidationRules(candidateRules, aiChecklist);
 
       const entry = setup.entryPrice || snapshot.entryPrice || snapshot.entry || 0;
       const sl = setup.slPrice || snapshot.slPrice || snapshot.sl || 0;

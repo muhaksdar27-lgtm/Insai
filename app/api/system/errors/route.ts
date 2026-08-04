@@ -8,7 +8,16 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const reqId = req.headers.get('x-request-id') || crypto.randomUUID();
   try {
-    const recentErrors = errorTracker.getRecentErrors();
+    const rawErrors = errorTracker.getRecentErrors();
+    const isProd = process.env.NODE_ENV === 'production';
+    
+    // Sanitize error stack traces and internal paths in production
+    const recentErrors = rawErrors.map((err: any) => ({
+      ...err,
+      stack: isProd ? undefined : err.stack,
+      message: err.message ? err.message.replace(/\/[\w.-]+\/[\w.-]+/g, '[REDACTED_PATH]') : err.message
+    }));
+
     const count24h = errorTracker.getErrorCountInLast24h();
     const response: ApiResponse<any> = {
       success: true,
@@ -24,10 +33,14 @@ export async function GET(req: Request) {
     };
     return NextResponse.json(response);
   } catch (error) {
+    const isProd = process.env.NODE_ENV === 'production';
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,
-      error: { code: 'ERRORS_API_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
+      error: { 
+        code: 'ERRORS_API_ERROR', 
+        message: isProd ? 'Internal System Error Monitoring' : (error instanceof Error ? error.message : 'Unknown error') 
+      },
       meta: {
         request_id: reqId,
         timestamp: new Date().toISOString()

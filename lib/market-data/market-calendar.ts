@@ -56,8 +56,14 @@ export class MarketCalendar {
     if (priceSnapshot) {
       const snapTime = priceSnapshot.timestamp ? new Date(priceSnapshot.timestamp).getTime() : 0;
       const ageMs = Date.now() - snapTime;
-      // Stale if older than 30 seconds or explicitly marked as stale
-      if (priceSnapshot.freshness === 'stale' || (snapTime > 0 && ageMs > 30000)) {
+      // Stale threshold: 60s for XAUUSD, 300s for correlations/others
+      const staleThresholdMs = symbol === 'XAUUSD' ? 60000 : 300000;
+      if (snapTime > 0 && ageMs > staleThresholdMs) {
+        isFresh = false;
+        if (!blockReason) {
+          blockReason = `Market price data for ${symbol} is stale (${Math.round(ageMs / 1000)}s old)`;
+        }
+      } else if (priceSnapshot.freshness === 'stale' && ageMs > 60000) {
         isFresh = false;
         if (!blockReason) {
           blockReason = `Market price data for ${symbol} is stale (${Math.round(ageMs / 1000)}s old)`;

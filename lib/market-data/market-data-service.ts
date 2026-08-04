@@ -41,7 +41,7 @@ export class MarketDataService {
     this.calendarChain.addProvider(new ForexFactoryProvider(), 'ForexFactory');
   }
 
-  async getLatestPrice(symbol: string, freshnessWindowMs: number = 15000): Promise<MarketSnapshot> {
+  async getLatestPrice(symbol: string, freshnessWindowMs: number = 60000): Promise<MarketSnapshot> {
     const now = Date.now();
     let cachedData = null;
 
@@ -101,7 +101,7 @@ export class MarketDataService {
     } else if (now - snapshotTime > freshnessWindowMs) {
       if (symbol === 'XAUUSD') {
         logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
-      } else {
+      } else if (symbol !== 'DXY' && symbol !== 'US10Y') {
         logger.info(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
       }
       snapshot.freshness = 'stale';
@@ -301,14 +301,14 @@ export class MarketDataService {
     return data;
   }
 
-  async getContextData(symbol: string, timeframe: string, freshnessWindowMs: number = 15000) {
+  async getContextData(symbol: string, timeframe: string, freshnessWindowMs: number = 60000) {
     const [price, news, calendar, candles, dxy, us10y] = await Promise.all([
       this.getLatestPrice(symbol, freshnessWindowMs),
       this.getLatestNews(),
       this.getCalendarEvents(),
       this.getCandles(symbol, timeframe, 250),
-      this.getLatestPrice('DXY', 300000).catch(() => ({ status: 'error', reason: 'Failed to fetch DXY' })),
-      this.getLatestPrice('US10Y', 300000).catch(() => ({ status: 'error', reason: 'Failed to fetch US10Y' }))
+      this.getLatestPrice('DXY', 3600000).catch(() => ({ status: 'error', reason: 'Failed to fetch DXY' })),
+      this.getLatestPrice('US10Y', 3600000).catch(() => ({ status: 'error', reason: 'Failed to fetch US10Y' }))
     ]);
     
     // COT Data - Requires CFTC API or Premium Data Provider (e.g., Quandl)

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { DashboardSnapshot } from "@/types";
 import { MarketPanel } from "@/components/dashboard/market-panel";
 import { EngineStatusPanel } from "@/components/dashboard/engine-status-panel";
-import { CanonicalStrategiesPanel } from "@/components/dashboard/canonical-strategies-panel";
+import { ExecutiveSummaryPanel } from "@/components/dashboard/executive-summary-panel";
 import { LiveSignalsPanel } from "@/components/dashboard/live-signals-panel";
 import { HistoryPerformancePanel } from "@/components/dashboard/history-performance-panel";
 import { SystemHealthPanel } from "@/components/dashboard/system-health-panel";
@@ -16,18 +16,26 @@ import { RefreshCw, AlertTriangle, ShieldCheck, Activity, Terminal } from "lucid
 export default function DashboardPage() {
   const { data: snapshot, loading, error, refetch } = useFetch<DashboardSnapshot | null>("/api/dashboard/snapshot", null);
   const [ping, setPing] = useState(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Single Event Bus Subscription for real-time single snapshot updates
+  // Debounced Event Bus Subscription to prevent SSE refetch thrashing
   const handleUpdate = useCallback(() => {
     setPing(true);
     setTimeout(() => setPing(false), 300);
-    refetch();
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      refetch();
+    }, 500); // 500ms debounce
   }, [refetch]);
 
   useEffect(() => {
     window.addEventListener("app-update", handleUpdate);
     window.addEventListener("app-refetch", handleUpdate);
     return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       window.removeEventListener("app-update", handleUpdate);
       window.removeEventListener("app-refetch", handleUpdate);
     };
@@ -122,10 +130,11 @@ export default function DashboardPage() {
 
           {/* Core Content Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            {/* Left Column - 2 Cols (Scanner, Signals, Performance) */}
+            {/* Left Column - 2 Cols (Executive Summary, Signals, Performance) */}
             <div className="lg:col-span-2 space-y-3">
-              <CanonicalStrategiesPanel
+              <ExecutiveSummaryPanel
                 strategies={snapshot.strategies}
+                signals={snapshot.signals}
               />
 
               <LiveSignalsPanel
