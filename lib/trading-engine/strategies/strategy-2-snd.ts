@@ -14,31 +14,37 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
   const pairMatch = symbol === 'XAUUSD';
   const currentSession = pyData.current_session || pyData.session || 'Any';
 
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
+  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
   const sdActive = !!pyData.sd_zone_active;
   const engulfBull = !!pyData.engulfing_bull;
   const engulfBear = !!pyData.engulfing_bear;
   const spreadAcceptable = pyData.spread_acceptable !== false;
   const atr = pyData.atr || 4.5;
   const currentPrice = pyData.current_price || context.candles?.[context.candles.length - 1]?.close;
+  const hasTrend = h1Trend === 'bullish' || h1Trend === 'bearish';
 
   const candidateRules = {
-    rule_pair_xauusd: {
+    rule_pair_restriction: {
       status: pairMatch ? 'valid' : 'invalid',
       evidence: { symbol, required: 'XAUUSD', match: pairMatch },
       description: 'Pair restriction strictly XAUUSD'
     },
-    rule_ma_trend: {
+    rule_session_restriction: {
       status: 'valid',
+      evidence: { session: currentSession, required: 'Any', valid: true },
+      description: 'Session Filter Window'
+    },
+    rule_h1_trend: {
+      status: hasTrend ? 'valid' : 'pending',
       evidence: { trend: h1Trend, timeframe: 'H1/H4', detail: 'MA Alignment Valid' },
       description: 'Moving Average Trend Alignment'
     },
-    rule_sd_zone_touch: {
+    rule_sd_zone: {
       status: sdActive ? 'valid' : 'pending',
       evidence: { activeZone: sdActive, detail: sdActive ? 'Price inside Supply/Demand Zone' : 'Monitoring S&D Zone' },
       description: 'Supply & Demand Zone Interaction'
     },
-    rule_engulfing_confirm: {
+    rule_engulfing_trigger: {
       status: (engulfBull || engulfBear) ? 'valid' : 'pending',
       evidence: { bullEngulf: engulfBull, bearEngulf: engulfBear, detail: (engulfBull || engulfBear) ? 'M15/M5 Engulfing Candlestick Confirmed' : 'Engulfing Candlestick Monitored' },
       description: 'M15/M5 Engulfing Candlestick Trigger'

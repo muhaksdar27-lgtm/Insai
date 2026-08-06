@@ -450,9 +450,7 @@ export class TradingEngine {
 
       // Dispatch signal (triggers [HISTORY SAVED], [LIVE SENT], and [TELEGRAM SENT])
       await SignalBuilder.buildAndDispatchSignal(winnerSetup, context);
-
-      this.setupDetector.transitionState(winnerSetup.id, 'archived', 'Signal processing complete');
-      await getDatabaseClient().archiveToHistory(winnerSetup.id, 'FINISHED', 25.0, 'WIN', context.correlationId).catch(() => null);
+      logger.info(`[DISPATCH COMPLETE] Signal ${winnerSetup.id} is now ACTIVE and published to Live Signals and Telegram.`);
     }
 
     this.setupDetector.audit();

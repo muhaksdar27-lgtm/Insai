@@ -18,32 +18,46 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
   const sdActive = !!pyData.sd_zone_active;
   const sweepBull = !!pyData.liq_sweep_bull;
   const sweepBear = !!pyData.liq_sweep_bear;
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
+  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
   const atr = pyData.atr || 4.5;
   const currentPrice = pyData.current_price || context.candles?.[context.candles.length - 1]?.close;
 
+  const pairMatch = symbol === 'XAUUSD';
+  const spreadAcceptable = pyData.spread_acceptable !== false;
+  const hasTrend = h1Trend === 'bullish' || h1Trend === 'bearish';
+
   const candidateRules = {
-    rule_h1_m15_structure: {
-      status: (bosBull || bosBear) ? 'valid' : 'pending',
-      evidence: { bosBull, bosBear, detail: (bosBull || bosBear) ? 'H1/M15 Structural Break Confirmed' : 'H1/M15 Structural Alignment Monitored' },
-      description: 'H1/M15 Structural Alignment (BOS/CHoCH)'
+    rule_pair_restriction: {
+      status: pairMatch ? 'valid' : 'invalid',
+      evidence: { symbol, required: 'XAUUSD', match: pairMatch },
+      description: 'Pair restriction strictly XAUUSD'
     },
-    rule_zone_overlap_2_of_3: {
-      status: sdActive ? 'valid' : 'pending',
-      evidence: { activeZone: sdActive, detail: sdActive ? 'S&D / Fibonacci Overlap Confirmed (2 of 3)' : 'Monitoring Zone Overlap' },
-      description: 'Supply & Demand / Fib Multi-Zone Overlap'
+    rule_session_restriction: {
+      status: 'valid',
+      evidence: { session: currentSession, required: 'Any', valid: true },
+      description: 'Session Filter Window'
     },
-    rule_liquidity_sweep: {
-      status: (sweepBull || sweepBear) ? 'valid' : 'pending',
-      evidence: { bullSweep: sweepBull, bearSweep: sweepBear, detail: (sweepBull || sweepBear) ? 'Liquidity Sweep at Confluence Level Confirmed' : 'Liquidity Sweep Monitored' },
-      description: 'Liquidity Sweep at Key Confluence Level'
+    rule_h1_trend: {
+      status: hasTrend ? 'valid' : 'pending',
+      evidence: { trend: h1Trend, timeframe: 'H1/M15', detail: 'H1/M15 Structural Alignment' },
+      description: 'H1 Higher Timeframe Trend Alignment'
     },
-    rule_entry_trigger: {
-      status: (bosBull || bosBear || sdActive || sweepBull || sweepBear) ? 'valid' : 'pending',
-      evidence: { detail: (bosBull || bosBear || sdActive || sweepBull || sweepBear) ? 'Trigger Candle Pattern Confirmed' : 'Monitoring Rejection Trigger Candle' },
-      description: 'Trigger Candle Rejection Pattern'
+    rule_confluence_overlap: {
+      status: ((bosBull || bosBear) && sdActive) ? 'valid' : 'pending',
+      evidence: { bosBull, bosBear, sdActive, detail: ((bosBull || bosBear) && sdActive) ? 'S&D & Structural Confluence Overlap Confirmed' : 'Monitoring Confluence Overlap' },
+      description: 'SMC-SD Multi-Zone Confluence Overlap'
     },
-    rule_rr_gate: {
+    rule_spread_check: {
+      status: spreadAcceptable ? 'valid' : 'invalid',
+      evidence: { acceptable: spreadAcceptable, detail: spreadAcceptable ? 'Spread within acceptable thresholds' : 'Spread exceeds limit' },
+      description: 'Spread Width Safety Gate'
+    },
+    rule_atr_sl_buffer: {
+      status: 'valid',
+      evidence: { atr, slBufferPips: ((atr * 0.4) * 10).toFixed(1) },
+      description: 'ATR (14) Dynamic Buffer'
+    },
+    rule_risk_reward: {
       status: 'valid',
       evidence: { minRR: '1:2+', detail: 'Risk/Reward Ratio Check Passed (Min 1:2+)' },
       description: 'Min 1:2 Risk/Reward Confluence Gate'

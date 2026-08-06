@@ -18,33 +18,36 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
   const currentSession = pyData.current_session || pyData.session || (isLondonHours ? 'London' : 'Asian/Off-Session');
   const sessionValid = isLondonHours && (currentSession === 'London' || currentSession === 'London/NY Overlap');
 
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
+  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
   const sweepBull = !!pyData.liq_sweep_bull;
   const sweepBear = !!pyData.liq_sweep_bear;
   const chochBull = !!pyData.choch_bull;
   const chochBear = !!pyData.choch_bear;
   const obFvgBull = !!pyData.ob_fvg_bull;
   const obFvgBear = !!pyData.ob_fvg_bear;
+  const spreadAcceptable = pyData.spread_acceptable !== false;
   const atr = pyData.atr || 4.5;
   const currentPrice = pyData.current_price || context.candles?.[context.candles.length - 1]?.close;
 
+  const hasTrend = h1Trend === 'bullish' || h1Trend === 'bearish';
+
   const candidateRules = {
-    rule_pair_xauusd: {
+    rule_pair_restriction: {
       status: pairMatch ? 'valid' : 'invalid',
       evidence: { symbol, required: 'XAUUSD', match: pairMatch },
       description: 'Pair restriction strictly XAUUSD'
     },
-    rule_session_london: {
+    rule_session_restriction: {
       status: sessionValid ? 'valid' : 'invalid',
       evidence: { session: currentSession, required: 'London', valid: sessionValid },
       description: 'London Session execution window'
     },
     rule_h1_trend: {
-      status: 'valid',
+      status: hasTrend ? 'valid' : 'pending',
       evidence: { trend: h1Trend, timeframe: 'H1', bias: h1Trend.toUpperCase() },
       description: 'H1 Higher Timeframe Trend Alignment'
     },
-    rule_asia_liquidity_sweep: {
+    rule_liquidity_sweep: {
       status: (sweepBull || sweepBear) ? 'valid' : 'pending',
       evidence: { bullSweep: sweepBull, bearSweep: sweepBear, detail: (sweepBull || sweepBear) ? 'Asia Liquidity Sweep Confirmed' : 'Asia Liquidity Sweep Monitored' },
       description: 'Asia Session High/Low Liquidity Sweep'
@@ -58,6 +61,11 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
       status: (obFvgBull || obFvgBear) ? 'valid' : 'pending',
       evidence: { obFvgBull, obFvgBear, detail: (obFvgBull || obFvgBear) ? 'Order Block / FVG Aligned' : 'Order Block / FVG Alignment Monitored' },
       description: 'Order Block & Fair Value Gap Alignment'
+    },
+    rule_spread_check: {
+      status: spreadAcceptable ? 'valid' : 'invalid',
+      evidence: { acceptable: spreadAcceptable, detail: spreadAcceptable ? 'Spread within acceptable thresholds' : 'Spread exceeds limit' },
+      description: 'Spread Width Safety Gate'
     },
     rule_atr_sl_buffer: {
       status: 'valid',

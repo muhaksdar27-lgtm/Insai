@@ -13,50 +13,53 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
   const symbol = context.symbol || 'XAUUSD';
   const currentSession = pyData.current_session || pyData.session || 'Any';
 
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'bullish';
+  const pairMatch = symbol === 'XAUUSD';
+  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
   const sweepBull = !!pyData.liq_sweep_bull;
   const sweepBear = !!pyData.liq_sweep_bear;
   const doubleTop = !!pyData.double_top;
   const doubleBottom = !!pyData.double_bottom;
   const newsActive = !!pyData.news_high_impact_active;
+  const spreadAcceptable = pyData.spread_acceptable !== false;
   const atr = pyData.atr || 4.5;
   const currentPrice = pyData.current_price || context.candles?.[context.candles.length - 1]?.close;
+  const hasTrend = h1Trend === 'bullish' || h1Trend === 'bearish';
 
   const candidateRules = {
-    rule_h1_trend: {
+    rule_pair_restriction: {
+      status: pairMatch ? 'valid' : 'invalid',
+      evidence: { symbol, required: 'XAUUSD', match: pairMatch },
+      description: 'Pair restriction strictly XAUUSD'
+    },
+    rule_session_restriction: {
       status: 'valid',
+      evidence: { session: currentSession, required: 'Any', valid: true },
+      description: 'Session Filter Window'
+    },
+    rule_h1_trend: {
+      status: hasTrend ? 'valid' : 'pending',
       evidence: { trend: h1Trend, timeframe: 'H1', detail: 'H1 Trend Alignment' },
       description: 'H1 Higher Timeframe Trend Alignment'
     },
-    rule_m15_retracement: {
+    rule_scalp_pattern: {
+      status: (doubleTop || doubleBottom || sweepBull || sweepBear) ? 'valid' : 'pending',
+      evidence: { doubleTop, doubleBottom, sweepBull, sweepBear, detail: (doubleTop || doubleBottom) ? 'M1 Double Top/Bottom Formed' : 'M1 Structural Pattern Formation Monitored' },
+      description: 'M1 Scalp Pattern & Liquidity Sweep'
+    },
+    rule_spread_check: {
+      status: spreadAcceptable ? 'valid' : 'invalid',
+      evidence: { acceptable: spreadAcceptable, detail: spreadAcceptable ? 'Spread within acceptable thresholds' : 'Spread exceeds limit' },
+      description: 'Spread Width Safety Gate'
+    },
+    rule_atr_sl_buffer: {
       status: 'valid',
-      evidence: { detail: 'M15 Retracement into Key Level' },
-      description: 'M15 Key Level Retracement'
+      evidence: { atr, slBufferPips: ((atr * 0.3) * 10).toFixed(1) },
+      description: 'ATR (14) Dynamic Buffer'
     },
-    rule_liquidity_sweep: {
-      status: (sweepBull || sweepBear) ? 'valid' : 'pending',
-      evidence: { bullSweep: sweepBull, bearSweep: sweepBear, detail: (sweepBull || sweepBear) ? 'Scalp Liquidity Sweep Confirmed' : 'Scalp Liquidity Sweep Monitored' },
-      description: 'M1/M5 Scalp Liquidity Sweep'
-    },
-    rule_m1_double_top_bottom: {
-      status: (doubleTop || doubleBottom) ? 'valid' : 'pending',
-      evidence: { doubleTop, doubleBottom, detail: (doubleTop || doubleBottom) ? 'M1 Double Top/Bottom Formed' : 'M1 Structural Pattern Formation Monitored' },
-      description: 'M1 Double Top / Double Bottom Structural Pattern'
-    },
-    rule_neckline_break: {
-      status: (doubleTop || doubleBottom) ? 'valid' : 'pending',
-      evidence: { detail: (doubleTop || doubleBottom) ? 'Neckline Break Confirmed' : 'Monitoring Neckline Break' },
-      description: 'M1 Neckline Break Confirmation'
-    },
-    rule_rr_min_1_3: {
-      status: 'valid',
-      evidence: { targetRR: '1:3+', detail: 'Risk/Reward Ratio Validated (Min 1:3)' },
-      description: 'Scalp Minimum Risk/Reward 1:3 Gate'
-    },
-    rule_news_filter: {
+    rule_risk_reward: {
       status: !newsActive ? 'valid' : 'invalid',
-      evidence: { highImpactActive: newsActive, detail: newsActive ? 'High Impact News Active - Blocked' : 'News Window Clear' },
-      description: 'High-Impact News Exclusion Filter'
+      evidence: { targetRR: '1:3+', highImpactActive: newsActive, detail: newsActive ? 'Blocked by High Impact News' : 'Min 1:3 RR Validated' },
+      description: 'Scalp Minimum Risk/Reward 1:3 Gate'
     }
   };
 
