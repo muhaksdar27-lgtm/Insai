@@ -224,14 +224,13 @@ export async function GET(req: Request) {
     };
 
     // Connections verification matching health check service names case-insensitively
-    const dbService = services.find((s: any) => s.serviceName?.toLowerCase() === 'supabase' || s.serviceName?.toLowerCase() === 'database' || s.serviceName?.toLowerCase() === 'postgres');
+    const dbService = services.find((s: any) => s.serviceName?.toLowerCase() === 'database' || s.serviceName?.toLowerCase() === 'postgres');
     const marketService = services.find((s: any) => s.serviceName?.toLowerCase() === 'marketdata' || s.serviceName?.toLowerCase() === 'twelvedata' || s.serviceName?.toLowerCase() === 'yahoofinance');
     const redisService = services.find((s: any) => s.serviceName?.toLowerCase() === 'redis');
 
     const connections = {
       market: marketService ? marketService.status === 'ONLINE' : (market !== null && typeof market.price === 'number' && market.price > 0),
       database: dbService ? dbService.status === 'ONLINE' : getDatabaseClient().isConnected(),
-      supabase: dbService ? dbService.status === 'ONLINE' : getDatabaseClient().isConnected(),
       redis: redisService ? redisService.status === 'ONLINE' : getQueueManager().isConnected(),
       realtimeChannel: true
     };

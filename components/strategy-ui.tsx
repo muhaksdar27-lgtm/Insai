@@ -14,7 +14,7 @@ import { StrategyStep } from "@/types";
 export const StrategyStatus = memo(function StrategyStatus({ status, className = "" }: { status: string; className?: string }) {
   const badgeStyle = getStatusBadge(status);
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[9px] font-bold tracking-wider border uppercase ${badgeStyle} ${className}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[10px] font-bold tracking-wider border uppercase ${badgeStyle} ${className}`}>
       {status}
     </span>
   );
@@ -51,33 +51,42 @@ export const TimelineCard = memo(function TimelineCard({ steps }: { steps: Strat
     return <div className="text-[10px] text-zinc-500 font-mono italic">No steps available</div>;
   }
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-9 gap-1 bg-zinc-950/80 rounded-lg p-1.5 border border-zinc-800/80 shadow-inner">
+    <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-9 gap-1.5 bg-zinc-950/80 rounded-lg p-2 border border-zinc-800/80 shadow-inner">
       {steps.map((step: StrategyStep, sIdx: number) => {
-        const isActive = step.status === 'active' || step.status === 'current';
-        const isFinished = step.status === 'finished' || step.status === 'approved' || step.status === 'passed';
-        const isFailed = step.status === 'failed' || step.status === 'rejected';
+        const statusLower = (step.status || '').toLowerCase();
+        const isActive = statusLower === 'active' || statusLower === 'current';
+        const isValidated = statusLower === 'validated' || statusLower === 'finished' || statusLower === 'passed';
+        const isApproved = statusLower === 'approved';
+        const isRejected = statusLower === 'rejected' || statusLower === 'failed';
+        const isExpired = statusLower === 'expired';
 
-        let bgCls = 'bg-zinc-900/40 border-zinc-800/60 text-zinc-500';
+        let bgCls = 'bg-zinc-900/40 border-zinc-800/60 text-zinc-400';
         let icon = <span className="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0" />;
 
-        if (isFinished) {
-          bgCls = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-medium';
-          icon = <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />;
+        if (isApproved) {
+          bgCls = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold';
+          icon = <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+        } else if (isValidated) {
+          bgCls = 'bg-blue-500/10 border-blue-500/30 text-blue-400 font-semibold';
+          icon = <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
         } else if (isActive) {
-          bgCls = 'bg-blue-500/15 border-blue-500/40 text-blue-300 font-bold shadow-[0_0_10px_rgba(59,130,246,0.2)] animate-pulse';
-          icon = <Loader2 className="w-3 h-3 text-blue-400 animate-spin shrink-0" />;
-        } else if (isFailed) {
+          bgCls = 'bg-blue-500/20 border-blue-500/50 text-blue-200 font-bold shadow-[0_0_10px_rgba(59,130,246,0.2)] animate-pulse';
+          icon = <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin shrink-0" />;
+        } else if (isRejected) {
           bgCls = 'bg-rose-500/10 border-rose-500/30 text-rose-400 font-bold';
-          icon = <XCircle className="w-3 h-3 text-rose-400 shrink-0" />;
+          icon = <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />;
+        } else if (isExpired) {
+          bgCls = 'bg-amber-500/10 border-amber-500/30 text-amber-400 font-bold';
+          icon = <XCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
         }
 
         const stepKey = step.id || `step-${sIdx}-${step.name}`;
 
         return (
-          <div key={stepKey} className={`flex items-center gap-1.5 p-1.5 rounded border ${bgCls} transition-all`}>
-            <span className="text-[8px] font-mono font-bold opacity-60 shrink-0">{sIdx + 1}.</span>
+          <div key={stepKey} className={`flex items-center gap-1.5 p-1.5 rounded-md border ${bgCls} transition-all`}>
+            <span className="text-[10px] font-mono font-bold opacity-70 shrink-0">{sIdx + 1}.</span>
             {icon}
-            <span className="text-[8px] uppercase tracking-wider truncate min-w-0" title={step.name}>
+            <span className="text-[10px] uppercase tracking-wider truncate min-w-0 font-medium" title={`${step.name} (${step.status || 'awaiting'})`}>
               {step.name}
             </span>
           </div>
@@ -132,7 +141,7 @@ export const SetupCard = memo(function SetupCard({
   
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-1.5 text-[9px]">
+      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
         <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-md p-1.5 flex items-center justify-between shadow-inner">
            <span className="text-zinc-500 font-semibold uppercase tracking-wider shrink-0">Pair</span>
            <span className="font-bold text-zinc-200 truncate ml-2 text-right">{pair || '--'}</span>
@@ -174,7 +183,7 @@ export const SetupCard = memo(function SetupCard({
            </span>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-1.5 text-[9px]">
+      <div className="grid grid-cols-3 gap-1.5 text-[10px]">
         <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-md p-2 text-center shadow-inner overflow-hidden">
           <div className="text-zinc-500 font-semibold uppercase tracking-wider mb-0.5">Entry</div>
           <div className="font-mono font-bold tracking-wide truncate text-zinc-100">
@@ -224,15 +233,15 @@ export const RuleTable = memo(function RuleTable({ rules }: { rules: any[] }) {
         return (
           <div key={key} className="flex flex-col bg-zinc-900/50 border border-zinc-800/80 rounded-md p-2 shadow-sm transition-all hover:border-zinc-700">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[9px] text-zinc-200 font-bold uppercase tracking-wider font-mono">
+              <span className="text-[10px] text-zinc-200 font-bold uppercase tracking-wider font-mono">
                 {(rule.ruleId || rule.name || `Rule ${idx + 1}`).replace(/_/g, ' ')}
               </span>
-              <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${statusClass}`}>
+              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${statusClass}`}>
                 {statusLabel}
               </span>
             </div>
             {rule.invalidations && rule.invalidations.length > 0 && (
-              <div className="mt-1 text-[8px] text-rose-400/90 font-medium bg-rose-950/30 border border-rose-900/40 p-1 rounded">
+              <div className="mt-1 text-[10px] text-rose-400/90 font-medium bg-rose-950/30 border border-rose-900/40 p-1 rounded">
                 Fail reason: {rule.invalidations.join(', ')}
               </div>
             )}
@@ -240,8 +249,8 @@ export const RuleTable = memo(function RuleTable({ rules }: { rules: any[] }) {
                <div className="grid grid-cols-2 gap-1.5 mt-1.5 pt-1.5 border-t border-zinc-800/40">
                  {Object.entries(rule.evidence).map(([dk, dv]: [string, any]) => (
                     <div key={`${key}-${dk}`} className="flex flex-col bg-zinc-950/60 p-1 rounded border border-zinc-800/50">
-                       <span className="text-[7px] text-zinc-500 font-semibold uppercase tracking-wider">{dk.replace(/_/g, ' ')}</span>
-                       <span className="text-[8px] text-zinc-300 font-mono truncate">{typeof dv === 'object' ? JSON.stringify(dv) : String(dv)}</span>
+                       <span className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">{dk.replace(/_/g, ' ')}</span>
+                       <span className="text-[10px] text-zinc-300 font-mono truncate">{typeof dv === 'object' ? JSON.stringify(dv) : String(dv)}</span>
                     </div>
                  ))}
                </div>
@@ -260,35 +269,35 @@ export const SignalCard = memo(function SignalCard({ direction, entry, sl, tp1, 
   return (
     <div className="flex flex-col bg-white/5 border border-white/10 rounded-md p-2.5 shadow-sm">
       <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/10">
-        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${isLong ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : isShort ? "text-rose-400 bg-rose-500/10 border-rose-500/20" : "text-zinc-300 bg-zinc-500/10 border-zinc-500/20"}`}>
+        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${isLong ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : isShort ? "text-rose-400 bg-rose-500/10 border-rose-500/20" : "text-zinc-300 bg-zinc-500/10 border-zinc-500/20"}`}>
           {isLong && <TrendingUp className="w-3.5 h-3.5" />}
           {isShort && <TrendingDown className="w-3.5 h-3.5" />}
           {isLong ? "BUY" : isShort ? "SELL" : (direction || "WAIT")}
         </span>
       </div>
-      <div className="grid grid-cols-3 gap-1.5 mb-1 text-[9px]">
+      <div className="grid grid-cols-3 gap-1.5 mb-1 text-[10px]">
         <div className="bg-black/50 border border-white/10 rounded-md p-2 text-center shadow-inner">
-          <div className="text-[8px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5">Entry</div>
+          <div className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5">Entry</div>
           <div className="font-mono font-bold text-zinc-100 tracking-wide">{entry || '--'}</div>
         </div>
         <div className="bg-black/50 border border-white/10 rounded-md p-2 text-center shadow-inner">
-          <div className="text-[8px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
+          <div className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
             <Shield className="w-2.5 h-2.5 text-rose-400" /> SL
           </div>
           <div className="font-mono font-bold text-rose-400 tracking-wide">{sl || '--'}</div>
         </div>
         <div className="bg-black/50 border border-white/10 rounded-md p-2 text-center shadow-inner">
-          <div className="text-[8px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
+          <div className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
             <Target className="w-2.5 h-2.5 text-emerald-400" /> TP1
           </div>
           <div className="font-mono font-bold text-emerald-400 tracking-wide">{tp1 || '--'}</div>
         </div>
       </div>
       {(tp2 || tp3) && (
-        <div className="grid grid-cols-2 gap-1.5 text-[9px] mt-1">
+        <div className="grid grid-cols-2 gap-1.5 text-[10px] mt-1">
           {tp2 && (
             <div className="bg-black/50 border border-white/10 rounded-md p-2 text-center shadow-inner">
-              <div className="text-[8px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
+              <div className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
                 <Target className="w-2.5 h-2.5 text-emerald-400" /> TP2
               </div>
               <div className="font-mono font-bold text-emerald-400 tracking-wide">{tp2}</div>
@@ -296,7 +305,7 @@ export const SignalCard = memo(function SignalCard({ direction, entry, sl, tp1, 
           )}
           {tp3 && (
             <div className="bg-black/50 border border-white/10 rounded-md p-2 text-center shadow-inner">
-              <div className="text-[8px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
+              <div className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-0.5">
                 <Target className="w-2.5 h-2.5 text-emerald-400" /> TP3
               </div>
               <div className="font-mono font-bold text-emerald-400 tracking-wide">{tp3}</div>
@@ -314,8 +323,8 @@ export const ParameterGrid = memo(function ParameterGrid({ parameters }: { param
     <div className="grid grid-cols-2 gap-1.5">
       {Object.entries(parameters).map(([k, v]) => (
         <div key={k} className="flex flex-col bg-white/5 p-2 rounded-md border border-white/10">
-          <span className="text-[8px] text-zinc-400 font-semibold uppercase tracking-wider">{k}</span>
-          <span className="text-[9px] text-zinc-200 font-mono truncate mt-0.5">{String(v)}</span>
+          <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">{k}</span>
+          <span className="text-[10px] text-zinc-200 font-mono truncate mt-0.5">{String(v)}</span>
         </div>
       ))}
     </div>
@@ -325,7 +334,7 @@ export const ParameterGrid = memo(function ParameterGrid({ parameters }: { param
 export const EngineBadge = memo(function EngineBadge({ engineName, status }: { engineName: string; status: string }) {
   const isHealthy = status === 'healthy' || status === 'online' || status === 'connected';
   return (
-    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] border text-[9px] font-bold uppercase tracking-wider ${isHealthy ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+    <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] border text-[10px] font-bold uppercase tracking-wider ${isHealthy ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${isHealthy ? 'bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-500'}`}></span>
       {engineName}
     </div>

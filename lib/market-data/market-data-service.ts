@@ -11,6 +11,7 @@ import { getQueueManager } from '../redis/queue';
 import { FallbackChain } from './fallback-chain';
 import { PriceProvider, NewsProvider, CalendarProvider } from './types';
 import { dataValidator } from './data-validator';
+import { metricsEngine } from '../observability/metrics-engine';
 
 import { MarketCalendar } from './market-calendar';
 
@@ -45,6 +46,7 @@ export class MarketDataService {
   }
 
   async getLatestPrice(symbol: string, freshnessWindowMs: number = 60000): Promise<MarketSnapshot> {
+    const startTime = Date.now();
     const now = Date.now();
     let cachedData = null;
 
@@ -53,6 +55,7 @@ export class MarketDataService {
       const redisCached = await getQueueManager().getCache<{ data: MarketSnapshot, expiresAt: number }>(`price:${symbol}`);
       if (redisCached && redisCached.expiresAt > now) {
         cachedData = redisCached;
+        metricsEngine.recordCacheAccess(true);
       }
     } catch (e) {
       // Ignore Redis error, fallback to local cache
@@ -63,6 +66,9 @@ export class MarketDataService {
       const localCached = this.priceCache.get(symbol);
       if (localCached && localCached.expiresAt > now) {
         cachedData = localCached;
+        metricsEngine.recordCacheAccess(true);
+      } else {
+        metricsEngine.recordCacheAccess(false);
       }
     }
 
@@ -76,25 +82,16 @@ export class MarketDataService {
       } else {
         freshness = (now - snapshotTime > freshnessWindowMs) ? 'stale' : 'cached';
       }
+      metricsEngine.recordMarketDataLatency(Date.now() - startTime);
       return { ...cachedData.data, freshness };
     }
 
     const snapshot = await this.priceChain.execute(
       (p) => p.getLatestPrice(symbol),
-      `getLatestPrice(${symbol})`,
-      {
-        symbol,
-        price: 0,
-        change24h: 0,
-        high24h: 0,
-        low24h: 0,
-        volume24h: 0,
-        timestamp: new Date().toISOString(),
-        provider: 'fallback',
-        freshness: 'stale',
-        status: 'not_configured'
-      } as any
+      `getLatestPrice(${symbol})`
     );
+
+    metricsEngine.recordMarketDataLatency(Date.now() - startTime);
 
     // Gap detection / Freshness check based on market status & window
     const snapshotTime = new Date(snapshot.timestamp).getTime();
@@ -163,8 +160,7 @@ export class MarketDataService {
     const fetchLimit = Math.max(limit, 250);
     const data = await this.priceChain.execute(
       (p) => p.getCandles(symbol, timeframe, fetchLimit),
-      `getCandles(${symbol}, ${timeframe})`,
-      [] as any
+      `getCandles(${symbol}, ${timeframe})`
     );
 
     if (!data.status || data.status !== 'not_configured') {
@@ -287,8 +283,7 @@ export class MarketDataService {
 
     const data = await this.calendarChain.execute(
       (p) => p.getCalendarEvents(),
-      'getCalendarEvents',
-      [] as any
+      'getCalendarEvents'
     );
     
     // Only cache if it's an actual successful array (no status field)

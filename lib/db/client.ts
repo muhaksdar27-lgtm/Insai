@@ -220,7 +220,7 @@ export class DatabaseService {
   }
 
   public getPool(): Pool | null {
-    const dbUrl = getEnv("DATABASE_URL") || getEnv("POSTGRES_URL") || getEnv("SUPABASE_DB_URL") || '';
+    const dbUrl = getEnv("DATABASE_URL") || '';
 
     if (!dbUrl) {
       return null;
@@ -238,7 +238,6 @@ export class DatabaseService {
       const useSsl = dbUrl.includes('sslmode=require') || 
                      dbUrl.includes('amazonaws.com') || 
                      dbUrl.includes('neon.tech') || 
-                     dbUrl.includes('supabase') ||
                      process.env.NODE_ENV === 'production';
 
       this.pool = new Pool({
@@ -921,5 +920,4 @@ export function getDatabaseClient(): DatabaseService {
   return _dbClient;
 }
 
-// Backward-compatible alias
-export const getSupabaseClient = getDatabaseClient;
+

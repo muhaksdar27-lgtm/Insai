@@ -470,6 +470,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
   ): Promise<any> {
     let attempt = 0;
     while (attempt <= maxRetries) {
+      const startTime = Date.now();
       try {
         const generatePromise = aiClient.models.generateContent({
           model: 'gemini-3.6-flash',
@@ -486,9 +487,17 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         });
 
         const response = await Promise.race([generatePromise, timeoutPromise]);
+        
+        // Record latency successfully
+        const { metricsEngine } = await import('../../observability/metrics-engine');
+        metricsEngine.recordAiValidationLatency(Date.now() - startTime);
+
         return response;
       } catch (err: any) {
         attempt++;
+        const { metricsEngine } = await import('../../observability/metrics-engine');
+        metricsEngine.recordAiValidationLatency(Date.now() - startTime);
+        
         const isQuotaOrAuth = err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429') || err.message?.includes('401') || err.message?.includes('403') || err.message?.toLowerCase().includes('quota');
         if (attempt > maxRetries || isQuotaOrAuth) {
           throw err;

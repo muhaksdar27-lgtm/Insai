@@ -15,6 +15,7 @@ export class MCPManager {
     await this.initTelegram();
     await this.initTwitter();
     await this.initDeployment();
+    await this.evaluateInternalEngines();
     await getMcpRegistry().syncToDatabase();
   }
 
@@ -40,11 +41,81 @@ export class MCPManager {
     // Deployment MCPs
     await this.initDeployment();
 
+    // Evaluate internal engine status based on upstream drivers
+    await this.evaluateInternalEngines();
+
     // Sync to database
     await getMcpRegistry().syncToDatabase();
     
     this.isInitialized = true;
     logger.info('MCP Manager initialized.');
+  }
+
+  private async evaluateInternalEngines() {
+    const registry = getMcpRegistry();
+    const all = registry.getAllStatus();
+
+    const getStatus = (name: string) => all.find(m => m.name === name)?.status || 'NOT CONFIGURED';
+
+    const marketDataOk = getStatus('TwelveData') === 'ONLINE' || getStatus('YahooFinance') === 'ONLINE';
+    const geminiOk = getStatus('GeminiAI') === 'ONLINE';
+    const geminiStatus = getStatus('GeminiAI');
+    const newsOk = getStatus('NewsAPI') === 'ONLINE' || getStatus('ForexFactory') === 'ONLINE';
+    const dbOk = getStatus('PostgreSQL DB') === 'ONLINE';
+
+    // SMC Engines
+    const smcEngines = [
+      'Liquidity Map Engine', 'Imbalance Engine', 'MSS Engine', 
+      'SMC Logic Engine', 'Supply & Demand Engine', 'Scalping Trends Engine',
+      'Multi-TF Confluence Engine', 'Signal Quality Gate'
+    ];
+    smcEngines.forEach(eng => {
+      if (marketDataOk) {
+        registry.reportConnected(eng);
+      } else {
+        registry.reportNotConfigured(eng, 'Market data source unavailable');
+      }
+    });
+
+    // AI Validator
+    if (geminiOk) {
+      registry.reportConnected('AI Validator');
+    } else if (geminiStatus === 'NOT CONFIGURED') {
+      registry.reportNotConfigured('AI Validator', 'GEMINI_API_KEY is not configured');
+    } else {
+      registry.reportError('AI Validator', `Upstream GeminiAI status: ${geminiStatus}`);
+    }
+
+    // News Engines
+    if (newsOk) {
+      registry.reportConnected('Financial News Engine');
+      registry.reportConnected('Volatility News Engine');
+    } else {
+      registry.reportNotConfigured('Financial News Engine', 'News providers unavailable');
+      registry.reportNotConfigured('Volatility News Engine', 'News providers unavailable');
+    }
+
+    // Risk Engines
+    const riskEngines = [
+      'Daily Risk Engine', 'Consecutive Loss Protection', 
+      'Max Drawdown Guardian', 'Anti-Overtrade Shield'
+    ];
+    riskEngines.forEach(eng => {
+      if (dbOk) {
+        registry.reportConnected(eng);
+      } else {
+        registry.reportNotConfigured(eng, 'Running in memory fallback mode (no persistent DB)');
+      }
+    });
+
+    // Observability & Audit
+    registry.reportConnected('Metrics Collector');
+    registry.reportConnected('Error Tracker');
+    if (dbOk) {
+      registry.reportConnected('Audit Log Pipeline');
+    } else {
+      registry.reportNotConfigured('Audit Log Pipeline', 'DB connection required for persistent logs');
+    }
   }
 
   private async initDeployment() {
@@ -92,6 +163,24 @@ export class MCPManager {
         }
     } else {
       getMcpRegistry().reportNotConfigured('TwelveData', 'Missing API Key');
+    }
+
+    // Check Polygon
+    const polygonKey = getEnv("POLYGON_API_KEY");
+    if (polygonKey) {
+        try {
+            const res = await fetchWithTimeout(`https://api.polygon.io/v3/reference/tickers?ticker=XAUUSD&apiKey=${polygonKey}`);
+            const data = await res.json();
+            if (data.status === 'ERROR') {
+                getMcpRegistry().reportError('Polygon.io', data.error || 'Provider Error');
+            } else {
+                getMcpRegistry().reportConnected('Polygon.io');
+            }
+        } catch (e: any) {
+            getMcpRegistry().reportError('Polygon.io', e.message);
+        }
+    } else {
+      getMcpRegistry().reportNotConfigured('Polygon.io', 'Missing API Key');
     }
 
     // Check NewsAPI

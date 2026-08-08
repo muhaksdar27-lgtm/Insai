@@ -8,6 +8,7 @@ export function validateEnvironment(): void {
         'POLYGON_API_KEY',
         'DATABASE_URL',
         'NEWS_API_KEY',
+        'TWITTER_BEARER_TOKEN',
         'TELEGRAM_BOT_TOKEN',
         'TELEGRAM_CHAT_ID',
         'REDIS_URL',
@@ -16,7 +17,7 @@ export function validateEnvironment(): void {
 
     const missingRecommended = recommendedVars.filter(v => {
         if (v === 'DATABASE_URL') {
-            return !getEnv('DATABASE_URL') && !getEnv('POSTGRES_URL') && !getEnv('SUPABASE_DB_URL');
+            return !getEnv('DATABASE_URL');
         }
         return !getEnv(v);
     });

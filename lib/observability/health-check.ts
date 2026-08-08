@@ -72,8 +72,10 @@ class HealthCheckEngine {
         const pingResult = await getDatabaseClient().ping();
         if (pingResult.connected) {
             this.updateServiceHealth('Database', 'ONLINE', pingResult.latencyMs);
+        } else if (pingResult.error === 'Database connection not configured') {
+            this.updateServiceHealth('Database', 'NOT CONFIGURED', 0, 'Missing DATABASE_URL');
         } else {
-            this.updateServiceHealth('Database', 'NOT CONFIGURED', pingResult.latencyMs >= 0 ? pingResult.latencyMs : 0, pingResult.error || 'Not configured or unavailable');
+            this.updateServiceHealth('Database', 'UNAVAILABLE', pingResult.latencyMs >= 0 ? pingResult.latencyMs : 0, pingResult.error || 'Connection failed');
         }
     } catch (e: any) {
         this.updateServiceHealth('Database', 'UNAVAILABLE', 0, e.message);
@@ -113,27 +115,18 @@ class HealthCheckEngine {
     // Check Economic Calendar
     try {
         const start = Date.now();
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        try {
-            const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', { 
-                signal: controller.signal,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0',
-                    'Accept': 'application/json'
-                }
-            });
-            if (res.ok) {
-                this.updateServiceHealth('EconomicCalendar', 'ONLINE', Date.now() - start);
-            } else {
-                if (res.status === 429) {
-                    this.updateServiceHealth('EconomicCalendar', 'RATE LIMITED', Date.now() - start, `HTTP ${res.status}`);
-                } else {
-                    this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', Date.now() - start, `HTTP ${res.status}`);
-                }
-            }
-        } finally {
-            clearTimeout(timeout);
+        const registryStatus = await import('../mcp/registry').then(m => m.getMcpRegistry().getAllStatus());
+        const ffStatus = registryStatus.find(m => m.name === 'ForexFactory');
+        if (ffStatus) {
+           if (ffStatus.status === 'ONLINE') {
+               this.updateServiceHealth('EconomicCalendar', 'ONLINE', Date.now() - start);
+           } else if (ffStatus.status === 'RATE LIMITED') {
+               this.updateServiceHealth('EconomicCalendar', 'RATE LIMITED', Date.now() - start, ffStatus.lastError || undefined);
+           } else {
+               this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', Date.now() - start, ffStatus.lastError || 'ForexFactory is unavailable');
+           }
+        } else {
+           this.updateServiceHealth('EconomicCalendar', 'NOT CONFIGURED', Date.now() - start, 'ForexFactory not found in registry');
         }
     } catch (e: any) {
         this.updateServiceHealth('EconomicCalendar', 'UNAVAILABLE', 0, e.message);
@@ -142,27 +135,22 @@ class HealthCheckEngine {
     // Check Gemini AI
     try {
         const start = Date.now();
-        const geminiKey = getEnv("GEMINI_API_KEY");
-        if (geminiKey) {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 3000);
-            try {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`, { signal: controller.signal });
-                const data = await res.json();
-                if (data.error) {
-                    if (data.error.code === 429 || data.error.message.includes('quota') || data.error.status === 'RESOURCE_EXHAUSTED') {
-                        this.updateServiceHealth('GeminiAI', 'QUOTA_EXCEEDED', Date.now() - start, data.error.message);
-                    } else {
-                        this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', Date.now() - start, data.error.message);
-                    }
-                } else {
-                    this.updateServiceHealth('GeminiAI', 'ONLINE', Date.now() - start);
-                }
-            } finally {
-                clearTimeout(timeout);
+        const registryStatus = await import('../mcp/registry').then(m => m.getMcpRegistry().getAllStatus());
+        const geminiStatus = registryStatus.find(m => m.name === 'GeminiAI');
+        if (geminiStatus) {
+            if (geminiStatus.status === 'ONLINE') {
+                this.updateServiceHealth('GeminiAI', 'ONLINE', Date.now() - start);
+            } else if (geminiStatus.status === 'QUOTA_EXCEEDED') {
+                this.updateServiceHealth('GeminiAI', 'QUOTA_EXCEEDED', Date.now() - start, geminiStatus.lastError || 'Quota exceeded');
+            } else if (geminiStatus.status === 'RATE LIMITED') {
+                this.updateServiceHealth('GeminiAI', 'RATE LIMITED', Date.now() - start, geminiStatus.lastError || 'Rate limited');
+            } else if (geminiStatus.status === 'NOT CONFIGURED') {
+                this.updateServiceHealth('GeminiAI', 'NOT CONFIGURED', Date.now() - start, geminiStatus.lastError || 'Missing GEMINI_API_KEY');
+            } else {
+                this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', Date.now() - start, geminiStatus.lastError || 'Gemini AI is unavailable');
             }
         } else {
-            this.updateServiceHealth('GeminiAI', 'NOT CONFIGURED', 0, 'Missing Gemini API Key');
+            this.updateServiceHealth('GeminiAI', 'NOT CONFIGURED', Date.now() - start, 'Gemini AI not found in registry');
         }
     } catch (e: any) {
         this.updateServiceHealth('GeminiAI', 'UNAVAILABLE', 0, e.message);

@@ -14,6 +14,7 @@ import {
   Shield,
   CheckCircle2,
   X,
+  RotateCw
 } from "lucide-react";
 
 const listVariants = {
@@ -30,49 +31,55 @@ const itemVariants = {
 };
 
 export default function LiveSignals() {
-  const { data: signals, loading, error, refetch } = useFetch<any[]>("/api/signals/live", []);
+  const { data: rawSignals, loading, error, refetch } = useFetch<any[]>("/api/signals/live", []);
   const [selectedSignal, setSelectedSignal] = useState<any>(null);
 
+  // Filter out any completed/closed signals if backend returns them
+  const signals = (rawSignals || []).filter(s => {
+    const st = (s.status || s.baseStatus || '').toUpperCase();
+    return !['CLOSED', 'WIN', 'LOSS', 'FINISHED', 'EXPIRED', 'SL HIT', 'TP3 HIT'].includes(st);
+  });
+
   return (
-    <div className="space-y-2.5 relative h-full">
+    <div className="space-y-3 relative h-full pb-10">
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between border-b border-white/10 pb-2 mb-2"
+        className="flex items-center justify-between border-b border-zinc-800/80 pb-3"
       >
         <div>
-          <h2 className="text-[8px] font-bold text-zinc-200 flex items-center gap-2 tracking-widest uppercase">
-            <div className="p-1 rounded bg-blue-500/10 border border-blue-500/20 shadow-sm relative overflow-hidden">
-              <div className="absolute inset-0 bg-blue-500/20 blur-xl"></div>
-              <Radio className="w-2.5 h-2.5 text-blue-400 relative z-10" />
+          <h2 className="text-[11px] font-extrabold text-zinc-100 flex items-center gap-2 tracking-wide font-mono uppercase">
+            <div className="p-1 rounded-md bg-blue-500/10 border border-blue-500/20 shadow-sm">
+              <Radio className="w-3 h-3 text-blue-400" />
             </div>
-            Live Signals
+            LIVE SIGNALS
           </h2>
+          <p className="text-[10px] text-zinc-400 tracking-wide font-medium mt-1">Active AI-Validated Signals Engine</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={refetch}
-            className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded text-[7px] font-bold tracking-widest uppercase text-zinc-300 hover:text-white transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-md text-[10px] font-bold tracking-wider uppercase text-zinc-300 hover:text-white transition-all shadow-sm active:scale-95"
           >
-            <Radio className="w-2.5 h-2.5 text-blue-400" />
-            Refresh Signals
+            <RotateCw className="w-3 h-3 text-blue-400" />
+            Refresh
           </button>
         </div>
       </motion.div>
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <div className="w-5 h-5 border-2 border-zinc-800 border-t-emerald-500 rounded-full animate-spin mb-3 shadow-sm"></div>
-          <p className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase">Scanning live signals...</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-6 h-6 border-2 border-zinc-800 border-t-blue-500 rounded-full animate-spin mb-3 shadow-sm"></div>
+          <p className="text-[10px] text-zinc-400 font-bold tracking-wider uppercase">Scanning live signals...</p>
         </div>
       ) : error ? (
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center justify-center py-10 text-center border border-dashed border-rose-900/40 rounded-lg bg-rose-950/20 shadow-sm"
+          className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-rose-900/40 rounded-xl bg-rose-950/20 shadow-sm"
         >
-          <AlertTriangle className="w-6 h-6 text-rose-500/80 mb-2" />
-          <p className="text-[10px] font-bold text-rose-400 mb-1 tracking-wide">
+          <AlertTriangle className="w-8 h-8 text-rose-500/80 mb-3" />
+          <p className="text-[11px] font-bold text-rose-400 mb-1 tracking-wide">
             {error?.message?.includes("Closed") ? "Market Closed" :
              error?.message?.includes("Stale") ? "Data Stale" :
              error?.message?.includes("Offline") ? "Provider Offline" :
@@ -81,31 +88,30 @@ export default function LiveSignals() {
              error?.message?.includes("AI") ? "AI Validation Failed" :
              "Backend Service Error"}
           </p>
-          <p className="text-[6px] text-zinc-500 max-w-[240px] leading-relaxed mb-2.5 font-medium">
+          <p className="text-[10px] text-zinc-500 max-w-[280px] leading-relaxed mb-4 font-medium">
             {error?.message || "Unable to connect to trading engine backend service."}
           </p>
           <button
             onClick={refetch}
-            className="px-4 py-1.5 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-[8px] font-bold tracking-wide rounded transition-all shadow-sm"
+            className="px-4 py-2 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-[10px] font-bold tracking-wide rounded-lg transition-all shadow-sm active:scale-95"
           >
             Retry Connection
           </button>
         </motion.div>
       ) : !signals || signals.length === 0 ? (
-          <motion.div 
+        <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-white/10 rounded-lg bg-white/5 shadow-sm backdrop-blur-sm"
+          className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-zinc-800/80 rounded-xl bg-zinc-900/40 shadow-sm backdrop-blur-sm"
         >
-          <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center mb-3 border border-white/10 relative overflow-hidden">
-            <div className="absolute inset-0 bg-blue-500/5 blur-xl"></div>
-            <Radio className="w-4 h-4 text-zinc-600 relative z-10" />
+          <div className="w-10 h-10 rounded-lg bg-zinc-900 flex items-center justify-center mb-3 border border-zinc-800 relative overflow-hidden">
+            <Radio className="w-5 h-5 text-zinc-600 relative z-10" />
           </div>
-          <p className="text-[10px] font-bold text-zinc-400 mb-1 tracking-widest uppercase">
-            No Active Signals
+          <p className="text-[11px] font-bold text-zinc-300 mb-1 tracking-wider uppercase">
+            No Active Live Signals
           </p>
-          <p className="text-[6px] text-zinc-500 max-w-[240px] leading-relaxed font-medium">
-            Waiting for AI validated setups.
+          <p className="text-[10px] text-zinc-500 max-w-[280px] leading-relaxed font-medium">
+            Scanner engine active. Signals will appear when full AI confluence setup is validated.
           </p>
         </motion.div>
       ) : (
@@ -113,142 +119,155 @@ export default function LiveSignals() {
           variants={listVariants}
           initial="hidden"
           animate="show"
-          className="grid grid-cols-1 lg:grid-cols-2 gap-2 pb-10"
+          className="grid grid-cols-1 md:grid-cols-2 gap-3"
         >
-          {signals.map((signal) => (
-            <motion.div
-              variants={itemVariants}
-              key={signal.id || signal.signalKey || `${signal.pair || 'XAUUSD'}-${signal.strategyName || 'strategy'}-${signal.entry || 'target'}`}
-              onClick={() => setSelectedSignal(signal)}
-              className="bg-white/5 border border-white/10 rounded-md p-1.5 cursor-pointer hover:border-blue-500/30 hover:bg-white/10 transition-all group shadow-sm backdrop-blur-md relative overflow-hidden"
-            >
-              <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-full blur-xl group-hover:bg-blue-500/10 transition-all"></div>
-              <div className="flex justify-between items-start mb-1.5 pb-1 border-b border-white/10 relative z-10">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span
-                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold border uppercase tracking-widest ${signal.direction === "BUY" || signal.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
-                    >
-                      {signal.direction === "BUY" || signal.direction === "LONG" ? (
-                        <ArrowUpRight className="w-2.5 h-2.5" />
-                      ) : (
-                        <ArrowDownRight className="w-2.5 h-2.5" />
+          {signals.map((signal) => {
+            const isBuy = signal.direction === "BUY" || signal.direction === "LONG";
+            const rrRatio = signal.entry && signal.sl && signal.tp1 ? 
+              Math.abs((signal.tp1 - signal.entry) / (signal.entry - signal.sl)).toFixed(2) : '--';
+
+            return (
+              <motion.div
+                variants={itemVariants}
+                key={signal.id || signal.signalKey || `${signal.pair || 'XAUUSD'}-${signal.strategyName || 'strategy'}-${signal.entry || 'target'}`}
+                onClick={() => setSelectedSignal(signal)}
+                className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-3 cursor-pointer hover:border-blue-500/40 hover:bg-zinc-900/70 transition-all group shadow-md backdrop-blur-sm relative overflow-hidden flex flex-col justify-between"
+              >
+                {/* Header */}
+                <div className="flex justify-between items-start mb-2 pb-2 border-b border-zinc-800/60">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${isBuy ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
+                      >
+                        {isBuy ? (
+                          <ArrowUpRight className="w-3 h-3" />
+                        ) : (
+                          <ArrowDownRight className="w-3 h-3" />
+                        )}
+                        {isBuy ? "BUY" : "SELL"}
+                      </span>
+                      <span className="text-[10px] font-bold text-zinc-100 font-mono tracking-wide">
+                        {signal.pair}
+                      </span>
+                      {rrRatio !== '--' && (
+                        <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                          R:R 1:{rrRatio}
+                        </span>
                       )}
-                      {signal.direction === "LONG" ? "BUY" : signal.direction === "SHORT" ? "SELL" : signal.direction}
-                    </span>
-                    <span className="text-[8px] font-bold text-zinc-100 tracking-wide">
-                      {signal.pair}
-                    </span>
-                  </div>
-                  <p className="text-[6px] text-zinc-500 font-medium tracking-wide">
-                    {signal.strategyName}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[6px] font-bold uppercase tracking-widest border shadow-sm ${getStatusBadge(signal.status)}`}>
-                    {signal.status}
-                  </span>
-                  <div className="mt-1.5 flex items-center justify-end gap-1 text-[6px] text-zinc-500 font-bold">
-                    <Clock className="w-2.5 h-2.5" />
-                    {signal.age}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-1 mb-1 relative z-10">
-                <div className="bg-black/40 border border-white/10 rounded-[3px] p-1 text-center shadow-inner">
-                  <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest mb-0.5">
-                    Entry
-                  </div>
-                  <div className="text-[7px] font-mono font-bold text-zinc-300 tracking-wide">
-                    {signal.entry}
-                  </div>
-                </div>
-                <div className="bg-black/40 border border-white/10 rounded-[3px] p-1 text-center shadow-inner">
-                  <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest mb-0.5 flex justify-center items-center gap-0.5">
-                    <Shield className="w-2 h-2 text-rose-500/70" /> SL
-                  </div>
-                  <div className="text-[8px] font-mono font-bold text-rose-400 tracking-wide">
-                    {signal.sl}
-                  </div>
-                </div>
-                <div className="bg-black/40 border border-white/10 rounded-[3px] p-1 text-center shadow-inner">
-                  <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest mb-0.5 flex justify-center items-center gap-0.5">
-                    <Target className="w-2 h-2 text-emerald-500/70" /> TP1
-                  </div>
-                  <div className="text-[8px] font-mono font-bold text-emerald-400 tracking-wide">
-                    {signal.tp1}
-                  </div>
-                </div>
-              </div>
-
-              {(signal.tp2 || signal.tp3) && (
-                <div className="grid grid-cols-2 gap-1 mb-1 relative z-10">
-                  {signal.tp2 && (
-                    <div className="bg-black/40 border border-white/10 rounded-[3px] p-1 text-center shadow-inner">
-                      <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest mb-0.5 flex justify-center items-center gap-0.5">
-                        <Target className="w-2 h-2 text-emerald-500/70" /> TP2
-                      </div>
-                      <div className="text-[8px] font-mono font-bold text-emerald-400 tracking-wide">
-                        {signal.tp2}
-                      </div>
                     </div>
-                  )}
-                  {signal.tp3 && (
-                    <div className="bg-black/40 border border-white/10 rounded-[3px] p-1 text-center shadow-inner">
-                      <div className="text-[5px] text-zinc-500 font-bold uppercase tracking-widest mb-0.5 flex justify-center items-center gap-0.5">
-                        <Target className="w-2 h-2 text-emerald-500/70" /> TP3
-                      </div>
-                      <div className="text-[8px] font-mono font-bold text-emerald-400 tracking-wide">
-                        {signal.tp3}
-                      </div>
+                    <p className="text-[10px] text-zinc-400 font-medium tracking-wide truncate max-w-[180px]">
+                      {signal.strategyName}
+                    </p>
+                  </div>
+
+                  <div className="text-right flex flex-col items-end">
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border shadow-sm ${getStatusBadge(signal.status)}`}>
+                      {signal.status}
+                    </span>
+                    <div className="mt-1 flex items-center gap-1 text-[10px] text-zinc-500 font-medium">
+                      <Clock className="w-2.5 h-2.5" />
+                      {signal.age}
                     </div>
-                  )}
+                  </div>
                 </div>
-              )}
 
-              <div className="flex items-center justify-between pt-2 border-t border-white/10 relative z-10">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-3 h-3 text-blue-500 shadow-sm" />
-                  <span className="text-[6px] font-bold tracking-wide text-blue-400 uppercase">
-                    AI Verified ({signal.aiChecklist ? signal.aiChecklist.length : 0})
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded text-[6px] font-bold border uppercase tracking-widest shadow-sm ${signal.freshness === 'live' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : signal.freshness === 'cached' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-white/5 text-zinc-400 border-white/10'}`}>
-                      {signal.freshness}
-                  </span>
+                {/* Price Grid */}
+                <div className="grid grid-cols-3 gap-1.5 mb-2">
+                  <div className="bg-zinc-950/60 border border-zinc-800/60 rounded-md p-1.5 text-center shadow-inner">
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-0.5">
+                      Entry Price
+                    </div>
+                    <div className="text-[10px] font-mono font-bold text-zinc-200">
+                      {signal.entry}
+                    </div>
+                  </div>
+                  <div className="bg-zinc-950/60 border border-zinc-800/60 rounded-md p-1.5 text-center shadow-inner">
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-1">
+                      <Shield className="w-2.5 h-2.5 text-rose-500/80" /> SL
+                    </div>
+                    <div className="text-[10px] font-mono font-bold text-rose-400">
+                      {signal.sl}
+                    </div>
+                  </div>
+                  <div className="bg-zinc-950/60 border border-zinc-800/60 rounded-md p-1.5 text-center shadow-inner">
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-1">
+                      <Target className="w-2.5 h-2.5 text-emerald-500/80" /> TP1
+                    </div>
+                    <div className="text-[10px] font-mono font-bold text-emerald-400">
+                      {signal.tp1}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 text-[6px]">
-                  <span className="text-zinc-500 font-bold uppercase tracking-widest">Pips:</span>
-                  <span
-                    className={`font-mono font-black ${signal.pips > 0 ? "text-emerald-400" : signal.pips < 0 ? "text-rose-400" : "text-zinc-400"}`}
-                  >
-                    {signal.pips > 0 ? "+" : ""}
-                    {signal.pips}
-                  </span>
-                </div>
-              </div>
 
-              {/* TP Progress Indicator */}
-              <div className="mt-2 pt-2 border-t border-white/10 relative z-10">
-                <div className="flex items-center justify-between text-[4px] font-bold tracking-widest text-zinc-500 mb-1 uppercase">
-                  <span>Entry</span>
-                  <span>TP1</span>
-                  {signal.tp2 && <span>TP2</span>}
-                  {signal.tp3 && <span>TP3</span>}
-                </div>
-                <div className="h-1 bg-black/40 rounded-full flex overflow-hidden border border-white/10 shadow-inner">
-                    <div className={`h-full transition-all duration-700 ease-out ${signal.status === 'TP1 HIT' || signal.status === 'TP2 HIT' || signal.status === 'TP3 HIT' ? 'bg-emerald-500 shadow-sm' : 'bg-white/20'}`} style={{ width: signal.tp2 ? '33.33%' : signal.tp3 ? '25%' : '100%' }}></div>
+                {(signal.tp2 || signal.tp3) && (
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
                     {signal.tp2 && (
-                        <div className={`h-full transition-all duration-700 ease-out ${signal.status === 'TP2 HIT' || signal.status === 'TP3 HIT' ? 'bg-emerald-500 shadow-sm' : 'bg-white/20'}`} style={{ width: signal.tp3 ? '25%' : '33.33%', borderLeft: '1px solid rgba(255,255,255,0.1)' }}></div>
+                      <div className="bg-zinc-950/60 border border-zinc-800/60 rounded-md p-1.5 text-center shadow-inner">
+                        <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-1">
+                          <Target className="w-2.5 h-2.5 text-emerald-500/80" /> TP2
+                        </div>
+                        <div className="text-[10px] font-mono font-bold text-emerald-400">
+                          {signal.tp2}
+                        </div>
+                      </div>
                     )}
                     {signal.tp3 && (
-                        <div className={`h-full transition-all duration-700 ease-out ${signal.status === 'TP3 HIT' ? 'bg-emerald-500 shadow-sm' : 'bg-white/20'}`} style={{ width: '50%', borderLeft: '1px solid rgba(255,255,255,0.1)' }}></div>
+                      <div className="bg-zinc-950/60 border border-zinc-800/60 rounded-md p-1.5 text-center shadow-inner">
+                        <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-0.5 flex justify-center items-center gap-1">
+                          <Target className="w-2.5 h-2.5 text-emerald-500/80" /> TP3
+                        </div>
+                        <div className="text-[10px] font-mono font-bold text-emerald-400">
+                          {signal.tp3}
+                        </div>
+                      </div>
                     )}
-                </div>
-              </div>
+                  </div>
+                )}
 
-            </motion.div>
-          ))}
+                {/* Footer Metrics */}
+                <div className="flex items-center justify-between pt-2 border-t border-zinc-800/60">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="text-[10px] font-bold tracking-wide text-blue-400 uppercase">
+                      AI Verified ({signal.aiChecklist ? signal.aiChecklist.length : 0})
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider shadow-sm ${signal.freshness === 'live' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : signal.freshness === 'cached' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
+                      {signal.freshness}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="text-zinc-500 font-bold uppercase tracking-wider">Live Pips:</span>
+                    <span
+                      className={`font-mono font-bold ${signal.pips > 0 ? "text-emerald-400" : signal.pips < 0 ? "text-rose-400" : "text-zinc-400"}`}
+                    >
+                      {signal.pips > 0 ? "+" : ""}
+                      {signal.pips}
+                    </span>
+                  </div>
+                </div>
+
+                {/* TP Progress Bar */}
+                <div className="mt-2.5 pt-1.5 border-t border-zinc-800/40">
+                  <div className="flex items-center justify-between text-[10px] font-bold tracking-wider text-zinc-500 mb-1 uppercase font-mono">
+                    <span>Entry</span>
+                    <span className={signal.status === 'TP1 HIT' ? 'text-emerald-400 font-bold' : ''}>TP1</span>
+                    {signal.tp2 && <span className={signal.status === 'TP2 HIT' ? 'text-emerald-400 font-bold' : ''}>TP2</span>}
+                    {signal.tp3 && <span className={signal.status === 'TP3 HIT' ? 'text-emerald-400 font-bold' : ''}>TP3</span>}
+                  </div>
+                  <div className="h-1.5 bg-zinc-950 rounded-full flex overflow-hidden border border-zinc-800/80 shadow-inner">
+                    <div className={`h-full transition-all duration-700 ease-out ${['TP1 HIT', 'TP2 HIT', 'TP3 HIT'].includes(signal.status) ? 'bg-emerald-500 shadow-sm' : 'bg-zinc-700'}`} style={{ width: signal.tp2 ? '33.33%' : signal.tp3 ? '25%' : '100%' }}></div>
+                    {signal.tp2 && (
+                      <div className={`h-full transition-all duration-700 ease-out ${['TP2 HIT', 'TP3 HIT'].includes(signal.status) ? 'bg-emerald-500 shadow-sm' : 'bg-zinc-800'}`} style={{ width: signal.tp3 ? '25%' : '33.33%', borderLeft: '1px solid rgba(255,255,255,0.1)' }}></div>
+                    )}
+                    {signal.tp3 && (
+                      <div className={`h-full transition-all duration-700 ease-out ${signal.status === 'TP3 HIT' ? 'bg-emerald-500 shadow-sm' : 'bg-zinc-800'}`} style={{ width: '50%', borderLeft: '1px solid rgba(255,255,255,0.1)' }}></div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
         </motion.div>
       )}
 
@@ -270,88 +289,86 @@ export default function LiveSignals() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="w-full max-w-[240px] h-full bg-zinc-950/90 border-l border-white/10 shadow-2xl p-3 overflow-y-auto backdrop-blur-md"
+              className="w-full max-w-[300px] h-full bg-zinc-950/95 border-l border-zinc-800/80 shadow-2xl p-4 overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-2.5">
-                <h3 id="live-signal-drawer-title" className="text-[8px] font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-widest">
-                  <div className="p-1 rounded bg-blue-500/10 border border-blue-500/20 shadow-sm relative overflow-hidden">
-                    <div className="absolute inset-0 bg-blue-500/20 blur-xl"></div>
-                    <Radio className="w-2.5 h-2.5 text-blue-400 relative z-10" />
+              <div className="flex items-center justify-between mb-3 border-b border-zinc-800/80 pb-2">
+                <h3 id="live-signal-drawer-title" className="text-[10px] font-bold text-zinc-200 flex items-center gap-2 uppercase tracking-wider font-mono">
+                  <div className="p-1 rounded bg-blue-500/10 border border-blue-500/20 shadow-sm">
+                    <Radio className="w-3 h-3 text-blue-400" />
                   </div>
-                  Signal Detail
+                  Live Signal Details
                 </h3>
                 <button
                   onClick={() => setSelectedSignal(null)}
                   aria-label="Close signal detail drawer"
-                  className="p-1 hover:bg-white/10 rounded-full text-zinc-500 hover:text-white transition-colors"
+                  className="p-1 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition-colors"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="space-y-2">
-                <div className="bg-white/5 border border-white/10 rounded-md p-1.5 shadow-sm relative overflow-hidden">
-                  <div className="absolute top-0 right-0 -mt-6 -mr-6 w-20 h-20 bg-blue-500/10 rounded-full blur-xl"></div>
-                  <div className="flex justify-between items-center mb-1 relative z-10">
+              <div className="space-y-3">
+                <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-lg p-3 shadow-sm">
+                  <div className="flex justify-between items-center mb-2">
                     <span
-                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[6px] font-bold tracking-widest uppercase border shadow-sm ${selectedSignal.direction === "BUY" || selectedSignal.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border shadow-sm ${selectedSignal.direction === "BUY" || selectedSignal.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
                     >
                       {selectedSignal.direction === "BUY" || selectedSignal.direction === "LONG" ? (
-                        <ArrowUpRight className="w-2.5 h-2.5" />
+                        <ArrowUpRight className="w-3 h-3" />
                       ) : (
-                        <ArrowDownRight className="w-2.5 h-2.5" />
+                        <ArrowDownRight className="w-3 h-3" />
                       )}
                       {(selectedSignal.direction === "LONG" ? "BUY" : selectedSignal.direction === "SHORT" ? "SELL" : selectedSignal.direction)} {selectedSignal.pair}
                     </span>
-                    <span className="text-[6px] font-mono font-bold text-zinc-500 bg-black/40 px-1.5 py-0.5 rounded border border-white/10">
+                    <span className="text-[10px] font-mono font-medium text-zinc-400 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800">
                       {selectedSignal.signalKey}
                     </span>
                   </div>
-                  <p className="text-[8px] font-bold tracking-wide text-white mb-2 relative z-10">
+                  <p className="text-[10px] font-bold tracking-wide text-zinc-100 mb-2">
                     {selectedSignal.strategyName}
                   </p>
 
-                  <div className="grid grid-cols-2 gap-1 mb-1 relative z-10">
-                    <div className="bg-black/40 p-1.5 rounded-lg border border-white/10">
-                      <span className="block text-[6px] font-bold uppercase tracking-widest text-zinc-500 mb-0.5">
-                        Time Created
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div className="bg-zinc-950/80 p-2 rounded-md border border-zinc-800/60">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-0.5">
+                        Created
                       </span>
-                      <span className="text-[7px] font-mono font-bold text-zinc-300">
+                      <span className="text-[10px] font-mono font-bold text-zinc-300">
                         {selectedSignal.age}
                       </span>
                     </div>
-                    <div className="bg-black/40 p-1.5 rounded-lg border border-white/10">
-                      <span className="block text-[6px] font-bold uppercase tracking-widest text-zinc-500 mb-0.5">
+                    <div className="bg-zinc-950/80 p-2 rounded-md border border-zinc-800/60">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-0.5">
                         Status
                       </span>
-                      <span className={`inline-flex items-center px-1 py-0.5 rounded text-[4px] font-bold uppercase tracking-widest border shadow-sm ${getStatusBadge(selectedSignal.status)}`}>
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border shadow-sm ${getStatusBadge(selectedSignal.status)}`}>
                         {selectedSignal.status}
                       </span>
                     </div>
                   </div>
 
-                  <div className="space-y-1.5 border-t border-white/10 pt-2 mt-2 relative z-10">
-                    <div className="flex justify-between items-center text-[8px]">
-                      <span className="text-zinc-500 font-medium tracking-wide">Entry Target</span>
-                      <span className="font-mono font-bold text-white">
+                  <div className="space-y-1.5 border-t border-zinc-800/60 pt-2.5 mt-2">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-zinc-500 font-medium tracking-wide">Entry Price</span>
+                      <span className="font-mono font-bold text-zinc-200">
                         {selectedSignal.entry}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-[8px]">
+                    <div className="flex justify-between items-center text-[10px]">
                       <span className="text-zinc-500 font-medium tracking-wide">Stop Loss</span>
                       <span className="font-mono font-bold text-rose-400">
                         {selectedSignal.sl}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-[8px]">
+                    <div className="flex justify-between items-center text-[10px]">
                       <span className="text-zinc-500 font-medium tracking-wide">Take Profit 1</span>
                       <span className="font-mono font-bold text-emerald-400">
                         {selectedSignal.tp1}
                       </span>
                     </div>
                     {selectedSignal.tp2 && (
-                      <div className="flex justify-between items-center text-[8px]">
+                      <div className="flex justify-between items-center text-[10px]">
                         <span className="text-zinc-500 font-medium tracking-wide">Take Profit 2</span>
                         <span className="font-mono font-bold text-emerald-400">
                           {selectedSignal.tp2}
@@ -359,7 +376,7 @@ export default function LiveSignals() {
                       </div>
                     )}
                     {selectedSignal.tp3 && (
-                      <div className="flex justify-between items-center text-[8px]">
+                      <div className="flex justify-between items-center text-[10px]">
                         <span className="text-zinc-500 font-medium tracking-wide">Take Profit 3</span>
                         <span className="font-mono font-bold text-emerald-400">
                           {selectedSignal.tp3}
@@ -370,157 +387,64 @@ export default function LiveSignals() {
                 </div>
 
                 <div>
-                  <h4 className="text-[7px] font-bold text-zinc-400 mb-1.5 flex items-center gap-1.5 uppercase tracking-widest">
-                    <CheckCircle2 className="w-3 h-3 text-blue-500 shadow-sm" />
+                  <h4 className="text-[10px] font-bold text-zinc-400 mb-2 flex items-center gap-1.5 uppercase tracking-wider font-mono">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
                     AI Validation Evidence
                   </h4>
-                  <div className="bg-white/5 border border-white/10 rounded-md p-1.5 shadow-sm">
+                  <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-lg p-2.5 space-y-2">
                     
                     {selectedSignal.confidenceScore !== null && (
-                      <div className="mb-2 bg-black/40 p-2 rounded-lg border border-white/10 flex flex-col gap-1.5 shadow-inner relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/10 rounded-full blur-xl"></div>
-                        <div className="flex items-center justify-between mb-0.5 border-b border-white/10 pb-1.5 relative z-10">
-                          <span className="text-[6px] font-bold text-zinc-300 uppercase tracking-widest">AI Confidence</span>
+                      <div className="bg-zinc-950/80 p-2.5 rounded-md border border-zinc-800/60 flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between border-b border-zinc-800/60 pb-1.5">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">AI Confluence Score</span>
                           <span className={`text-sm font-mono font-black tracking-tight ${selectedSignal.confidenceScore >= 80 ? 'text-emerald-400' : selectedSignal.confidenceScore >= 60 ? 'text-blue-400' : 'text-amber-400'}`}>
                             {selectedSignal.confidenceScore}%
                           </span>
                         </div>
-                        
-                        {selectedSignal.marketConfidence !== undefined && (
-                          <div className="flex items-center justify-between text-[6px] relative z-10">
-                            <span className="text-zinc-500 font-bold uppercase tracking-widest">Market Confidence</span>
-                            <span className={`font-mono font-bold ${selectedSignal.marketConfidence >= 80 ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                              {selectedSignal.marketConfidence}%
-                            </span>
-                          </div>
-                        )}
-                        {selectedSignal.dataQualityScore !== undefined && (
-                          <div className="flex items-center justify-between text-[6px] relative z-10">
-                            <span className="text-zinc-500 font-bold uppercase tracking-widest">Data Quality</span>
-                            <span className={`font-mono font-bold ${selectedSignal.dataQualityScore >= 80 ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                              {selectedSignal.dataQualityScore}%
-                            </span>
-                          </div>
-                        )}
-                        {selectedSignal.signalQualityScore !== undefined && (
-                          <div className="flex items-center justify-between text-[6px] relative z-10">
-                            <span className="text-zinc-500 font-bold uppercase tracking-widest">Signal Quality</span>
-                            <span className={`font-mono font-bold ${selectedSignal.signalQualityScore >= 80 ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                              {selectedSignal.signalQualityScore}%
-                            </span>
-                          </div>
-                        )}
                       </div>
                     )}
 
-                    {selectedSignal.probabilities && (
-                      <div className="mb-3 space-y-2 bg-black/40 p-3 rounded-lg border border-white/10 shadow-inner">
-                        <span className="text-[6px] font-bold uppercase tracking-widest text-zinc-600 block mb-1.5">
-                          Probabilities
-                        </span>
-                        {Object.entries(selectedSignal.probabilities).map(([key, value]: [string, any]) => (
-                          <div key={key} className="flex flex-col gap-1">
-                            <div className="flex justify-between text-[6px] font-bold text-zinc-300">
-                              <span className="capitalize tracking-wide">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                              <span className="font-mono font-bold">{value}%</span>
-                            </div>
-                            <div className="h-1 bg-white/5 rounded-full overflow-hidden shadow-inner">
-                              <div 
-                                className={`h-full transition-all duration-1000 ${value >= 70 ? 'bg-emerald-500 shadow-sm' : value >= 40 ? 'bg-blue-500 shadow-sm' : 'bg-zinc-500'}`} 
-                                style={{ width: `${value}%` }} 
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="mb-3">
-                      <span className="text-[6px] font-bold uppercase tracking-widest text-zinc-600 block mb-2">
-                            Checklist
-                          </span>
-                          <div className="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1.5 custom-scrollbar">
-                            {selectedSignal.aiChecklist && selectedSignal.aiChecklist.length > 0 ? (
-                              selectedSignal.aiChecklist.map((item: any) => {
-                                const itemKey = item.rule || item.id || `${item.status}-${item.reason}`;
-                                return (
-                                  <div key={itemKey} className="flex flex-col gap-1 pb-2 mb-2 border-b border-white/5 last:border-0 last:pb-0 last:mb-0">
-                                    <div className="flex items-center justify-between text-[8px]">
-                                      <span className="text-zinc-200 font-bold tracking-wide" title={item.rule}>{item.rule}</span>
-                                      <span className={`font-black tracking-widest shadow-sm ${
-                                        item.status === 'PASS' ? 'text-emerald-400' : 
-                                        item.status === 'FAIL' ? 'text-rose-400' : 
-                                        'text-amber-400'
-                                      }`}>
-                                        {item.status}
-                                      </span>
-                                    </div>
-                                    <div className="text-[6px] text-zinc-500 font-medium">
-                                      <span className="text-zinc-600 uppercase tracking-widest text-[6px] mr-1">Reason:</span> {item.reason}
-                                    </div>
-                                    {item.details && (
-                                      <div className="text-[6px] text-zinc-500 mt-1 font-medium bg-black/40 p-1.5 rounded border border-white/5">
-                                        <span className="text-zinc-600 uppercase tracking-widest text-[6px] block mb-0.5">Details:</span> {item.details}
-                                      </div>
-                                    )}
-                                    {(item.rulesExamined && item.rulesExamined.length > 0) && (
-                                      <div className="text-[6px] text-zinc-500 mt-1 font-medium">
-                                        <span className="text-zinc-600 uppercase tracking-widest text-[6px] mr-1">Examined:</span> {item.rulesExamined.join(', ')}
-                                      </div>
-                                    )}
-                                    {(item.rulesFailed && item.rulesFailed.length > 0) && (
-                                      <div className="text-[6px] text-rose-400 mt-1 font-medium bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
-                                        <span className="text-rose-500 uppercase tracking-widest text-[6px] mr-1">Failed:</span> {item.rulesFailed.join(', ')}
-                                      </div>
-                                    )}
-                                    {(item.rulesPassed && item.rulesPassed.length > 0) && (
-                                      <div className="text-[6px] text-emerald-400 mt-1 font-medium bg-emerald-500/10 p-1.5 rounded border border-emerald-500/20">
-                                        <span className="text-emerald-500 uppercase tracking-widest text-[6px] mr-1">Passed:</span> {item.rulesPassed.join(', ')}
-                                      </div>
-                                    )}
-                                    {item.evidence && (
-                                      <div className="text-[6px] text-zinc-500 font-mono font-medium mt-1.5 bg-black/60 p-1.5 rounded border border-white/10 break-words shadow-inner overflow-x-auto custom-scrollbar">
-                                        {typeof item.evidence === 'object' ? JSON.stringify(item.evidence, null, 2) : String(item.evidence)}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })
-                            ) : (
-                              <div className="text-[6px] text-zinc-500 font-medium italic text-center py-3 bg-black/20 rounded border border-white/5 border-dashed">No checklist</div>
-                            )}
-                          </div>
-                    </div>
                     <div>
-                      <span className="text-[6px] font-bold uppercase tracking-widest text-zinc-600 block mb-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1 font-mono">
+                        Rule Checklist ({selectedSignal.aiChecklist ? selectedSignal.aiChecklist.length : 0})
+                      </span>
+                      <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-1">
+                        {selectedSignal.aiChecklist && selectedSignal.aiChecklist.length > 0 ? (
+                          selectedSignal.aiChecklist.map((item: any) => {
+                            const itemKey = item.rule || item.id || `${item.status}-${item.reason}`;
+                            return (
+                              <div key={itemKey} className="bg-zinc-950/80 p-2 rounded-md border border-zinc-800/60 flex flex-col gap-1">
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-zinc-200 font-bold tracking-wide" title={item.rule}>{item.rule}</span>
+                                  <span className={`font-mono font-bold ${
+                                    item.status === 'PASS' ? 'text-emerald-400' : 
+                                    item.status === 'FAIL' ? 'text-rose-400' : 
+                                    'text-amber-400'
+                                  }`}>
+                                    {item.status}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-zinc-400 font-medium">
+                                  {item.reason}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-[10px] text-zinc-500 font-medium italic text-center py-3 bg-zinc-950/40 rounded border border-zinc-800/40 border-dashed">No checklist available</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1 font-mono">
                         AI Reasoning
                       </span>
-                      <p className="text-[8px] text-zinc-400 leading-relaxed font-medium italic border-l-2 border-blue-500 pl-2 py-1 bg-gradient-to-r from-blue-500/10 to-transparent">
-                        &quot;{selectedSignal.aiReasoning || "Not Available"}&quot;
+                      <p className="text-[10px] text-zinc-300 leading-relaxed font-medium italic border-l-2 border-blue-500/80 pl-2 py-1 bg-blue-500/5 rounded-r">
+                        &quot;{selectedSignal.aiReasoning || "No reasoning available"}&quot;
                       </p>
-                      
-                      {selectedSignal.aiEvidence && (
-                        <div className="mt-3">
-                          <span className="text-[6px] font-bold uppercase tracking-widest text-zinc-600 block mb-1.5">
-                            Evidence
-                          </span>
-                          <p className="text-[8px] text-zinc-400 leading-relaxed font-medium bg-black/40 p-2 rounded border border-white/10 shadow-inner">
-                            {selectedSignal.aiEvidence}
-                          </p>
-                        </div>
-                      )}
-
-                      {selectedSignal.aiConflicts && (
-                        <div className="mt-3">
-                          <span className="text-[6px] font-bold uppercase tracking-widest text-amber-500 block mb-1.5">
-                            Conflicts
-                          </span>
-                          <p className="text-[8px] text-amber-400 leading-relaxed font-medium bg-amber-500/10 p-2 rounded border border-amber-500/20 shadow-inner">
-                            {selectedSignal.aiConflicts}
-                          </p>
-                        </div>
-                      )}
                     </div>
+
                   </div>
                 </div>
 
@@ -532,3 +456,4 @@ export default function LiveSignals() {
     </div>
   );
 }
+

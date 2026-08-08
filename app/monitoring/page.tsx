@@ -99,8 +99,8 @@ export default function Monitoring() {
           }
           return (
             <div key={k} className="flex flex-col bg-zinc-950/50 p-1.5 rounded-md border border-zinc-800/50 shadow-sm">
-              <span className="text-[7px] text-zinc-500 font-medium uppercase tracking-widest">{k.replace(/_/g, ' ')}</span>
-              <span className="text-[9px] text-zinc-300 font-mono font-medium truncate mt-[1px]">{displayVal}</span>
+              <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest">{k.replace(/_/g, ' ')}</span>
+              <span className="text-[10px] text-zinc-300 font-mono font-medium truncate mt-[1px]">{displayVal}</span>
             </div>
           );
         })}
@@ -139,14 +139,14 @@ export default function Monitoring() {
               REALTIME STRATEGY SCANNER
             </h2>
             <div className="flex items-center gap-1.5 mt-1">
-              <p className="text-[9px] text-zinc-400 tracking-wide font-medium">5 Canonical Strategies Engine</p>
-              <span className="text-[9px] text-zinc-700">•</span>
-              <span className="text-[8px] font-bold text-blue-400 tracking-wider bg-blue-500/10 px-1.5 py-[2px] rounded-[3px] border border-blue-500/20">5/5 ACTIVE</span>
+              <p className="text-[10px] text-zinc-400 tracking-wide font-medium">5 Canonical Strategies Engine</p>
+              <span className="text-[10px] text-zinc-700">•</span>
+              <span className="text-[10px] font-bold text-blue-400 tracking-wider bg-blue-500/10 px-1.5 py-[2px] rounded-[3px] border border-blue-500/20">5/5 ACTIVE</span>
             </div>
           </div>
           <button 
             onClick={refetch} 
-            className="flex items-center gap-1.5 text-[8px] font-bold tracking-wider text-zinc-300 hover:text-white bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 rounded-md hover:bg-zinc-800 transition-colors uppercase shadow-sm active:scale-95"
+            className="flex items-center gap-1.5 text-[10px] font-bold tracking-wider text-zinc-300 hover:text-white bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 rounded-md hover:bg-zinc-800 transition-colors uppercase shadow-sm active:scale-95"
           >
             <RotateCw className="w-3 h-3 text-blue-400" /> Refresh State
           </button>
@@ -194,7 +194,7 @@ export default function Monitoring() {
           </p>
           <button
             onClick={refetch}
-            className="px-5 py-2.5 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-[9px] font-bold tracking-wide rounded-xl transition-all shadow-sm active:scale-95"
+            className="px-5 py-2.5 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-[10px] font-bold tracking-wide rounded-xl transition-all shadow-sm active:scale-95"
           >
             Reconnect Engine
           </button>
@@ -229,34 +229,34 @@ export default function Monitoring() {
                 >
                   <div className="flex-1 pr-3">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <span className="text-[8px] font-mono font-black text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded uppercase">
+                        <span className="text-[10px] font-mono font-black text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded uppercase">
                           CANONICAL {index + 1}/5
                         </span>
                         <h3 className="text-[10px] font-bold text-zinc-100 flex items-center gap-1 tracking-wide group-hover:text-white transition-colors">
                           {strategy.name || strategy.id}
                         </h3>
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[7px] font-bold border uppercase tracking-wider shadow-sm ${getStatusBadge(setupStatus)}`}>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider shadow-sm ${getStatusBadge(setupStatus)}`}>
                           {setupStatus}
                         </span>
                         {strategy.freshness && (
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[7px] font-bold border uppercase tracking-wider shadow-sm ${getStatusBadge(strategy.freshness)}`}>
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider shadow-sm ${getStatusBadge(strategy.freshness)}`}>
                             {strategy.freshness}
                             </span>
                         )}
                         {(setup.validationLogSummary && setup.validationLogSummary.toLowerCase().includes('suppressed')) && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[7px] font-bold border border-amber-500/20 text-amber-400 bg-amber-500/10 uppercase tracking-wider shadow-sm">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-500/20 text-amber-400 bg-amber-500/10 uppercase tracking-wider shadow-sm">
                             Suppressed
                             </span>
                         )}
                         {strategy.errors && strategy.errors.length > 0 && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[7px] font-bold border border-rose-500/20 text-rose-400 bg-rose-500/10 uppercase tracking-wider shadow-sm" title={strategy.errors.join(', ')}>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border border-rose-500/20 text-rose-400 bg-rose-500/10 uppercase tracking-wider shadow-sm" title={strategy.errors.join(', ')}>
                             Error
                             </span>
                         )}
                     </div>
                     
                     {/* Mini Status Chips */}
-                    <div className="flex flex-wrap items-center gap-2 text-[8px] text-zinc-400 font-medium">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-400 font-medium">
                         <span className="flex items-center gap-1 bg-zinc-950/60 px-1.5 py-0.5 rounded border border-zinc-800/60"><Clock className="w-2.5 h-2.5 text-zinc-500" /> TF: <span className="text-zinc-200 font-mono font-bold">{setup.timeframe || 'N/A'}</span></span>
                         <span className="flex items-center gap-1 bg-zinc-950/60 px-1.5 py-0.5 rounded border border-zinc-800/60"><Timer className="w-2.5 h-2.5 text-zinc-500" /> Session: <span className="text-zinc-200 font-bold">{setup.session || 'N/A'}</span></span>
                         <span className="flex items-center gap-1 bg-zinc-950/60 px-1.5 py-0.5 rounded border border-zinc-800/60">
@@ -273,7 +273,7 @@ export default function Monitoring() {
                                 <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite]"></div>
                             </div>
                         </div>
-                        <span className="text-[9px] text-zinc-300 font-mono font-bold w-8 text-right tracking-wide">{Math.round(progressInfo.percentage)}%</span>
+                        <span className="text-[10px] text-zinc-300 font-mono font-bold w-8 text-right tracking-wide">{Math.round(progressInfo.percentage)}%</span>
                     </div>
 
                   </div>
@@ -299,17 +299,17 @@ export default function Monitoring() {
                           {/* Left Column: Timeline */}
                           <div className="flex flex-col gap-2.5 w-full lg:w-1/3">
                               {strategy.assumptions_flagged && (
-                                  <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400/90 text-[8px] font-bold p-2 rounded-md uppercase tracking-wider shadow-sm flex items-start gap-1.5">
+                                  <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400/90 text-[10px] font-bold p-2 rounded-md uppercase tracking-wider shadow-sm flex items-start gap-1.5">
                                       <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
                                       <span>ASUMSI PERLU KONFIRMASI: {strategy.assumptions_flagged}</span>
                                   </div>
                               )}
-                              <h4 className="text-[8px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest font-mono">
+                              <h4 className="text-[10px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest font-mono">
                                 <ListFilter className="w-3 h-3 text-zinc-500" /> Sequential Step Setup
                               </h4>
                               <TimelineCard steps={timeline} />
                               
-                              <h4 className="text-[8px] font-bold text-zinc-400 mt-2 flex items-center gap-1 uppercase tracking-widest font-mono">
+                              <h4 className="text-[10px] font-bold text-zinc-400 mt-2 flex items-center gap-1 uppercase tracking-widest font-mono">
                                 <Crosshair className="w-3 h-3 text-zinc-500" /> Setup Parameters
                               </h4>
                               <SetupCard 
@@ -331,12 +331,12 @@ export default function Monitoring() {
                           {/* Right Column: Rules & AI */}
                           <div className="flex flex-col gap-2.5 w-full lg:w-2/3">
                               <div className="flex items-center justify-between">
-                                  <h4 className="text-[8px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest font-mono">
+                                  <h4 className="text-[10px] font-bold text-zinc-400 flex items-center gap-1 uppercase tracking-widest font-mono">
                                       <CheckSquare className="w-3 h-3 text-zinc-500" /> Rule Engine Validation
                                   </h4>
                                   <button 
                                       onClick={() => setDrawerData(strategy)}
-                                      className="flex items-center gap-1 text-[8px] font-bold tracking-wide text-zinc-300 hover:text-white transition-colors bg-zinc-900 hover:bg-zinc-800 px-2 py-1 rounded border border-zinc-800 shadow-sm active:scale-95"
+                                      className="flex items-center gap-1 text-[10px] font-bold tracking-wide text-zinc-300 hover:text-white transition-colors bg-zinc-900 hover:bg-zinc-800 px-2 py-1 rounded border border-zinc-800 shadow-sm active:scale-95"
                                   >
                                       <FileSearch className="w-3 h-3 text-blue-400" /> View Evidence
                                   </button>
@@ -346,23 +346,23 @@ export default function Monitoring() {
                               </div>
 
                               {/* Validation Engine Result */}
-                              {(strategy.aiDecision || setup.confidence || setup.aiConfidence || setup.aiDecision) && (
+                              {(strategy.aiDecision || setup.aiDecision) && (
                                   <div className="flex-shrink-0 mt-2">
-                                      <h4 className="text-[8px] font-bold text-zinc-400 mb-1.5 flex items-center gap-1 uppercase tracking-widest font-mono">
+                                      <h4 className="text-[10px] font-bold text-zinc-400 mb-1.5 flex items-center gap-1 uppercase tracking-widest font-mono">
                                           <Zap className="w-3 h-3 text-amber-500" /> Validation Engine Decision
                                       </h4>
                                       <div className={`p-2.5 rounded-md border shadow-sm ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'bg-emerald-500/10 border-emerald-500/30' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'bg-rose-500/10 border-rose-500/30' : 'bg-blue-500/10 border-blue-500/30'}`}>
                                           <div className="flex items-center justify-between mb-1.5">
-                                              <span className={`text-[9px] font-black tracking-wider uppercase ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'text-emerald-400' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'text-rose-400' : 'text-blue-400'}`}>
+                                              <span className={`text-[10px] font-black tracking-wider uppercase ${(strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'text-emerald-400' : (strategy.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'text-rose-400' : 'text-blue-400'}`}>
                                                   Engine Result: {strategy.aiDecision || setup.aiDecision || 'PENDING'}
                                               </span>
                                               {(setup.confidence || setup.aiConfidence) && (
-                                                  <span className="text-[8px] font-mono font-bold text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 rounded shadow-sm">
+                                                  <span className="text-[10px] font-mono font-bold text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 rounded shadow-sm">
                                                       Confidence: {setup.confidence || setup.aiConfidence}%
                                                   </span>
                                               )}
                                           </div>
-                                          <p className="text-[9px] text-zinc-300 font-medium italic opacity-90">
+                                          <p className="text-[10px] text-zinc-300 font-medium italic opacity-90">
                                               Validation complete. Check evidence drawer for deep reasoning log.
                                           </p>
                                       </div>
@@ -398,7 +398,7 @@ export default function Monitoring() {
                   onClick={(e) => e.stopPropagation()}
                 >
                     <div className="flex items-center justify-between p-3 border-b border-zinc-800/80">
-                        <h3 className="text-[9px] font-bold text-zinc-100 flex items-center gap-2 uppercase tracking-widest">
+                        <h3 className="text-[10px] font-bold text-zinc-100 flex items-center gap-2 uppercase tracking-widest">
                             <FileSearch className="w-3.5 h-3.5 text-zinc-400" />
                             Evidence & Details
                         </h3>
@@ -409,17 +409,17 @@ export default function Monitoring() {
                     <div className="p-3 flex-1 overflow-y-auto space-y-3">
                         
                         <div>
-                            <h4 className="text-[7px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Strategy Details</h4>
+                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Strategy Details</h4>
                             <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-md p-2 space-y-1.5 shadow-sm">
-                                <div className="flex justify-between items-center text-[8px]">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-zinc-500 font-medium tracking-wide">Name</span>
                                     <span className="text-zinc-200 font-bold tracking-wide">{drawerData.name}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-[8px]">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-zinc-500 font-medium tracking-wide">Signal Key</span>
                                     <span className="text-zinc-300 font-mono font-medium bg-zinc-950 px-1.5 py-[2px] rounded-[3px] border border-zinc-800">{drawerData.signal || 'N/A'}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-[8px]">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-zinc-500 font-medium tracking-wide">Timeframe</span>
                                     <span className="text-zinc-300 font-mono font-medium">{drawerSetup?.timeframe || 'N/A'}</span>
                                 </div>
@@ -428,23 +428,23 @@ export default function Monitoring() {
 
                         {/* Risk & Target Section */}
                         <div>
-                            <h4 className="text-[7px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Risk & Targets</h4>
+                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Risk & Targets</h4>
                             <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-md p-2 space-y-1.5 shadow-sm">
-                                <div className="flex justify-between items-center text-[8px]">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-zinc-500 font-medium tracking-wide">Direction</span>
                                     <span className={`font-black tracking-wider uppercase ${drawerSetup?.direction === 'buy' ? 'text-emerald-400' : drawerSetup?.direction === 'sell' ? 'text-rose-400' : 'text-zinc-400'}`}>
                                         {drawerSetup?.direction || 'N/A'}
                                     </span>
                                 </div>
-                                <div className="flex justify-between items-center text-[8px]">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-zinc-500 font-medium tracking-wide">Entry Price</span>
                                     <span className="text-zinc-300 font-mono font-bold tracking-wide">{drawerSetup?.entry !== '--' ? Number(drawerSetup?.entry).toFixed(2) : 'N/A'}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-[8px]">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-zinc-500 font-medium tracking-wide">Stop Loss</span>
                                     <span className="text-rose-400 font-mono font-bold tracking-wide">{drawerSetup?.sl !== '--' ? Number(drawerSetup?.sl).toFixed(2) : 'N/A'}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-[8px]">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-zinc-500 font-medium tracking-wide">Take Profit (TP1)</span>
                                     <span className="text-emerald-400 font-mono font-bold tracking-wide">{drawerSetup?.tp !== '--' ? Number(drawerSetup?.tp).toFixed(2) : 'N/A'}</span>
                                 </div>
@@ -453,7 +453,7 @@ export default function Monitoring() {
                         </div>
 
                         <div>
-                            <h4 className="text-[7px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Engine Reasoning</h4>
+                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Engine Reasoning</h4>
                             <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-md p-2.5 shadow-sm">
                                 {(drawerData.aiDecision || drawerSetup?.aiDecision) && (
                                     <div className="mb-3 flex flex-wrap items-center gap-2.5 border-b border-zinc-800/80 pb-1.5">
@@ -461,14 +461,14 @@ export default function Monitoring() {
                                             Engine Result: {drawerData.aiDecision || drawerSetup?.aiDecision}
                                         </span>
                                         {(drawerSetup?.confidence || drawerSetup?.aiConfidence) && (
-                                              <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded shadow-sm">
+                                              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded shadow-sm">
                                                   Confidence: {drawerSetup?.confidence || drawerSetup?.aiConfidence}%
                                               </span>
                                         )}
                                     </div>
                                 )}
                                 {drawerSetup?.aiReasoning ? (
-                                    <p className="text-[8px] text-zinc-300 leading-relaxed font-medium italic border-l-[1.5px] border-blue-500/60 pl-2 py-0.5 mt-1.5">
+                                    <p className="text-[10px] text-zinc-300 leading-relaxed font-medium italic border-l-[1.5px] border-blue-500/60 pl-2 py-0.5 mt-1.5">
                                         &quot;{drawerSetup?.aiReasoning}&quot;
                                     </p>
                                 ) : (
@@ -478,13 +478,13 @@ export default function Monitoring() {
                         </div>
 
                         <div>
-                            <h4 className="text-[7px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Rule Evidence Data</h4>
+                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Rule Evidence Data</h4>
                             <div className="space-y-3">
                                 {(drawerRules || []).map((rule: any) => (
                                     <div key={rule.ruleId || rule.id || rule.name} className="bg-zinc-900/40 border border-zinc-800/60 rounded-md p-2 shadow-sm">
                                         <div className="flex justify-between items-center mb-2.5 border-b border-zinc-800/50 pb-1.5">
-                                            <span className="text-[9px] font-bold text-zinc-200 tracking-wide">{rule.ruleId}</span>
-                                            <span className={`text-[6px] uppercase tracking-wider font-bold shadow-sm ${getStatusBadge(rule.status).split(' ')[0]}`}>{rule.status}</span>
+                                            <span className="text-[10px] font-bold text-zinc-200 tracking-wide">{rule.ruleId}</span>
+                                            <span className={`text-[10px] uppercase tracking-wider font-bold shadow-sm ${getStatusBadge(rule.status).split(' ')[0]}`}>{rule.status}</span>
                                         </div>
                                         <div className="mt-1.5">
                                             {renderEvidence(rule.ruleId, rule.evidence)}

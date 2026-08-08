@@ -181,7 +181,7 @@ async function pingDatabase(): Promise<EnginePingResult> {
         details: { connected: true, provider: 'PostgreSQL' }
       };
     } else {
-      const hasConfig = !!(getEnv("DATABASE_URL") || getEnv("POSTGRES_URL") || getEnv("SUPABASE_DB_URL"));
+      const hasConfig = !!(getEnv("DATABASE_URL"));
       return {
         engineId: 'database',
         name: 'Database Engine',

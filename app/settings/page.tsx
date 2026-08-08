@@ -88,6 +88,7 @@ export default function Settings() {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedMcp, setSelectedMcp] = useState<any>(null);
   const [showLogs, setShowLogs] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
   const [logSeverity, setLogSeverity] = useState<string>("all");
   const [showHealthSnapshot, setShowHealthSnapshot] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
@@ -101,10 +102,6 @@ export default function Settings() {
     NEWS_NO_TRADE_WINDOW: "15",
     PYTHON_ENGINE_URL: "",
     TELEGRAM_CHAT_ID: "",
-    TWELVEDATA_API_KEY: "",
-    NEWS_API_KEY: "",
-    TELEGRAM_BOT_TOKEN: "",
-    GEMINI_API_KEY: "",
   });
   const [baselineData, setBaselineData] = useState<Record<string, string>>({});
   const [savingConfig, setSavingConfig] = useState<boolean>(false);
@@ -121,10 +118,6 @@ export default function Settings() {
       NEWS_NO_TRADE_WINDOW: configStatus.values.NEWS_NO_TRADE_WINDOW || "15",
       PYTHON_ENGINE_URL: configStatus.values.PYTHON_ENGINE_URL || "",
       TELEGRAM_CHAT_ID: configStatus.values.TELEGRAM_CHAT_ID || "",
-      TWELVEDATA_API_KEY: "",
-      NEWS_API_KEY: "",
-      TELEGRAM_BOT_TOKEN: "",
-      GEMINI_API_KEY: "",
     };
     const timer = setTimeout(() => {
       setBaselineData(initial);
@@ -401,7 +394,7 @@ export default function Settings() {
         <button
           onClick={pingAllEngines}
           disabled={pingingAll}
-          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-400 rounded-lg text-[9px] font-bold tracking-widest uppercase transition-all shadow-sm shrink-0 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-400 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all shadow-sm shrink-0 disabled:opacity-50"
         >
           <RotateCw className={`w-3.5 h-3.5 ${pingingAll ? 'animate-spin' : ''}`} />
           {pingingAll ? 'Verifying All Engines...' : 'Ping All Engines'}
@@ -411,11 +404,11 @@ export default function Settings() {
       {/* Engine Cards Section (Dynamic Health Check) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-[9px] font-bold text-white uppercase tracking-widest flex items-center gap-2">
+          <h3 className="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-2">
             <Zap className="w-3.5 h-3.5 text-amber-400" />
             Engine Diagnostics Cards ({ENGINE_DEFINITIONS.length})
           </h3>
-          <span className="text-[8px] text-zinc-400 font-mono">Real live pings — No static badges</span>
+          <span className="text-[10px] text-zinc-400 font-mono">Real live pings — No static badges</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -440,23 +433,23 @@ export default function Settings() {
                       </div>
                       <div>
                         <h4 className="text-[10px] font-bold text-white tracking-wide">{def.name}</h4>
-                        <span className="text-[7px] text-zinc-400 uppercase tracking-widest font-mono font-bold">{def.typeLabel}</span>
+                        <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-mono font-bold">{def.typeLabel}</span>
                       </div>
                     </div>
 
                     <span
-                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border transition-all ${getEngineStatusBadge(status)}`}
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest border transition-all ${getEngineStatusBadge(status)}`}
                     >
                       {getStatusIcon(status)}
                       {status}
                     </span>
                   </div>
 
-                  <p className="text-[9px] text-zinc-400 leading-snug font-medium">
+                  <p className="text-[10px] text-zinc-400 leading-snug font-medium">
                     {def.description}
                   </p>
 
-                  <div className="bg-white/5 rounded-md p-2 border border-white/10 space-y-1 text-[8px] font-mono">
+                  <div className="bg-white/5 rounded-md p-2 border border-white/10 space-y-1 text-[10px] font-mono">
                     <div className="flex justify-between items-center text-zinc-400">
                       <span>Ping Latency:</span>
                       <span className={`font-bold ${pingInfo?.latencyMs !== undefined && pingInfo.latencyMs < 150 ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -476,7 +469,7 @@ export default function Settings() {
                   </div>
 
                   {pingInfo?.message && (
-                    <div className="text-[8px] text-zinc-300 bg-black/60 p-2 rounded border border-white/10 italic leading-normal line-clamp-2">
+                    <div className="text-[10px] text-zinc-300 bg-black/60 p-2 rounded border border-white/10 italic leading-normal line-clamp-2">
                       {pingInfo.message}
                     </div>
                   )}
@@ -485,7 +478,7 @@ export default function Settings() {
                 <button
                   onClick={() => pingEngineTarget(def.id)}
                   disabled={isPinging}
-                  className="w-full py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-md text-[8px] font-bold tracking-widest uppercase transition-colors flex items-center justify-center gap-1.5 shadow-sm relative z-10 disabled:opacity-50"
+                  className="w-full py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-md text-[10px] font-bold tracking-widest uppercase transition-colors flex items-center justify-center gap-1.5 shadow-sm relative z-10 disabled:opacity-50"
                 >
                   <RotateCw className={`w-3 h-3 ${isPinging ? 'animate-spin' : ''}`} />
                   {isPinging ? `Pinging ${def.name}...` : `Ping ${def.name}`}
@@ -501,7 +494,7 @@ export default function Settings() {
         {/* Runtime Health */}
         <div className="bg-black/40 border border-white/10 rounded-md p-2.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl"></div>
-          <h3 className="text-[8px] font-bold text-white mb-2 uppercase tracking-widest flex items-center gap-1.5 relative z-10">
+          <h3 className="text-[10px] font-bold text-white mb-2 uppercase tracking-widest flex items-center gap-1.5 relative z-10">
             <Activity className="w-3 h-3 text-blue-400" /> Runtime Health Services
           </h3>
           <div className="space-y-2 relative z-10">
@@ -526,13 +519,13 @@ export default function Settings() {
                       <span className="font-bold tracking-wide">{service.serviceName}</span>
                     </span>
                     <span
-                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border shadow-sm ${getMcpStatusBadge(service.status)}`}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border shadow-sm ${getMcpStatusBadge(service.status)}`}
                     >
                       {getStatusIcon(service.status)} {service.status}
                     </span>
                   </div>
                   {service.status !== 'ONLINE' && service.message && (
-                    <span className="text-[9px] text-zinc-500 mt-1 line-clamp-2 italic">
+                    <span className="text-[10px] text-zinc-500 mt-1 line-clamp-2 italic">
                       Reason: {service.message}
                     </span>
                   )}
@@ -548,7 +541,7 @@ export default function Settings() {
               <span className="text-zinc-400 flex items-center gap-1.5 font-bold uppercase tracking-widest">
                 <AlertTriangle className="w-3 h-3 text-amber-500" /> Recent Errors
               </span>
-              <span className="text-zinc-400 text-[8px] bg-white/5 px-2 py-0.5 rounded border border-white/10 font-mono font-bold shadow-sm">
+              <span className="text-zinc-400 text-[10px] bg-white/5 px-2 py-0.5 rounded border border-white/10 font-mono font-bold shadow-sm">
                 {errorsData?.count24h ?? 0} in last 24h
               </span>
             </div>
@@ -556,15 +549,21 @@ export default function Settings() {
             <div className="mt-0.5 space-y-1.5">
               <button
                 onClick={() => setShowHealthSnapshot(true)}
-                className="flex items-center justify-center gap-2 w-full py-1.5 bg-white/5 border border-white/10 rounded-lg text-[8px] font-bold tracking-widest uppercase text-zinc-300 hover:bg-white/10 hover:text-white transition-colors shadow-sm"
+                className="flex items-center justify-center gap-2 w-full py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold tracking-widest uppercase text-zinc-300 hover:bg-white/10 hover:text-white transition-colors shadow-sm"
               >
                 <Activity className="w-3 h-3" /> View Health Snapshot
               </button>
               <button
                 onClick={loadLogs}
-                className="flex items-center justify-center gap-2 w-full py-1.5 bg-white/5 border border-white/10 rounded-lg text-[8px] font-bold tracking-widest uppercase text-zinc-300 hover:bg-white/10 hover:text-white transition-colors shadow-sm"
+                className="flex items-center justify-center gap-2 w-full py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold tracking-widest uppercase text-zinc-300 hover:bg-white/10 hover:text-white transition-colors shadow-sm"
               >
                 <FileText className="w-3 h-3" /> View System Logs
+              </button>
+              <button
+                onClick={() => setShowErrors(true)}
+                className="flex items-center justify-center gap-2 w-full py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold tracking-widest uppercase text-rose-400 hover:bg-white/10 hover:text-rose-300 transition-colors shadow-sm"
+              >
+                <AlertTriangle className="w-3 h-3" /> View System Errors
               </button>
             </div>
           </div>
@@ -575,17 +574,17 @@ export default function Settings() {
           <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
           <div className="flex items-center justify-between mb-3 relative z-10 border-b border-white/10 pb-2">
             <div>
-              <h3 className="text-[9px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
+              <h3 className="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
                 <SettingsIcon className="w-3.5 h-3.5 text-blue-400" /> System & Strategy Parameters
               </h3>
-              <p className="text-[8px] text-zinc-400 mt-0.5 font-medium">Configure active trading pips, thresholds, and runtime integrations</p>
+              <p className="text-[10px] text-zinc-400 mt-0.5 font-medium">Configure active trading pips, thresholds, and runtime integrations</p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleResetConfig}
                 disabled={savingConfig}
-                className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white rounded text-[7px] font-bold uppercase tracking-widest transition-colors shadow-sm disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white rounded text-[10px] font-bold uppercase tracking-widest transition-colors shadow-sm disabled:opacity-50"
               >
                 <RotateCcw className="w-2.5 h-2.5 text-zinc-400" />
                 Reset
@@ -594,7 +593,7 @@ export default function Settings() {
                 type="button"
                 onClick={handleSaveConfig}
                 disabled={savingConfig}
-                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 rounded text-[7px] font-bold uppercase tracking-widest transition-all shadow-sm disabled:opacity-50"
+                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 rounded text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm disabled:opacity-50"
               >
                 <Save className={`w-2.5 h-2.5 ${savingConfig ? 'animate-spin' : ''}`} />
                 {savingConfig ? 'Saving...' : 'Save Settings'}
@@ -603,7 +602,7 @@ export default function Settings() {
           </div>
 
           {saveSuccess && (
-            <div className="mb-3 p-2 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[8px] font-medium flex items-center justify-between shadow-sm">
+            <div className="mb-3 p-2 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-medium flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-1.5">
                 <Check className="w-3 h-3 text-emerald-400 shrink-0" />
                 <span>{saveSuccess}</span>
@@ -613,7 +612,7 @@ export default function Settings() {
           )}
 
           {saveError && (
-            <div className="mb-3 p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[8px] font-medium flex items-center justify-between shadow-sm">
+            <div className="mb-3 p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[10px] font-medium flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-1.5">
                 <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
                 <span>{saveError}</span>
@@ -622,7 +621,7 @@ export default function Settings() {
             </div>
           )}
 
-          <form onSubmit={handleSaveConfig} className="space-y-3 relative z-10 text-[8px]">
+          <form onSubmit={handleSaveConfig} className="space-y-3 relative z-10 text-[10px]">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-bold text-zinc-300 uppercase tracking-widest mb-1">Standard Pip Buffer</label>
@@ -635,7 +634,7 @@ export default function Settings() {
                   placeholder="15"
                 />
                 {validationErrors.STANDARD_PIP_BUFFER && (
-                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.STANDARD_PIP_BUFFER}</p>
+                  <p className="text-rose-400 text-[10px] mt-0.5">{validationErrors.STANDARD_PIP_BUFFER}</p>
                 )}
               </div>
 
@@ -650,7 +649,7 @@ export default function Settings() {
                   placeholder="0.6"
                 />
                 {validationErrors.MIN_ENGULFING_BODY_RATIO && (
-                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.MIN_ENGULFING_BODY_RATIO}</p>
+                  <p className="text-rose-400 text-[10px] mt-0.5">{validationErrors.MIN_ENGULFING_BODY_RATIO}</p>
                 )}
               </div>
 
@@ -665,7 +664,7 @@ export default function Settings() {
                   placeholder="20"
                 />
                 {validationErrors.DOUBLE_PATTERN_TOLERANCE && (
-                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.DOUBLE_PATTERN_TOLERANCE}</p>
+                  <p className="text-rose-400 text-[10px] mt-0.5">{validationErrors.DOUBLE_PATTERN_TOLERANCE}</p>
                 )}
               </div>
 
@@ -680,7 +679,7 @@ export default function Settings() {
                   placeholder="15"
                 />
                 {validationErrors.NEWS_NO_TRADE_WINDOW && (
-                  <p className="text-rose-400 text-[7px] mt-0.5">{validationErrors.NEWS_NO_TRADE_WINDOW}</p>
+                  <p className="text-rose-400 text-[10px] mt-0.5">{validationErrors.NEWS_NO_TRADE_WINDOW}</p>
                 )}
               </div>
 
@@ -713,11 +712,11 @@ export default function Settings() {
         <div className="bg-black/40 border border-white/10 rounded-md p-2.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl"></div>
           <div className="flex items-center justify-between mb-3 relative z-10">
-            <h3 className="text-[8px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
+            <h3 className="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
               <Key className="w-3 h-3 text-purple-400" /> Config & Environment Keys
             </h3>
             {configStatus?.lastChecked && (
-              <span className="text-[8px] text-zinc-500 font-mono font-bold tracking-widest flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/10 shadow-sm">
+              <span className="text-[10px] text-zinc-500 font-mono font-bold tracking-widest flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded border border-white/10 shadow-sm">
                 <Clock className="w-3 h-3" />
                 <ClientDate date={configStatus.lastChecked} format="toLocaleTimeString" />
               </span>
@@ -739,11 +738,16 @@ export default function Settings() {
                 {Object.entries(configStatus.env).map(([key, value]) => (
                   <div key={key} className="flex flex-col gap-1.5 pb-2 border-b border-white/10 last:border-0 last:pb-0">
                     <div className="flex justify-between items-center">
-                      <label className="text-zinc-300 capitalize text-[8px] font-bold tracking-widest">
+                      <label className="text-zinc-300 capitalize text-[10px] font-bold tracking-widest">
                         {key.replace(/_/g, " ")}
                       </label>
                       <span
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[6px] uppercase tracking-widest font-bold border shadow-sm ${value === "configured" || value === "online" ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : value === "offline" || value === "error" ? "border-rose-500/30 text-rose-400 bg-rose-500/10" : "border-white/10 text-zinc-400 bg-white/5"}`}
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] uppercase tracking-widest font-bold border shadow-sm ${
+                          value === "configured" || value === "online" ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : 
+                          value === "offline" || value === "error" ? "border-rose-500/30 text-rose-400 bg-rose-500/10" : 
+                          value === "quota_exceeded" || value === "rate_limited" || value === "degraded" ? "border-amber-500/30 text-amber-400 bg-amber-500/10" : 
+                          "border-zinc-700 border-dashed text-zinc-400 bg-zinc-900"
+                        }`}
                       >
                         {String(value)}
                       </span>
@@ -762,7 +766,7 @@ export default function Settings() {
         {/* System Metrics */}
         <div className="bg-black/40 border border-white/10 rounded-md p-2.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl"></div>
-          <h3 className="text-[8px] font-bold text-white mb-2 uppercase tracking-widest flex items-center gap-1.5 relative z-10">
+          <h3 className="text-[10px] font-bold text-white mb-2 uppercase tracking-widest flex items-center gap-1.5 relative z-10">
             <BarChart2 className="w-3 h-3 text-emerald-400" /> System Metrics
           </h3>
           <div className="space-y-2 relative z-10">
@@ -827,7 +831,7 @@ export default function Settings() {
         <div className="bg-black/40 border border-white/10 rounded-md p-2.5 md:col-span-2 lg:col-span-3 shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-2 relative z-10">
-            <h3 className="text-[8px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
+            <h3 className="text-[10px] font-bold text-white uppercase tracking-widest flex items-center gap-1.5">
               <Activity className="w-3 h-3 text-blue-400" /> MCP Registry (
               {filteredMcps.length})
             </h3>
@@ -837,7 +841,7 @@ export default function Settings() {
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-1.5 py-0.5 text-[7px] uppercase tracking-widest font-bold rounded-md transition-all border shadow-sm ${
+                  className={`px-1.5 py-0.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-all border shadow-sm ${
                     selectedCategory === cat
                       ? "bg-white text-black border-white"
                       : "bg-white/5 text-zinc-400 border-white/10 hover:bg-white/10 hover:text-white"
@@ -877,7 +881,7 @@ export default function Settings() {
                         {mcp.name}
                       </span>
                       <span
-                        className={`inline-flex items-center px-2 py-1 rounded-lg text-[7px] font-bold uppercase tracking-widest border shrink-0 shadow-sm ${getMcpStatusBadge(formatMcpStatus(mcp.status, mcp.lastError))}`}
+                        className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border shrink-0 shadow-sm ${getMcpStatusBadge(formatMcpStatus(mcp.status, mcp.lastError))}`}
                       >
                         {formatMcpStatus(mcp.status, mcp.lastError)}
                       </span>
@@ -887,7 +891,7 @@ export default function Settings() {
                         Reason: {mcp.lastError}
                       </span>
                     )}
-                    <span className="block text-[7px] text-zinc-500 uppercase tracking-widest font-bold">
+                    <span className="block text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
                       {mcp.category}
                     </span>
                   </div>
@@ -913,7 +917,7 @@ export default function Settings() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[8px] font-bold text-white uppercase tracking-widest">MCP Details</h3>
+              <h3 className="text-[10px] font-bold text-white uppercase tracking-widest">MCP Details</h3>
               <button
                 onClick={() => setSelectedMcp(null)}
                 className="p-1.5 hover:bg-white/10 rounded-md text-zinc-400 hover:text-white transition-colors"
@@ -929,7 +933,7 @@ export default function Settings() {
                   {selectedMcp.name}
                 </h4>
                 <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-md text-[7px] font-bold uppercase tracking-widest border shadow-sm relative z-10 ${getMcpStatusBadge(formatMcpStatus(selectedMcp.status, selectedMcp.lastError))}`}
+                  className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest border shadow-sm relative z-10 ${getMcpStatusBadge(formatMcpStatus(selectedMcp.status, selectedMcp.lastError))}`}
                 >
                   Status: {formatMcpStatus(selectedMcp.status, selectedMcp.lastError)}
                 </span>
@@ -942,7 +946,7 @@ export default function Settings() {
 
               <div className="space-y-2 px-2">
                 <div>
-                  <span className="block text-[8px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
                     Category
                   </span>
                   <span className="text-[10px] font-bold text-zinc-200">
@@ -950,7 +954,7 @@ export default function Settings() {
                   </span>
                 </div>
                 <div>
-                  <span className="block text-[8px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
                     Purpose
                   </span>
                   <span className="text-[10px] font-medium text-zinc-300 leading-relaxed">
@@ -958,7 +962,7 @@ export default function Settings() {
                   </span>
                 </div>
                 <div>
-                  <span className="block text-[8px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
                     Source Type
                   </span>
                   <span className="text-[10px] font-bold text-zinc-200">
@@ -966,7 +970,7 @@ export default function Settings() {
                   </span>
                 </div>
                 <div>
-                  <span className="block text-[8px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
                     Dependencies
                   </span>
                   {selectedMcp.dependencies &&
@@ -987,7 +991,7 @@ export default function Settings() {
                 </div>
 
                 <div className="pt-6 border-t border-white/10">
-                  <span className="block text-[8px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">
                     Last Checked
                   </span>
                   <span className="text-[10px] font-mono font-bold text-zinc-300 bg-white/5 px-1.5 py-0.5 rounded-[3px] border border-white/10 block w-fit">
@@ -1033,21 +1037,21 @@ export default function Settings() {
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={downloadLogsCSV}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-white/5 border border-white/10 text-white text-[7px] font-bold tracking-widest uppercase rounded-lg hover:bg-white/10 transition-colors shadow-sm"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[32px] bg-white/5 border border-white/10 text-white text-[10px] font-bold tracking-widest uppercase rounded-lg hover:bg-white/10 transition-colors shadow-sm"
                 >
                   <Download className="w-3 h-3" />
                   CSV
                 </button>
                 <button
                   onClick={loadLogs}
-                  className="px-2.5 py-1.5 min-h-[32px] bg-white/5 border border-white/10 text-white text-[7px] font-bold tracking-widest uppercase rounded-lg hover:bg-white/10 transition-colors shadow-sm"
+                  className="px-2.5 py-1.5 min-h-[32px] bg-white/5 border border-white/10 text-white text-[10px] font-bold tracking-widest uppercase rounded-lg hover:bg-white/10 transition-colors shadow-sm"
                 >
                   Refresh
                 </button>
                 <select
                   value={logSeverity}
                   onChange={(e) => setLogSeverity(e.target.value)}
-                  className="bg-black/40 border border-white/10 text-white text-[8px] font-bold tracking-widest uppercase rounded-lg px-2.5 py-1.5 min-h-[32px] focus:outline-none focus:border-white/30 cursor-pointer shadow-sm appearance-none"
+                  className="bg-black/40 border border-white/10 text-white text-[10px] font-bold tracking-widest uppercase rounded-lg px-2.5 py-1.5 min-h-[32px] focus:outline-none focus:border-white/30 cursor-pointer shadow-sm appearance-none"
                 >
                   <option value="all">All Severities</option>
                   <option value="error">Error</option>
@@ -1065,11 +1069,11 @@ export default function Settings() {
             </div>
 
             {logError && (
-              <div className="mb-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[8px] font-bold tracking-wide px-4 py-3 rounded-xl flex items-center gap-2 shadow-sm">
+              <div className="mb-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold tracking-wide px-4 py-3 rounded-xl flex items-center gap-2 shadow-sm">
                 <AlertTriangle className="w-4 h-4" /> {logError}
               </div>
             )}
-            <div className="flex-1 overflow-y-auto bg-black/60 border border-white/10 rounded-2xl p-4 font-mono text-[8px] sm:text-[9px] shadow-inner custom-scrollbar">
+            <div className="flex-1 overflow-y-auto bg-black/60 border border-white/10 rounded-2xl p-4 font-mono text-[10px] sm:text-[10px] shadow-inner custom-scrollbar">
               {logs.filter(log => logSeverity === "all" || log.level === logSeverity).length === 0 ? (
                 <div className="text-zinc-500 text-center py-12 font-medium tracking-wide">
                   No logs available for selected severity.
@@ -1120,7 +1124,7 @@ export default function Settings() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[8px] font-bold text-white uppercase flex items-center gap-2 tracking-widest">
+              <h3 className="text-[10px] font-bold text-white uppercase flex items-center gap-2 tracking-widest">
                 <div className="p-1.5 rounded-lg bg-white/5 border border-white/10 shadow-sm">
                   <Activity className="w-3.5 h-3.5 text-blue-400" />
                 </div>
@@ -1137,7 +1141,7 @@ export default function Settings() {
             <div className="space-y-2">
               <div className="bg-white/5 p-2.5 rounded-md border border-white/10 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 bg-white/5 rounded-full blur-2xl"></div>
-                <span className="block text-[9px] uppercase tracking-widest font-bold text-zinc-500 mb-2 relative z-10">Overall Status</span>
+                <span className="block text-[10px] uppercase tracking-widest font-bold text-zinc-500 mb-2 relative z-10">Overall Status</span>
                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-black uppercase tracking-widest border shadow-sm relative z-10 ${getMcpStatusBadge(healthStatus?.status || 'unavailable')}`}>
                   {getStatusIcon(healthStatus?.status || 'unavailable')}
                   {healthStatus?.status || 'Loading...'}
@@ -1145,26 +1149,26 @@ export default function Settings() {
               </div>
               
               <div className="space-y-3">
-                <h4 className="text-[8px] font-bold text-white uppercase tracking-widest pl-2">Service Details</h4>
+                <h4 className="text-[10px] font-bold text-white uppercase tracking-widest pl-2">Service Details</h4>
                 {healthStatus?.services?.map((service: any) => (
                    <div key={service.serviceName} className="bg-black/40 border border-white/10 p-2.5 rounded-md shadow-sm hover:border-white/20 transition-colors">
                       <div className="flex justify-between items-start mb-3">
-                        <span className="text-[8px] font-bold text-white tracking-wide">{service.serviceName}</span>
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest border shadow-sm ${getMcpStatusBadge(service.status)}`}>
+                        <span className="text-[10px] font-bold text-white tracking-wide">{service.serviceName}</span>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest border shadow-sm ${getMcpStatusBadge(service.status)}`}>
                           {service.status}
                         </span>
                       </div>
                       <div className="space-y-1.5 border-t border-white/10 pt-3">
-                        <div className="flex justify-between text-[9px] items-center">
+                        <div className="flex justify-between text-[10px] items-center">
                           <span className="text-zinc-500 font-bold uppercase tracking-widest">Latency:</span>
                           <span className="text-zinc-300 font-mono font-bold bg-white/5 px-1.5 py-0.5 rounded border border-white/10">{service.latencyMs !== undefined ? `${service.latencyMs}ms` : 'N/A'}</span>
                         </div>
-                        <div className="flex justify-between text-[9px] items-center">
+                        <div className="flex justify-between text-[10px] items-center">
                           <span className="text-zinc-500 font-bold uppercase tracking-widest">Last Checked:</span>
                           <span className="text-zinc-300 font-mono font-bold bg-white/5 px-1.5 py-0.5 rounded border border-white/10"><ClientDate date={service.lastChecked} format="toLocaleTimeString" /></span>
                         </div>
                         {service.message && (
-                           <div className="mt-2 text-[9px] text-zinc-300 bg-white/5 p-2 rounded-lg border border-white/10 font-medium italic leading-relaxed">
+                           <div className="mt-2 text-[10px] text-zinc-300 bg-white/5 p-2 rounded-lg border border-white/10 font-medium italic leading-relaxed">
                              {service.message}
                            </div>
                         )}
@@ -1172,6 +1176,65 @@ export default function Settings() {
                    </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Errors Snapshot Drawer */}
+      {showErrors && (
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-md"
+          onClick={() => setShowErrors(false)}
+        >
+          <div
+            className="w-full max-w-[400px] h-full bg-black/90 border-l border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] p-3 overflow-y-auto animate-in slide-in-from-right duration-200 backdrop-blur-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[10px] font-bold text-white uppercase flex items-center gap-2 tracking-widest">
+                <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 shadow-sm">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                </div>
+                Recent System Errors
+              </h3>
+              <button
+                onClick={() => setShowErrors(false)}
+                className="p-1.5 hover:bg-white/10 rounded-md text-zinc-400 hover:text-white transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {!errorsData?.recentErrors || errorsData.recentErrors.length === 0 ? (
+                <div className="text-zinc-500 text-center py-12 font-medium tracking-wide text-[10px] uppercase">
+                  No recent errors.
+                </div>
+              ) : (
+                errorsData.recentErrors.map((err: any, idx: number) => (
+                  <div key={idx} className="bg-black/40 border border-rose-500/20 p-2.5 rounded-md shadow-sm">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-[10px] font-bold text-white tracking-wide">{err.event?.component || 'System'}</span>
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border shadow-sm ${err.event?.severity === 'critical' ? 'border-rose-500/50 text-rose-400 bg-rose-500/10' : 'border-amber-500/50 text-amber-400 bg-amber-500/10'}`}>
+                        {err.event?.severity || 'error'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-zinc-300 font-medium italic leading-relaxed mb-2 break-words">
+                      {err.event?.error?.message || 'Unknown Error'}
+                    </div>
+                    <div className="flex justify-between items-center border-t border-white/10 pt-2 text-[10px]">
+                      <span className="text-zinc-500 font-bold tracking-widest uppercase">Time</span>
+                      <span className="text-zinc-400 font-mono"><ClientDate date={err.timestamp} format="toLocaleTimeString" /></span>
+                    </div>
+                    {err.correlation_id && (
+                       <div className="flex justify-between items-center mt-1 text-[10px]">
+                         <span className="text-zinc-500 font-bold tracking-widest uppercase">Request ID</span>
+                         <span className="text-zinc-400 font-mono">{err.correlation_id.substring(0,8)}</span>
+                       </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

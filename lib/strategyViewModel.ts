@@ -45,11 +45,11 @@ export function normalizeStrategy(strategy: StrategyResponse) {
   } else {
      const isRejected = steps.some((st: StrategyStep) => st.status === 'failed' || st.status === 'rejected');
      if (isRejected) {
-        setupStatus = 'failed';
+        setupStatus = 'rejected';
         if (s.currentStep?.toLowerCase().includes('expired')) setupStatus = 'expired';
         if (s.currentStep?.toLowerCase().includes('suppress')) setupStatus = 'suppressed';
      } else if (s.progress === 100) {
-        setupStatus = 'finished';
+        setupStatus = 'approved';
      } else if (s.currentStep === 'Scanning' || s.currentStep === 'IDLE' || s.currentStep === 'Idle') {
         setupStatus = 'scanning';
      } else if (s.currentStep === 'Signal Active' || s.currentStep === 'Signal') {
@@ -81,7 +81,7 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
 
   const currentStep = strategy.currentStep || 'INITIALIZING';
   const normCurrent = normalizeStateName(currentStep);
-  const isFailed = normCurrent === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed';
+  const isFailed = normCurrent === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed' || strategy.status === 'rejected';
 
   let currentIdx = sequentialIds.indexOf(normCurrent as any);
   if (currentIdx === -1) {
@@ -93,13 +93,13 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
     const idx = sequentialIds.indexOf(stepConfig.id);
     let status = 'awaiting';
     if (isFailed) {
-      if (idx < currentIdx) status = 'finished';
-      else if (idx === currentIdx) status = 'failed';
+      if (idx < currentIdx) status = 'validated';
+      else if (idx === currentIdx) status = 'rejected';
       else status = 'awaiting';
     } else if (normCurrent === 'DISPATCHED') {
-      status = 'finished';
+      status = 'approved';
     } else {
-      if (idx < currentIdx) status = 'finished';
+      if (idx < currentIdx) status = 'validated';
       else if (idx === currentIdx) status = 'active';
       else status = 'awaiting';
     }
@@ -171,12 +171,12 @@ export function buildRuleResults(strategyId: string, context: any): RuleValidati
   
   return config.validationRules.map((ruleName: string) => {
     const matchedRule = rules[ruleName] || Object.values(rules).find((r: any) => r.ruleId === ruleName || r.name === ruleName);
-    const isPassed = matchedRule ? (matchedRule.passed || matchedRule.status === 'valid') : rulesPassed.includes(ruleName);
+    const isPassed = matchedRule ? (matchedRule.passed || matchedRule.status === 'valid' || matchedRule.status === 'validated') : rulesPassed.includes(ruleName);
     
     return {
       ruleId: ruleName,
-      status: matchedRule ? (matchedRule.status || (isPassed ? 'valid' : 'invalid')) : (isPassed ? 'valid' : 'pending'),
-      passed: isPassed,
+      status: matchedRule ? (matchedRule.status === 'valid' ? 'validated' : matchedRule.status === 'invalid' ? 'rejected' : (matchedRule.status || (isPassed ? 'validated' : 'rejected'))) : 'awaiting',
+      passed: matchedRule ? isPassed : false,
       invalidations: matchedRule?.invalidations || [],
       evidence: matchedRule?.evidence || matchedRule?.details || null
     };

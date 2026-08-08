@@ -364,7 +364,6 @@ export interface DashboardSnapshotSystem {
   connections: {
     market: boolean;
     database?: boolean;
-    supabase?: boolean;
     redis: boolean;
     realtimeChannel: boolean;
   };

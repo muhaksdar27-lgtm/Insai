@@ -16,6 +16,8 @@ export async function GET() {
         const result = await PythonEngineManager.evaluate();
         if (result.status === 'active') {
             await getMcpRegistry().reportConnected('Python Engine Manager');
+        } else if (result.status === 'DISABLED_BY_DESIGN' || result.status === 'NOT CONFIGURED') {
+            await getMcpRegistry().reportNotConfigured('Python Engine Manager', result.message);
         } else if (result.status === 'offline') {
             await getMcpRegistry().reportOffline('Python Engine Manager', result.message);
         } else {

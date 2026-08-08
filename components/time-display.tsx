@@ -25,8 +25,8 @@ export default function TimeDisplay() {
   }, []);
 
   if (!time) {
-    return <div className="text-[7px] font-mono text-zinc-500">--:--:--</div>;
+    return <div className="text-[10px] font-mono text-zinc-500">--:--:--</div>;
   }
 
-  return <div className="text-[7px] font-mono text-zinc-400">{time}</div>;
+  return <div className="text-[10px] font-mono text-zinc-400">{time}</div>;
 }
