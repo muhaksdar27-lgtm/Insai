@@ -1,8 +1,8 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
 import next from 'next';
-import { spawn, ChildProcess } from 'child_process';
-import path from 'path';
+
+
 import { logger, requestContext } from '@/lib/utils/logger';
 import { getMarketScanner } from '@/lib/trading-engine/scanner';
 import { getQueueManager } from '@/lib/redis/queue';
@@ -20,7 +20,7 @@ export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed'
 let serverStatus: ServerLifecycleStatus = 'starting';
 let initErrorMessage: string | null = null;
 let isAppPrepared = false;
-let pyProcess: ChildProcess | null = null;
+let pyProcess: any = null;
 const degradedComponents = new Map<string, string>();
 
 function registerDegradedComponent(name: string, reason: string) {
@@ -32,54 +32,18 @@ function registerDegradedComponent(name: string, reason: string) {
 }
 
 function startPythonEngine() {
-  const pythonPort = process.env.PYTHON_PORT || '8181';
-  if (!process.env.PYTHON_ENGINE_URL) {
-    process.env.PYTHON_ENGINE_URL = `http://127.0.0.1:${pythonPort}`;
-  }
   const externalUrl = process.env.PYTHON_ENGINE_URL;
-  
-  if (externalUrl && !externalUrl.includes('127.0.0.1') && !externalUrl.includes('localhost')) {
-    logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
+  if (!externalUrl) {
+    logger.warn('PYTHON_ENGINE_URL is not set. Engine requires a public external Python Engine URL to function correctly.');
     return;
   }
   
-  logger.info('Starting Python Engine locally...');
-  
-  try {
-    const fs = require('fs');
-    const pythonExecutable = fs.existsSync('/app/venv/bin/python') ? '/app/venv/bin/python' : 'python3';
-    const pyScript = process.env.NODE_ENV === 'production'
-      ? `${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`
-      : `bash ./ensure-python.sh && ${pythonExecutable} -m uvicorn main:app --host 127.0.0.1 --port ${pythonPort}`;
-    const pythonEngineDir = path.join(process.cwd(), 'python-engine');
-    logger.info(`Spawning Python Engine with: ${pyScript}`);
-    pyProcess = spawn('bash', ['-c', pyScript], {
-      cwd: pythonEngineDir,
-      stdio: 'inherit',
-      env: { ...process.env, PYTHON_PORT: pythonPort, PYTHONPATH: `${pythonEngineDir}:.` }
-    });
-
-    pyProcess.on('error', (err: any) => {
-      logger.error(`Failed to start local Python Engine: ${err.message}. Running in DEGRADED mode.`);
-      pyProcess = null;
-      registerDegradedComponent('pythonEngine', `Failed to start process: ${err.message}`);
-    });
-
-    pyProcess.on('close', (code: any) => {
-      if (serverStatus === 'shutting_down') return;
-      if (code !== 0 && code !== null) {
-        logger.error(`Local Python Engine exited unexpectedly with code ${code}. Running in DEGRADED mode.`);
-        registerDegradedComponent('pythonEngine', `Exited unexpectedly with code ${code}`);
-      } else {
-        logger.info('Local Python Engine exited normally.');
-      }
-      pyProcess = null;
-    });
-  } catch (err: any) {
-    logger.error(`Failed to spawn Python Engine: ${err.message}. Running in DEGRADED mode.`);
-    pyProcess = null;
-    registerDegradedComponent('pythonEngine', `Spawn exception: ${err.message}`);
+  if (externalUrl.includes('127.0.0.1') || externalUrl.includes('localhost')) {
+    logger.warn('PYTHON_ENGINE_URL is set to localhost. This might not work in production without a sidecar. Please provide a public external URL.');
   }
+
+  logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
+  return;
 }
 
 const app = next({ dev, hostname, port, turbopack });

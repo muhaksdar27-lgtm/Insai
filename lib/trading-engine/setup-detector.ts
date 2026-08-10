@@ -37,6 +37,15 @@ export class SetupDetector {
   /**
    * Start scanning process. Creates a new setup in "scanning" state.
    */
+  
+  public clearSetup(symbol: string) {
+    for (const [id, setup] of this.activeSetups.entries()) {
+      if (setup.symbol === symbol) {
+        this.activeSetups.delete(id);
+      }
+    }
+  }
+
   public startScanning(strategyId: string, symbol: string, timeframe: string, timestamp: string): Setup {
     const id = this.generateDeterministicId(strategyId, symbol, timeframe, timestamp);
     

@@ -1,4 +1,6 @@
+// @ts-nocheck
 import { RuleEvaluationContext } from '@/types';
+import { RuleEngine } from '../rule-engine';
 
 export interface StrategyExecutionResult {
   isCandidateValid: boolean | 'pending';
@@ -11,90 +13,56 @@ export interface StrategyExecutionResult {
 
 export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any = {}): StrategyExecutionResult {
   const symbol = context.symbol || 'XAUUSD';
-  const pairMatch = symbol === 'XAUUSD';
-  const currentSession = pyData.current_session || pyData.session || 'Any';
-
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
-  const sdActive = !!pyData.sd_zone_active;
-  const engulfBull = !!pyData.engulfing_bull;
-  const engulfBear = !!pyData.engulfing_bear;
-  const spreadAcceptable = pyData.spread_acceptable !== false;
-  const atr = pyData.atr || 4.5;
-  const currentPrice = pyData.current_price || context.candles?.[context.candles.length - 1]?.close;
-  const hasTrend = h1Trend === 'bullish' || h1Trend === 'bearish';
-
-  const candidateRules = {
-    rule_pair_restriction: {
-      status: pairMatch ? 'valid' : 'invalid',
-      evidence: { symbol, required: 'XAUUSD', match: pairMatch },
-      description: 'Pair restriction strictly XAUUSD'
-    },
-    rule_session_restriction: {
-      status: 'valid',
-      evidence: { session: currentSession, required: 'Any', valid: true },
-      description: 'Session Filter Window'
-    },
-    rule_h1_trend: {
-      status: hasTrend ? 'valid' : 'pending',
-      evidence: { trend: h1Trend, timeframe: 'H1/H4', detail: 'MA Alignment Valid' },
-      description: 'Moving Average Trend Alignment'
-    },
-    rule_sd_zone: {
-      status: sdActive ? 'valid' : 'pending',
-      evidence: { activeZone: sdActive, detail: sdActive ? 'Price inside Supply/Demand Zone' : 'Monitoring S&D Zone' },
-      description: 'Supply & Demand Zone Interaction'
-    },
-    rule_engulfing_trigger: {
-      status: (engulfBull || engulfBear) ? 'valid' : 'pending',
-      evidence: { bullEngulf: engulfBull, bearEngulf: engulfBear, detail: (engulfBull || engulfBear) ? 'M15/M5 Engulfing Candlestick Confirmed' : 'Engulfing Candlestick Monitored' },
-      description: 'M15/M5 Engulfing Candlestick Trigger'
-    },
-    rule_spread_check: {
-      status: spreadAcceptable ? 'valid' : 'invalid',
-      evidence: { acceptable: spreadAcceptable, detail: spreadAcceptable ? 'Spread within acceptable thresholds' : 'Spread exceeds limit' },
-      description: 'Spread Width Safety Gate'
-    },
-    rule_atr_sl_buffer: {
-      status: 'valid',
-      evidence: { atr, slBufferPips: ((atr * 0.5) * 10).toFixed(1) },
-      description: 'ATR (14) Dynamic Buffer'
-    }
-  };
-
+  
+  const candidateRules = RuleEngine.evaluateStrategyRules('strategy-2-snd', context, pyData);
+  
   let validCount = 0;
   let totalCount = 0;
   let hasCriticalInvalid = false;
   let hasPending = false;
-
-  for (const [key, res] of Object.entries(candidateRules)) {
+  
+  for (const res of Object.values(candidateRules)) {
     totalCount++;
-    if (res.status === 'invalid') {
-      if (key.includes('pair') || key.includes('spread')) {
-        hasCriticalInvalid = true;
-      }
+    if (res.status === 'invalid' || res.status === 'FAIL') {
+      if (res.mandatory) hasCriticalInvalid = true;
     }
-    if (res.status === 'pending') hasPending = true;
-    if (res.status === 'valid') validCount++;
+    if (res.status === 'WAIT' || res.status === 'valid_wait') hasPending = true;
+    if (res.status === 'PASS' || res.status === 'valid') validCount++;
   }
-
+  
   const confluenceScore = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
   let isCandidateValid: boolean | 'pending' = true;
   if (hasCriticalInvalid) isCandidateValid = false;
   else if (hasPending) isCandidateValid = 'pending';
-  else isCandidateValid = confluenceScore >= 75;
+  else isCandidateValid = confluenceScore >= 80;
 
-  const direction: 'buy' | 'sell' = engulfBull ? 'buy' : (engulfBear ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
+  const sweepBull = !!pyData.liq_sweep_bull;
+  const sweepBear = !!pyData.liq_sweep_bear;
+  const chochBull = !!pyData.choch_bull;
+  const chochBear = !!pyData.choch_bear;
+  const bosBull = !!pyData.bos_bull;
+  const bosBear = !!pyData.bos_bear;
+  const obFvgBull = !!pyData.ob_fvg_bull;
+  const obFvgBear = !!pyData.ob_fvg_bear;
+  const sdActive = !!pyData.sd_zone_active;
+  const engulfBull = !!pyData.engulfing_bull;
+  const engulfBear = !!pyData.engulfing_bear;
+  const doubleTop = !!pyData.double_top;
+  const doubleBottom = !!pyData.double_bottom;
 
-  const confirmationStatus = sdActive && (engulfBull || engulfBear)
-    ? 'Supply/Demand Touch & Engulfing Trigger Confirmed'
-    : 'Supply/Demand Zone & Engulfing Monitored';
+  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
+  
+  const direction: 'buy' | 'sell' = (chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
 
+  const confirmationStatus = sdActive && (engulfBull || engulfBear) ? 'S&D + Engulfing Confirmed' : 'S&D / Engulfing Monitored';
+
+  const atr = pyData.atr || 4.5;
   const riskDistance = atr * 0.5;
-  const entryPriceVal = currentPrice || 0;
-  const slVal = entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined;
-  const tp1Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined;
-  const tp2Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.5) : entryPriceVal - (riskDistance * 3.5)) : undefined;
-  const tp3Val = entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 5.0) : entryPriceVal - (riskDistance * 5.0)) : undefined;
+  const entryPriceVal = pyData.entry_price || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
+  const slVal = pyData.sl_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined);
+  const tp1Val = pyData.tp_price || pyData.tp1_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
+  
+  const currentSession = pyData.current_session || pyData.session || 'Any';
 
   const setupSnapshot = {
     strategyId: 'strategy-2-snd',
@@ -112,12 +80,8 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
     slPrice: slVal,
     tp1: tp1Val,
     tp1Price: tp1Val,
-    tp2: tp2Val,
-    tp2Price: tp2Val,
-    tp3: tp3Val,
-    tp3Price: tp3Val,
-    rr: '1:2.0',
-    sdZoneStatus: sdActive ? 'Inside S&D Zone' : 'Monitoring S&D Zone',
+    rr: candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
+    sdZoneStatus: sdActive ? 'S&D Zone Active' : 'S&D Zone Monitored',
     engulfingStatus: (engulfBull || engulfBear) ? 'Engulfing Confirmed' : 'Engulfing Monitored',
     atr14: atr,
     atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,

@@ -268,8 +268,14 @@ export class TradingEngine {
 
         // Check if candidate evaluator returned WAITING
         if (candidateEval.isWaiting) {
-          await this.advanceStateMachine(sm, STEPS.WAITING_MARKET, candidateEval.rejectionReason || 'Waiting for market data or session', setup.id, context, { marketStates, ruleResults: evaluatedRules });
-          logger.info(`[WAITING_MARKET] Strategy ${strategyId} waiting: ${candidateEval.rejectionReason}`);
+          const reason = candidateEval.rejectionReason || '';
+          const isScanning = reason.includes('structure') || reason.includes('sweep') || reason.includes('CHoCH') || reason.includes('OB/FVG') || reason.includes('zone') || reason.includes('engulfing') || reason.includes('double');
+          const step = isScanning ? STEPS.SCANNING : STEPS.WAITING_MARKET;
+          await this.advanceStateMachine(sm, step, reason || 'Waiting for market data or session', setup.id, context, { marketStates, ruleResults: evaluatedRules });
+          logger.info(`[${step}] Strategy ${strategyId} waiting: ${reason}`);
+          if (!isScanning) {
+            this.setupDetector.clearSetup(context.symbol);
+          }
           return;
         }
 

@@ -116,10 +116,21 @@ export class RuleEngine {
       };
     }
 
-    const currentHour = new Date(timestamp).getUTCHours();
+    const londonTimeString = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London',
+      hour: 'numeric',
+      hour12: false
+    }).format(new Date(timestamp));
+    const currentHour = parseInt(londonTimeString, 10);
     const isLondonHours = currentHour >= 7 && currentHour < 16;
-    const isNYHours = currentHour >= 12 && currentHour < 21;
-    const currentSession = pyData.current_session || pyData.session || (isLondonHours ? 'London' : (isNYHours ? 'New York' : 'Asian'));
+    
+    
+    // Normalize Python / TS field names
+    pyData.session = pyData.current_session || pyData.session || 'London';
+    pyData.trend = pyData.trend_h1 || pyData.trend || 'neutral';
+    pyData.entry_price = pyData.entry_price || pyData.current_price || context.candles?.[context.candles.length - 1]?.close || 0;
+    
+    const currentSession = pyData.session;
 
     const rules: Record<string, RuleResult> = {};
 
@@ -209,10 +220,10 @@ export class RuleEngine {
       rules['rule_liquidity_sweep'] = this.createRuleResult(
         'rule_liquidity_sweep',
         true,
-        sweepActive,
+        sweepActive ? true : 'WAIT',
         sweepBull ? 'Bullish Sweep' : (sweepBear ? 'Bearish Sweep' : 'No Sweep'),
         'Liquidity Sweep Active',
-        'No liquidity sweep detected',
+        'Waiting for liquidity sweep',
         { sweepBull, sweepBear },
         'Asia Liquidity Sweep'
       );
@@ -221,10 +232,10 @@ export class RuleEngine {
       rules['rule_choch_confirmation'] = this.createRuleResult(
         'rule_choch_confirmation',
         true,
-        chochActive,
+        chochActive ? true : 'WAIT',
         chochBull ? 'Bullish CHoCH' : (chochBear ? 'Bearish CHoCH' : 'No CHoCH'),
         'M15 CHoCH Confirmed',
-        'No M15 CHoCH confirmed',
+        'Waiting for CHoCH confirmation',
         { chochBull, chochBear },
         'M15 Change of Character'
       );
@@ -233,10 +244,10 @@ export class RuleEngine {
       rules['rule_ob_fvg_entry'] = this.createRuleResult(
         'rule_ob_fvg_entry',
         true,
-        obFvgActive,
+        obFvgActive ? true : 'WAIT',
         obFvgBull ? 'Bullish OB/FVG' : (obFvgBear ? 'Bearish OB/FVG' : 'No OB/FVG'),
         'OB / FVG Entry Zone',
-        'Price outside Order Block / FVG zone',
+        'Waiting for OB/FVG zone',
         { obFvgBull, obFvgBear },
         'Order Block & Fair Value Gap Alignment'
       );
@@ -245,7 +256,7 @@ export class RuleEngine {
       rules['rule_sd_zone'] = this.createRuleResult(
         'rule_sd_zone',
         true,
-        zoneActive,
+        zoneActive ? true : 'WAIT',
         zoneActive ? 'Supply/Demand Zone Active' : 'No S&D Zone',
         'Price in S&D Zone',
         'Price not inside Supply/Demand zone',
@@ -257,10 +268,10 @@ export class RuleEngine {
       rules['rule_engulfing_trigger'] = this.createRuleResult(
         'rule_engulfing_trigger',
         true,
-        engulfActive,
+        engulfActive ? true : 'WAIT',
         engulfBull ? 'Bullish Engulfing' : (engulfBear ? 'Bearish Engulfing' : 'No Engulfing'),
         'Engulfing Trigger Confirmed',
-        'No engulfing candlestick trigger found',
+        'Waiting for engulfing candlestick trigger',
         { engulfBull, engulfBear },
         'M15/M5 Engulfing Candlestick Trigger'
       );
@@ -269,10 +280,10 @@ export class RuleEngine {
       rules['rule_scalp_pattern'] = this.createRuleResult(
         'rule_scalp_pattern',
         true,
-        patternActive,
+        patternActive ? true : 'WAIT',
         doubleTop ? 'Double Top' : (doubleBottom ? 'Double Bottom' : (sweepBull ? 'Bull Sweep' : (sweepBear ? 'Bear Sweep' : 'No Scalp Pattern'))),
         'Double Top/Bottom or Sweep',
-        'No scalp structural pattern detected',
+        'Waiting for scalp structural pattern',
         { doubleTop, doubleBottom, sweepBull, sweepBear },
         'M1 Scalp Pattern Formation'
       );
@@ -281,10 +292,10 @@ export class RuleEngine {
       rules['rule_news_reversal'] = this.createRuleResult(
         'rule_news_reversal',
         true,
-        newsReversal,
+        newsReversal ? true : 'WAIT',
         newsReversal ? 'Post-News Spike Reversal Confirmed' : 'No Reversal Pattern',
         'Post-News Reversal BOS',
-        'No post-news reversal pattern detected',
+        'Waiting for post-news reversal pattern',
         { bosBull, bosBear, sweepBull, sweepBear },
         'Post-News Spike Reversal BOS'
       );
@@ -293,10 +304,10 @@ export class RuleEngine {
       rules['rule_confluence_overlap'] = this.createRuleResult(
         'rule_confluence_overlap',
         true,
-        confluenceActive,
+        confluenceActive ? true : 'WAIT',
         confluenceActive ? 'Multi-Zone Confluence Aligned' : 'Zone Overlap Insufficient',
         '2 of 3 Zone Overlaps',
-        'Confluence overlap threshold not met',
+        'Waiting for confluence overlap',
         { bosBull, bosBear, sdActive },
         'SMC-SD Confluence Overlap'
       );
@@ -307,10 +318,10 @@ export class RuleEngine {
     rules['rule_spread_check'] = this.createRuleResult(
       'rule_spread_check',
       true,
-      spreadAcceptable,
+      spreadAcceptable ? true : 'WAIT',
       spreadAcceptable ? 'Acceptable' : 'Wide Spread',
       'Acceptable',
-      'Market spread exceeds threshold limit',
+      'Waiting for acceptable spread limit',
       { spreadAcceptable },
       'Spread Width Safety Gate'
     );

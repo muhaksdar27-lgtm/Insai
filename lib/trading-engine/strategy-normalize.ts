@@ -109,7 +109,7 @@ export function normalizeStrategyFromDB(baseStrat: any, state: any): StrategyRes
         updatedAt = state.updated_at || state.created_at || null;
         
         let currentIndex = flow.indexOf(currentStateName);
-        const isRejected = ['REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(currentStateName);
+        const isRejected = ['FAILED', 'REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(currentStateName);
         
         if (isRejected && currentIndex === -1) {
             const lastState = payload.lastState || setupSnapshot.lastState;

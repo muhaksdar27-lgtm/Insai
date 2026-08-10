@@ -404,7 +404,7 @@ export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]):
         id: canon.id,
         name: canon.name,
         description: canon.description,
-        status: existing.status || 'active',
+        status: existing.status || 'unconfigured',
         updatedAt: existing.updatedAt || null,
       };
     }
@@ -413,7 +413,7 @@ export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]):
       id: canon.id,
       name: canon.name,
       description: canon.description,
-      status: 'active',
+      status: 'offline',
       progress: 0,
       currentStep: 'INITIALIZING',
       steps: [

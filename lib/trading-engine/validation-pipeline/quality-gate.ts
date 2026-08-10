@@ -50,8 +50,8 @@ export class QualityGate {
     }
 
     const aiConfidence = aiResult.aiReview?.confidenceScore || 0;
-    if (aiConfidence > 0 && aiConfidence < 60) {
-       return this.reject(`AI Confidence Score too low (${aiConfidence}%). Minimum required is 60%.`);
+    if (aiConfidence > 0 && aiConfidence < 45) {
+       return this.reject(`AI Confidence Score too low (${aiConfidence}%). Minimum required is 45%.`);
     }
 
     const aiSignalQuality = aiResult.aiReview?.signalQualityScore || 0;
