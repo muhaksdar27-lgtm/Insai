@@ -39,7 +39,7 @@ export interface StrategyDefinition {
 export const StrategyRegistry: Record<string, StrategyDefinition> = {
     'strategy-1-smc': {
         id: 'strategy-1-smc',
-        name: 'Strategy 1 (SMC + London + M15)',
+        name: 'STRATEGI 1 — Canonical SMC',
         description: 'SMC Strategy strictly for London session on M15 timeframe. Relies on Asia session liquidity sweep and M15 CHoCH.',
         pairRestriction: ['XAUUSD'],
         sessionRestriction: ['London'],
@@ -66,7 +66,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
     },
     'strategy-2-snd': {
         id: 'strategy-2-snd',
-        name: 'Strategy 2 (S&D + Engulfing)',
+        name: 'STRATEGI 2 — Supply & Demand + Engulfing',
         description: 'Supply and Demand zones paired with moving average confluence and engulfing trigger.',
         pairRestriction: ['XAUUSD'],
         sessionRestriction: ['Any'],
@@ -91,7 +91,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
     },
     'strategy-3-scalping': {
         id: 'strategy-3-scalping',
-        name: 'Strategy 3 (Scalping SMC + Liquidity Sweep + Double Top/Bottom)',
+        name: 'STRATEGI 3 — Scalping SMC + Liquidity Sweep + Double Top/Bottom',
         description: 'Aggressive M1 scalping aligned with H1 trend, requiring liquidity sweep before double top/bottom structural formation.',
         pairRestriction: ['XAUUSD'],
         sessionRestriction: ['Any'],
@@ -117,7 +117,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
     },
     'strategy-4-news': {
         id: 'strategy-4-news',
-        name: 'Strategy 4 (News Reversal)',
+        name: 'STRATEGI 4 — News Liquidity Sweep Reversal',
         description: 'Trades the post-news liquidity sweep. Strictly avoids the initial news candle, waiting for structural reversal.',
         pairRestriction: ['XAUUSD'],
         sessionRestriction: ['News Window'],
@@ -142,7 +142,7 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
     },
     'strategy-5-smc-sd-confluence': {
         id: 'strategy-5-smc-sd-confluence',
-        name: 'Strategy 5: SMC-SD-Pattern Confluence',
+        name: 'STRATEGI 5 — SMC-SD Pattern Confluence',
         description: 'High-probability confluence engine requiring overlaps between market structure, SD zones, and liquidity sweeps.',
         pairRestriction: ['XAUUSD'],
         sessionRestriction: ['Any'],

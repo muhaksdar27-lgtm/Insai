@@ -126,6 +126,10 @@ export function normalizeStrategyFromDB(baseStrat: any, state: any): StrategyRes
             if (state.reason) {
                 errors.push(state.reason);
             }
+        } else if (['WAITING_MARKET', 'SCANNING', 'INITIALIZING'].includes(currentStateName) || currentStateName.includes('WAIT')) {
+            if (state.reason && state.reason.trim() !== '' && state.reason !== 'Success' && state.reason !== 'Waiting for market data...') {
+                currentStep = `Wait: ${state.reason}`;
+            }
         }
         
         steps = flow.map((stepName, idx) => {

@@ -37,7 +37,7 @@ export default function LiveSignals() {
   // Filter out any completed/closed signals if backend returns them
   const signals = (rawSignals || []).filter(s => {
     const st = (s.status || s.baseStatus || '').toUpperCase();
-    return !['CLOSED', 'WIN', 'LOSS', 'FINISHED', 'EXPIRED', 'SL HIT', 'TP3 HIT'].includes(st);
+    return ['APPROVED', 'DISPATCHED'].includes(st);
   });
 
   return (

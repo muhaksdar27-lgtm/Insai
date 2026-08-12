@@ -591,7 +591,7 @@ export class DatabaseService {
                    ) AS signal_evidence
             FROM signals s
             LEFT JOIN signal_evidence se ON s.signal_key = se.signal_key
-            WHERE s.status = 'SIGNAL_ACTIVE'
+            WHERE s.status IN ('APPROVED', 'DISPATCHED')
             GROUP BY s.id
             ORDER BY s.created_at DESC;
           `;
@@ -608,7 +608,7 @@ export class DatabaseService {
       }
     }
 
-    const cachedActive = Array.from(this.memorySignalsCache.values()).filter(s => s.status === 'SIGNAL_ACTIVE');
+    const cachedActive = Array.from(this.memorySignalsCache.values()).filter(s => ['SIGNAL_ACTIVE', 'APPROVED', 'DISPATCHED', 'TAKE_PARTIAL'].includes(s.status));
     if (cachedActive.length > 0) {
       return cachedActive;
     }
@@ -634,6 +634,7 @@ export class DatabaseService {
                    ) AS signals
             FROM history h
             LEFT JOIN signals s ON h.signal_key = s.signal_key
+            WHERE h.status IN ('DISPATCHED', 'REJECTED', 'FAILED', 'EXPIRED', 'SUPPRESSED', 'FINISHED')
             ORDER BY h.created_at DESC
             LIMIT 1000;
           `;

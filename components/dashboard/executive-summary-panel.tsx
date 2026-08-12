@@ -17,7 +17,7 @@ export const ExecutiveSummaryPanel = memo(function ExecutiveSummaryPanel({
 }: ExecutiveSummaryPanelProps) {
   const router = useRouter();
   const safeStrats = getAllStrategiesWithFallback(strategies);
-  const activeSignalsCount = Array.isArray(signals) ? signals.length : 0;
+  const activeSignalsCount = Array.isArray(signals) ? signals.filter(s => ['APPROVED', 'DISPATCHED'].includes((s.status || '').toUpperCase())).length : 0;
   
   const strategyStatusCounts = safeStrats.reduce((acc, curr) => {
     const status = curr.status || 'active';
@@ -109,7 +109,7 @@ export const ExecutiveSummaryPanel = memo(function ExecutiveSummaryPanel({
               <span className="text-[10px] font-mono text-zinc-300 max-w-[120px] truncate font-medium">
                 {strat.name.split('—')[1]?.trim() || strat.name}
               </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${strat.status === "stopped" ? "bg-rose-500" : "bg-emerald-500"}`} />
             </div>
           ))}
         </div>
