@@ -60,19 +60,48 @@ export class ProviderRegistry {
   public reportError(providerName: string, error: string) {
     const provider = this.healthMap.get(providerName);
     if (provider) {
+      const errStr = String(error || '');
+      const errLower = errStr.toLowerCase();
+
+      const isNotConfigured = errLower.includes('not configured') ||
+                             errLower.includes('not specified') ||
+                             errLower.includes('apikey parameter') ||
+                             errLower.includes('api key is not configured') ||
+                             errLower.includes('is not configured');
+
+      if (isNotConfigured) {
+        provider.healthStatus = 'NOT CONFIGURED';
+        provider.lastError = 'Not configured';
+        provider.circuitBreakerStatus = 'open';
+        this.healthMap.set(providerName, provider);
+        getMcpRegistry().reportNotConfigured(providerName, 'Not configured: API key missing or invalid').catch(() => {});
+        return;
+      }
+
+      const isDepletedOrQuota = errLower.includes('credits depleted') ||
+                               errLower.includes('quota') ||
+                               errLower.includes('exhausted');
+
+      if (isDepletedOrQuota) {
+        provider.healthStatus = 'QUOTA_EXCEEDED';
+        provider.lastError = error;
+        provider.circuitBreakerStatus = 'open';
+        provider.lastFailureTime = Date.now() + 60 * 60 * 1000 - this.cbConfig.resetTimeoutMs;
+        this.healthMap.set(providerName, provider);
+        logger.warn(`Provider [${providerName}] paused due to depleted credits or quota: ${error}`);
+        getMcpRegistry().reportError(providerName, error).catch(() => {});
+        return;
+      }
+
       provider.healthStatus = 'UNAVAILABLE';
       provider.lastError = error;
       
-      const isRateLimited = error && (error.includes('429') || error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('quota') || error.toLowerCase().includes('exhausted') || error.toLowerCase().includes('depleted'));
-      const isInvalidKey = error && (error.includes('401') || error.includes('403') || error.toLowerCase().includes('invalid key') || error.toLowerCase().includes('unauthorized') || error.toLowerCase().includes('forbidden'));
+      const isRateLimited = errLower.includes('429') || errLower.includes('rate limit');
+      const isInvalidKey = errLower.includes('401') || errLower.includes('403') || errLower.includes('invalid key') || errLower.includes('unauthorized') || errLower.includes('forbidden');
       
       if (isRateLimited) {
-        provider.failures = this.cbConfig.failureThreshold; // instantly open circuit breaker
-        if (error.toLowerCase().includes('quota') || error.toLowerCase().includes('exhausted') || error.toLowerCase().includes('depleted')) {
-           provider.healthStatus = 'QUOTA_EXCEEDED';
-        } else {
-           provider.healthStatus = 'RATE LIMITED';
-        }
+        provider.failures = this.cbConfig.failureThreshold;
+        provider.healthStatus = 'RATE LIMITED';
       } else if (isInvalidKey) {
         provider.failures = this.cbConfig.failureThreshold;
         provider.healthStatus = 'INVALID_KEY';
@@ -90,7 +119,7 @@ export class ProviderRegistry {
            logger.warn(`Circuit breaker opened (RATE LIMITED) for provider [${providerName}] for 5 minutes.`);
         } else if (isInvalidKey) {
            provider.lastFailureTime = Date.now() + 60 * 60 * 1000 - this.cbConfig.resetTimeoutMs;
-           logger.error(`Circuit breaker opened (INVALID KEY) for provider [${providerName}] for 1 hour.`);
+           logger.warn(`Circuit breaker opened (INVALID KEY) for provider [${providerName}] for 1 hour.`);
         } else {
            logger.error(`Circuit breaker opened for provider [${providerName}] due to consecutive failures.`);
         }

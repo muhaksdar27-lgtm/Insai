@@ -5,6 +5,7 @@ import Navigation from "@/components/navigation";
 import TimeDisplay from "@/components/time-display";
 import ConnectionStatus from "@/components/connection-status";
 import { SSEProvider } from "@/components/sse-provider";
+import { AiChatFloating } from "@/components/ai-chat-floating";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const jetbrainsMono = JetBrains_Mono({
@@ -49,6 +50,7 @@ export default function RootLayout({
               {children}
             </main>
           </div>
+          <AiChatFloating />
         </SSEProvider>
       </body>
     </html>

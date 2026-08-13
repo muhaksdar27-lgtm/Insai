@@ -19,9 +19,13 @@ export class FallbackChain<T> {
       const { provider, name } = this.providers[i];
 
       const healthStatus = getProviderRegistry().getProviderHealth(name)?.healthStatus;
-      if (healthStatus === 'UNAVAILABLE' || healthStatus === 'RATE LIMITED' || healthStatus === 'QUOTA_EXCEEDED' || healthStatus === 'INVALID_KEY' || healthStatus === 'PROVIDER_ERROR') {
+      if (healthStatus === 'NOT CONFIGURED' || healthStatus === 'UNAVAILABLE' || healthStatus === 'RATE LIMITED' || healthStatus === 'QUOTA_EXCEEDED' || healthStatus === 'INVALID_KEY' || healthStatus === 'PROVIDER_ERROR') {
         const health = getProviderRegistry().getProviderHealth(name);
         if (health?.circuitBreakerStatus === 'open') {
+           if (healthStatus === 'NOT CONFIGURED') {
+              errors.push(new Error(`Provider ${name} skipped: not configured`));
+              continue;
+           }
            logger.warn(`Skipping provider ${name} due to open circuit breaker for ${context} (Status: ${healthStatus})`);
            errors.push(new Error(`Provider ${name} skipped: circuit breaker open (${healthStatus})`));
            continue;
@@ -33,7 +37,8 @@ export class FallbackChain<T> {
         if (i > 0 && typeof result === 'object' && result !== null) {
           const primaryName = this.providers[0].name;
           const isUnsupported = errors.some(e => e.message?.includes('not supported by'));
-          if (!isUnsupported) {
+          const isNotConfigured = errors.some(e => e.message?.includes('not configured') || e.message?.includes('not specified') || e.message?.includes('apikey'));
+          if (!isUnsupported && !isNotConfigured) {
             logger.info(`FALLBACK_EVENT: ${context} failed on primary ${primaryName}. Fallback recorded source: ${name}`);
           }
           (result as any).recordedSource = {
@@ -45,15 +50,18 @@ export class FallbackChain<T> {
         }
         return result;
       } catch (error: any) {
-        if (error.message.includes('not configured')) {
+        const errLower = (error.message || '').toLowerCase();
+        if (errLower.includes('not configured') || errLower.includes('not specified') || errLower.includes('apikey')) {
           logger.warn(`Provider ${name} skipped for ${context}: ${error.message}`);
-        } else if (error.message.includes('not supported by')) {
+        } else if (errLower.includes('not supported by')) {
           logger.info(`Provider ${name} skipped for ${context}: ${error.message}`);
+        } else if (errLower.includes('credits depleted') || errLower.includes('quota') || errLower.includes('exhausted')) {
+          logger.warn(`Provider ${name} skipped for ${context}: ${error.message}`);
         } else {
           logger.error(`Provider ${name} failed for ${context}: ${error.message}`);
         }
         errors.push(error);
-        if (!error.message.includes('not configured') && !error.message.includes('not supported by')) {
+        if (!errLower.includes('not configured') && !errLower.includes('not supported by') && !errLower.includes('credits depleted') && !errLower.includes('quota')) {
           logger.warn(`Falling back to next provider for ${context}...`);
         }
       }

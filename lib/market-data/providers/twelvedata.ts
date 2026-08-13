@@ -15,7 +15,11 @@ export class TwelveDataProvider implements PriceProvider {
   private wsStarted: boolean = false;
 
   private get currentApiKey(): string | undefined {
-    return getEnv('TWELVEDATA_API_KEY') || this.apiKey;
+    const key = getEnv('TWELVEDATA_API_KEY') || this.apiKey;
+    if (!key || key === 'undefined' || key === 'MY_TWELVEDATA_API_KEY' || key.trim() === '') {
+      return undefined;
+    }
+    return key;
   }
 
   constructor() {

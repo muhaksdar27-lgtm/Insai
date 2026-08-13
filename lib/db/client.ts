@@ -492,7 +492,7 @@ export class DatabaseService {
         ]);
       });
     } catch (e: any) {
-      if (!e.message?.includes('circuit breaker')) {
+      if (!e.message?.includes('circuit breaker') && !this.isNetworkError(e)) {
         logger.error(`PostgreSQL insert alert error: ${e.message}`);
       }
     }
@@ -740,8 +740,10 @@ export class DatabaseService {
       });
       return result || stateObj;
     } catch (err: any) {
-      if (!err.message?.includes('circuit breaker')) {
+      if (!err.message?.includes('circuit breaker') && !this.isNetworkError(err)) {
         logger.error(`PostgreSQL insert strategy state error: ${err.message}`);
+      } else if (this.isNetworkError(err)) {
+        logger.warn(`PostgreSQL insert strategy state warn: ${err.message}`);
       }
       return stateObj;
     }

@@ -9,7 +9,11 @@ export class TwitterProvider implements NewsProvider {
   public name = 'Twitter Bearer';
   
   private get currentApiKey(): string | undefined {
-    return getEnv('TWITTER_BEARER_TOKEN');
+    const key = getEnv('TWITTER_BEARER_TOKEN');
+    if (!key || key === 'undefined' || key === 'MY_TWITTER_BEARER_TOKEN' || key.trim() === '') {
+      return undefined;
+    }
+    return key;
   }
 
   async getLatestNews(): Promise<NewsEvent[] & ProviderStatus> {
