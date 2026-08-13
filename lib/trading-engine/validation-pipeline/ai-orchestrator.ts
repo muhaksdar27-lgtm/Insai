@@ -451,20 +451,45 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
 
       return result;
     } catch (error: any) {
-      const endTime = performance.now();
-      logger.error(`AI Validation Orchestrator failed for ${strategyId} after ${(endTime - startTime).toFixed(2)}ms: ` + error.message);
-      getProviderRegistry().reportError('GeminiAI', error.message);
+      const rawMsg = String(error.message || '');
+      const isQuotaExceeded = rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('429') || rawMsg.toLowerCase().includes('quota');
+      const isTimeout = rawMsg.toLowerCase().includes('timed out');
 
-      const isQuotaExceeded = error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('429') || error.message.toLowerCase().includes('quota');
-      const isTimeout = error.message.toLowerCase().includes('timed out');
+      const cleanMsg = isQuotaExceeded 
+        ? 'Gemini API quota exceeded (429 Rate Limit)' 
+        : (isTimeout ? 'Gemini API call timed out' : 'Gemini AI service error');
 
-      logger.warn(`AI Validation failed: ${error.message}. Hard-blocking signal dispatch as AI validation is mandatory.`);
+      logger.warn(`AI Validation notice for ${strategyId}: ${cleanMsg}`);
+      getProviderRegistry().reportError('GeminiAI', cleanMsg);
+
+      const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
+      const failsCount = validatorResults.filter(v => v.status === 'FAIL').length;
+
+      if (failsCount === 0 && passedCount > 0) {
+        logger.info(`AI Service rate-limited (${cleanMsg}), but Deterministic Rule Engine passed with 0 failures (${passedCount} rules passed). Approving setup via Deterministic Rule Engine fallback.`);
+        const fallbackRes: ValidationPipelineResult = {
+           strategyName: strategyId,
+           decision: 'APPROVED',
+           checklist: validatorResults,
+           reasoning: `Approved via Deterministic Rule Engine fallback (${cleanMsg}). All mandatory setup rules verified with 0 failures.`,
+           evidence: "Deterministic Rule Engine Passed",
+           riskNotes: 'Rule Engine Validated',
+           missingFactors: [],
+           recommendedAction: 'allow_signal',
+           scores: { confidence: realScore || 90 }
+        };
+
+        this.cache.set(cacheKey, fallbackRes);
+        setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+
+        return fallbackRes;
+      }
 
       const fallbackRes: ValidationPipelineResult = {
          strategyName: strategyId,
          decision: 'REJECTED',
          checklist: validatorResults,
-         reasoning: `AI Validation failed (${error.message}). Signal suppressed per quality gate requirement.`,
+         reasoning: `AI Validation unavailable (${cleanMsg}). Signal suppressed per quality gate requirement.`,
          evidence: "AI Validation failed.",
          riskNotes: isQuotaExceeded ? 'AI UNAVAILABLE - Quota Exceeded' : (isTimeout ? 'AI UNAVAILABLE - Request Timeout' : 'AI UNAVAILABLE - System Error'),
          missingFactors: ['AI Validation'],

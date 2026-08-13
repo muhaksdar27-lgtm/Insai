@@ -43,7 +43,7 @@ export class PyWSClient {
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.cooldownUntil = Date.now() + 60000; // 60s cooldown
-      logger.warn(`PyWSClient: Reached ${this.maxReconnectAttempts} reconnect failures for ${this.url}. Entering 60s cooldown (HTTP fallback active).`);
+      logger.debug(`PyWSClient: Reached ${this.maxReconnectAttempts} reconnect failures for ${this.url}. Entering 60s cooldown (HTTP fallback active).`);
       this.reconnectTimer = setTimeout(() => {
         this.reconnectAttempts = 0;
         this.connect();
@@ -94,7 +94,7 @@ export class PyWSClient {
 
       this.ws.on('error', (err: any) => {
         if (this.reconnectAttempts === 0) {
-          logger.warn(`WebSocket connection issue with Python Engine (${this.url}): ${err.message}`);
+          logger.debug(`WebSocket connection issue with Python Engine (${this.url}): ${err.message}`);
         }
       });
 
@@ -106,7 +106,7 @@ export class PyWSClient {
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           const backoffMs = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
           if (wasConnected) {
-            logger.warn(`WebSocket disconnected from Python Engine. Reconnecting in ${(backoffMs / 1000).toFixed(1)}s...`);
+            logger.debug(`WebSocket disconnected from Python Engine. Reconnecting in ${(backoffMs / 1000).toFixed(1)}s...`);
           }
           this.reconnectTimer = setTimeout(() => this.connect(), backoffMs);
         } else {

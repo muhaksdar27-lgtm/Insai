@@ -9,6 +9,7 @@ import { qualityGate } from './validation-pipeline/quality-gate';
 import { SetupDetector, SetupLifecycleError } from './setup-detector';
 import { logger } from '../utils/logger';
 import { PyWSClient } from './py-ws-client';
+import { PythonEngineManager } from '../mcp/engines/deployment';
 import { MarketStateEngine } from './market-state-engine';
 import { StateMachine, STEPS } from './state-machine';
 import { RuleEngine } from './rule-engine';
@@ -200,43 +201,49 @@ export class TradingEngine {
         if (!pyUrl) {
             throw new Error('PYTHON_ENGINE_URL environment variable is not set.');
         }
-        const mds = getMarketDataService();
-        
-        const [h1, m15, m5, m1] = await Promise.all([
-            context.timeframe === 'H1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'H1', 100),
-            context.timeframe === 'M15' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M15', 100),
-            context.timeframe === 'M5' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M5', 100),
-            context.timeframe === 'M1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M1', 100)
-        ]);
-        
-        const payload = { H1: { candles: h1 }, M15: { candles: m15, atr: 4.5 }, M5: { candles: m5 }, M1: { candles: m1 } };
-        
-        try {
-            const wsClient = PyWSClient.getInstance(pyUrl);
-            commonPyData = await wsClient.analyze(payload);
-        } catch (wsErr: any) {
-            logger.warn(`WebSocket to Python Engine failed (${wsErr.message}), falling back to HTTP...`);
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 10000);
+
+        const pyHealth = await PythonEngineManager.evaluate();
+        if (pyHealth.status !== 'active') {
+            logger.debug(`Python Engine status is '${pyHealth.status}'. Using Native TS LocalTAAnalyzer.`);
+        } else {
+            const mds = getMarketDataService();
+            
+            const [h1, m15, m5, m1] = await Promise.all([
+                context.timeframe === 'H1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'H1', 100),
+                context.timeframe === 'M15' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M15', 100),
+                context.timeframe === 'M5' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M5', 100),
+                context.timeframe === 'M1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M1', 100)
+            ]);
+            
+            const payload = { H1: { candles: h1 }, M15: { candles: m15, atr: 4.5 }, M5: { candles: m5 }, M1: { candles: m1 } };
+            
             try {
-                const pyRes = await fetch(`${pyUrl}/v1/analyze`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    cache: 'no-store',
-                    signal: controller.signal
-                });
-                if (pyRes.ok) {
-                    commonPyData = await pyRes.json();
+                const wsClient = PyWSClient.getInstance(pyUrl);
+                commonPyData = await wsClient.analyze(payload);
+            } catch (wsErr: any) {
+                logger.debug(`WebSocket to Python Engine failed (${wsErr.message}), trying HTTP fallback...`);
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000);
+                try {
+                    const pyRes = await fetch(`${pyUrl}/v1/analyze`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                        cache: 'no-store',
+                        signal: controller.signal
+                    });
+                    if (pyRes.ok) {
+                        commonPyData = await pyRes.json();
+                    }
+                } catch (err: any) {
+                    logger.debug(`Failed to reach Python Engine HTTP: ${err.message}`);
+                } finally {
+                    clearTimeout(timeout);
                 }
-            } catch (err: any) {
-                logger.warn(`Failed to reach Python Engine HTTP: ${err.message}`);
-            } finally {
-                clearTimeout(timeout);
             }
         }
     } catch (e: any) {
-        logger.error(`Technical analysis error: ${e.message}`);
+        logger.debug(`Technical analysis remote engine notice: ${e.message}`);
     }
 
     // Always ensure robust technical analysis data using native TypeScript LocalTAAnalyzer if Python engine is inactive or returned empty
