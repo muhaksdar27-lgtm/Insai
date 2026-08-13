@@ -47,7 +47,7 @@ export class MarketScanner {
       const snapshot = msg.payload as MarketSnapshot;
       if (snapshot.symbol === 'XAUUSD') {
         const now = Date.now();
-        if (now - this.lastScanTime > 3000) { // 3s throttle per tick scan
+        if (now - this.lastScanTime > 1000) { // 1s throttle per tick scan for fast processing
           this.lastScanTime = now;
           this.scan();
         }
@@ -64,15 +64,15 @@ export class MarketScanner {
     // Initial scan
     this.scan();
     
-    // Fallback interval (every 15 seconds) in case WebSocket/Redis is down
+    // Fallback interval (every 5 seconds) in case WebSocket/Redis is down
     this.timer = setInterval(() => {
       if (!this.isRunning || this.isScanning) return;
       const now = Date.now();
-      if (now - this.lastScanTime > 10000) {
+      if (now - this.lastScanTime > 5000) {
         this.lastScanTime = now;
         this.scan();
       }
-    }, 15000);
+    }, 5000);
   }
 
   public stop() {
@@ -192,8 +192,8 @@ export class MarketScanner {
         return;
       }
       
-      // Get the current M15 candle block (15 minutes = 900000 ms)
-      const currentCandleBlock = Math.floor(Date.now() / 900000) * 900000;
+      // Get the current M1 candle block (1 minute = 60000 ms) for high precision
+      const currentCandleBlock = Math.floor(Date.now() / 60000) * 60000;
       
       // Fetch latest price (leveraging the newly extended 30-sec cache)
       const latestPriceSnapshot = await getMarketDataService().getLatestPrice("XAUUSD");
@@ -205,7 +205,7 @@ export class MarketScanner {
       }
       
       const isNewCandle = currentCandleBlock !== this.lastScannedCandleBlock;
-      const isSignificantPriceChange = Math.abs(currentPrice - this.lastScannedPrice) >= 0.1;
+      const isSignificantPriceChange = Math.abs(currentPrice - this.lastScannedPrice) >= 0.05;
       
       if (!isNewCandle && !isSignificantPriceChange && this.lastScannedPrice > 0) {
          // Skip scan to preserve TwelveData/YahooFinance API quota!
@@ -217,8 +217,8 @@ export class MarketScanner {
 
       logger.info('Running market scan for XAUUSD (triggered by real-time WebSocket/throttle)...');
       
-      // 2. Get Context
-      const baseContext = await getMarketDataService().getContextData("XAUUSD", "M15");
+      // 2. Get Context (Use M1 for precise tick-by-tick real-time evaluation instead of M15)
+      const baseContext = await getMarketDataService().getContextData("XAUUSD", "M1");
       const correlationId = crypto.randomUUID();
       const context = { ...baseContext, correlationId };
 
@@ -233,15 +233,15 @@ export class MarketScanner {
       if (candles.length > 0) {
         const latestCandleTime = new Date(candles[candles.length - 1].timestamp).getTime();
         const now = Date.now();
-        // If data is older than 15 minutes while market is open, treat as stale
-        if (now - latestCandleTime > 15 * 60 * 1000) {
+        // For M1 precision, 3 minutes is considered stale
+        if (now - latestCandleTime > 3 * 60 * 1000) {
           logger.warn(`[STALE_DATA_SCAN_SKIPPED] Market scan skipped for XAUUSD: Latest candle timestamp (${candles[candles.length - 1].timestamp}) is stale.`);
           return;
         }
       }
 
-      // 3. Pass to engine
-      await this.engine.processMarketData('XAUUSD', 'M15', context, activeStrategyIds);
+      // 3. Pass to engine with M1 timeframe for high precision evaluation
+      await this.engine.processMarketData('XAUUSD', 'M1', context, activeStrategyIds);
       
     } catch (error: any) {
       if (error.message.includes('not configured')) {

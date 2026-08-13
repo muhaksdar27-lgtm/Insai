@@ -271,6 +271,7 @@ export class DatabaseService {
     const msg = String(err.message || err).toLowerCase();
     return msg.includes('econnrefused') ||
            msg.includes('enotfound') ||
+           msg.includes('eai_again') ||
            msg.includes('connection terminated') ||
            msg.includes('timeout') ||
            msg.includes('circuit breaker');
@@ -395,7 +396,7 @@ export class DatabaseService {
         return rows || [payload];
       });
     } catch (err: any) {
-      if (!err.message?.includes('circuit breaker')) {
+      if (!err.message?.includes('circuit breaker') && !this.isNetworkError(err)) {
         logger.error(`PostgreSQL insert signal error: ${err.message}`);
       }
       return [payload];
@@ -423,7 +424,7 @@ export class DatabaseService {
         return rows;
       });
     } catch (err: any) {
-      if (!err.message?.includes('circuit breaker')) {
+      if (!err.message?.includes('circuit breaker') && !this.isNetworkError(err)) {
         logger.error(`PostgreSQL insert signal evidence error: ${err.message}`);
       }
       return null;
@@ -449,7 +450,7 @@ export class DatabaseService {
         return rows;
       });
     } catch (err: any) {
-      if (!err.message?.includes('circuit breaker')) {
+      if (!err.message?.includes('circuit breaker') && !this.isNetworkError(err)) {
         logger.error(`PostgreSQL update signal state error: ${err.message}`);
       }
       return null;
@@ -574,7 +575,11 @@ export class DatabaseService {
         return historyRecord;
       });
     } catch (err: any) {
-      logger.error(`PostgreSQL archive to history error: ${err.message}`);
+      if (this.isNetworkError(err)) {
+        logger.warn(`PostgreSQL archive to history warn: ${err.message}`);
+      } else {
+        logger.error(`PostgreSQL archive to history error: ${err.message}`);
+      }
       return historyRecord;
     }
   }
@@ -772,8 +777,10 @@ export class DatabaseService {
         }));
       });
     } catch (err: any) {
-      if (!err.message?.includes('circuit breaker')) {
+      if (!err.message?.includes('circuit breaker') && !this.isNetworkError(err)) {
         logger.error(`PostgreSQL fetch strategies error: ${err.message}`);
+      } else if (this.isNetworkError(err)) {
+        logger.warn(`PostgreSQL fetch strategies warn (fallback to defaults): ${err.message}`);
       }
       return defaultStrats;
     }
@@ -789,7 +796,11 @@ export class DatabaseService {
         return rows || [];
       });
     } catch (err: any) {
-      logger.error(`PostgreSQL fetch audit logs error: ${err.message}`);
+      if (this.isNetworkError(err)) {
+        logger.warn(`PostgreSQL fetch audit logs warn: ${err.message}`);
+      } else {
+        logger.error(`PostgreSQL fetch audit logs error: ${err.message}`);
+      }
       return { status: 'error', available: false, reason: err.message };
     }
   }
@@ -818,7 +829,7 @@ export class DatabaseService {
         return rows[0];
       });
     } catch (err: any) {
-      if (!err.message?.includes('circuit breaker')) {
+      if (!err.message?.includes('circuit breaker') && !this.isNetworkError(err)) {
         logger.error(`PostgreSQL insert audit log error: ${err.message}`);
       }
       return null;
@@ -856,7 +867,7 @@ export class DatabaseService {
         return rows[0];
       });
     } catch (err: any) {
-      if (!err.message?.includes('circuit breaker')) {
+      if (!err.message?.includes('circuit breaker') && !this.isNetworkError(err)) {
         logger.error(`PostgreSQL upsert MCP error: ${err.message}`);
       }
       return null;
@@ -873,7 +884,11 @@ export class DatabaseService {
         return rows || [];
       });
     } catch (err: any) {
-      logger.error(`PostgreSQL fetch MCPs error: ${err.message}`);
+      if (this.isNetworkError(err)) {
+        logger.warn(`PostgreSQL fetch MCPs warn: ${err.message}`);
+      } else {
+        logger.error(`PostgreSQL fetch MCPs error: ${err.message}`);
+      }
       return { status: 'error', available: false, reason: err.message };
     }
   }

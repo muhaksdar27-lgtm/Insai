@@ -164,12 +164,18 @@ export class MarketDataService {
     );
 
     if (!data.status || data.status !== 'not_configured') {
+      let ttlMs = this.CANDLE_CACHE_TTL_MS;
+      if (timeframe === 'M1') ttlMs = 15000; // 15 seconds for precise M1
+      else if (timeframe === 'M5') ttlMs = 60000; // 1 min for M5
+      else if (timeframe === 'M15') ttlMs = 300000; // 5 mins for M15
+      else if (timeframe === 'H1') ttlMs = 900000; // 15 mins for H1
+
       const cacheEntry = {
         data,
-        expiresAt: now + this.CANDLE_CACHE_TTL_MS
+        expiresAt: now + ttlMs
       };
       this.candleCache.set(cacheKey, cacheEntry);
-      getQueueManager().setCache(`candles:${cacheKey}`, cacheEntry, Math.ceil(this.CANDLE_CACHE_TTL_MS / 1000)).catch(() => {});
+      getQueueManager().setCache(`candles:${cacheKey}`, cacheEntry, Math.ceil(ttlMs / 1000)).catch(() => {});
     }
 
     return Array.isArray(data) ? data.slice(-limit) : data;

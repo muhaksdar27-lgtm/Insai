@@ -87,7 +87,7 @@ export class ProviderRegistry {
         provider.circuitBreakerStatus = 'open';
         if (isRateLimited) {
            provider.lastFailureTime = Date.now() + 5 * 60 * 1000 - this.cbConfig.resetTimeoutMs;
-           logger.error(`Circuit breaker opened (RATE LIMITED) for provider [${providerName}] for 5 minutes.`);
+           logger.warn(`Circuit breaker opened (RATE LIMITED) for provider [${providerName}] for 5 minutes.`);
         } else if (isInvalidKey) {
            provider.lastFailureTime = Date.now() + 60 * 60 * 1000 - this.cbConfig.resetTimeoutMs;
            logger.error(`Circuit breaker opened (INVALID KEY) for provider [${providerName}] for 1 hour.`);

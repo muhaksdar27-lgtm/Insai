@@ -191,7 +191,7 @@ export class AIValidationOrchestrator {
              if (candles && candles.length >= 30) {
                  const reqPayload = {
                      symbol: 'XAUUSD',
-                     timeframe: 'M15', // Fallback, could be dynamic
+                     timeframe: marketContext.timeframe || 'M15',
                      direction: direction,
                      entry_price: entryPrice,
                      sl_price: slPrice,

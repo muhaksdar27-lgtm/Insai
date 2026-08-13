@@ -40,7 +40,7 @@ export class QueueManager {
     
     if (this.redisFailures >= this.maxFailures && !this.circuitOpen) {
       this.circuitOpen = true;
-      logger.error(`Redis circuit breaker opened after ${this.redisFailures} failures`);
+      logger.warn(`Redis circuit breaker opened after ${this.redisFailures} failures. Distributed features falling back to local.`);
       
       if (this.client) this.client.disconnect();
       if (this.publisher) this.publisher.disconnect();
@@ -58,8 +58,8 @@ export class QueueManager {
     if (!this.useRedis || !this.client || !this.publisher || !this.subscriber) return;
     const handleError = (type: string) => (err: Error) => {
       this.incrementFailure();
-      if (err.message.includes('ECONNREFUSED')) return;
-      logger.error(`Redis ${type} error: ${err.message}`);
+      if (err.message.includes('ECONNREFUSED') || err.message.includes('EAI_AGAIN') || err.message.includes('ENOTFOUND')) return;
+      logger.warn(`Redis ${type} error: ${err.message}`);
     };
     
     this.publisher.on('error', handleError('publisher'));
@@ -112,7 +112,7 @@ export class QueueManager {
         this.connected = true;
       }
     } catch (err: any) {
-      logger.error(`Queue Manager cannot connect to Redis: ${err.message}`);
+      logger.warn(`Queue Manager cannot connect to Redis: ${err.message}`);
     }
   }
 
@@ -320,7 +320,7 @@ export class QueueManager {
       );
       return id;
     } catch (err: any) {
-      logger.error(`Failed to XADD to stream ${stream}: ${err.message}`);
+      logger.warn(`Failed to XADD to stream ${stream}: ${err.message}`);
       return null;
     }
   }
@@ -347,7 +347,7 @@ export class QueueManager {
       await this.client.xgroup('CREATE', stream, group, '0', 'MKSTREAM');
     } catch (err: any) {
       if (!err.message.includes('BUSYGROUP')) {
-        logger.error(`Failed to create group ${group} on ${stream}: ${err.message}`);
+        logger.warn(`Failed to create group ${group} on ${stream}: ${err.message}`);
         return stop;
       }
     }
@@ -386,7 +386,7 @@ export class QueueManager {
                      await handler(parsed, id);
                      await this.client!.xack(stream, group, id);
                    } catch (e: any) {
-                     logger.error(`Failed to process stream message ${id}: ${e.message}`);
+                     logger.warn(`Failed to process stream message ${id}: ${e.message}`);
                    }
                 }
              }
@@ -394,7 +394,7 @@ export class QueueManager {
         }
       } catch (e: any) {
         if (this.activeStreamPolls.has(pollId)) {
-          logger.error(`XREADGROUP error on ${stream}: ${e.message}`);
+          logger.warn(`XREADGROUP error on ${stream}: ${e.message}`);
         }
       }
       if (this.activeStreamPolls.has(pollId)) {

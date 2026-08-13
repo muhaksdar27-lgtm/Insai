@@ -160,7 +160,8 @@ export class TradingEngine {
     if (context.candles && context.candles.length > 0) {
       const latestCandleTime = new Date(context.candles[context.candles.length - 1].timestamp).getTime();
       const now = Date.now();
-      if (now - latestCandleTime > 15 * 60 * 1000) {
+      const staleLimitMs = context.timeframe === 'M1' ? 3 * 60 * 1000 : 15 * 60 * 1000;
+      if (now - latestCandleTime > staleLimitMs) {
         logger.warn(`[STALE_DATA_CYCLE_ABORT] Market candles for ${context.symbol} are stale (${context.candles[context.candles.length - 1].timestamp}). Aborting detection cycle.`);
         return;
       }
@@ -201,10 +202,10 @@ export class TradingEngine {
         const mds = getMarketDataService();
         
         const [h1, m15, m5, m1] = await Promise.all([
-            mds.getCandles(context.symbol, 'H1', 100),
+            context.timeframe === 'H1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'H1', 100),
             context.timeframe === 'M15' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M15', 100),
-            mds.getCandles(context.symbol, 'M5', 100),
-            mds.getCandles(context.symbol, 'M1', 100)
+            context.timeframe === 'M5' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M5', 100),
+            context.timeframe === 'M1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M1', 100)
         ]);
         
         const payload = { H1: { candles: h1 }, M15: { candles: m15, atr: 4.5 }, M5: { candles: m5 }, M1: { candles: m1 } };
