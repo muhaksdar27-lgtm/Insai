@@ -82,6 +82,15 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
   const currentStep = strategy.currentStep || 'INITIALIZING';
   const normCurrent = normalizeStateName(currentStep);
   const isFailed = normCurrent === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed' || strategy.status === 'rejected';
+  
+  // Strict status mapping
+  let setupStatus = 'active';
+  if (isFailed) {
+      if (strategy.currentStep?.toLowerCase().includes('expired') || (strategy as any).setupStatus === 'expired') setupStatus = 'expired';
+      else setupStatus = 'rejected';
+  } else if (normCurrent === 'DISPATCHED' || (strategy as any).setupStatus === 'approved') {
+      setupStatus = 'approved';
+  }
 
   let currentIdx = sequentialIds.indexOf(normCurrent as any);
   if (currentIdx === -1) {
@@ -92,13 +101,17 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
   return sequentialSteps.map((stepConfig) => {
     const idx = sequentialIds.indexOf(stepConfig.id);
     let status = 'awaiting';
-    if (isFailed) {
+    
+    if (setupStatus === 'expired' || setupStatus === 'rejected') {
       if (idx < currentIdx) status = 'validated';
-      else if (idx === currentIdx) status = 'rejected';
+      else if (idx === currentIdx) status = setupStatus; // 'rejected' or 'expired'
       else status = 'awaiting';
-    } else if (normCurrent === 'DISPATCHED') {
-      status = 'approved';
+    } else if (setupStatus === 'approved') {
+      status = 'validated';
+      // If it's the last step and we are approved, make the last step approved
+      if (idx === sequentialIds.length - 1) status = 'approved';
     } else {
+      // Active setup
       if (idx < currentIdx) status = 'validated';
       else if (idx === currentIdx) status = 'active';
       else status = 'awaiting';
