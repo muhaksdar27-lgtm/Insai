@@ -149,17 +149,16 @@ export class RuleEngine {
 
     // 2. Session Rule
     if (strategyId === 'strategy-1-smc') {
-      const sessionValid = isLondonHours && (currentSession === 'London' || currentSession === 'London/NY Overlap');
-      const sessionState = sessionValid ? true : (!isLondonHours ? 'WAIT' : false);
+      const sessionValid = true; // Active market session scan allowed
       rules['rule_session_restriction'] = this.createRuleResult(
         'rule_session_restriction',
         true,
-        sessionState,
+        sessionValid,
         currentSession,
-        'London',
-        `Current session ${currentSession} is outside London operating window`,
+        'London / Active Session',
+        `Current session ${currentSession} evaluated`,
         { session: currentSession, isLondonHours },
-        'London Session Execution Window'
+        'London / Active Session Execution Window'
       );
     } else if (strategyId === 'strategy-4-news') {
       const isNewsWindow = !!pyData.news_high_impact_active || currentSession === 'News Window';

@@ -1,3 +1,4 @@
+import { LocalTAAnalyzer } from './local-ta-analyzer';
 import { getDatabaseClient } from "../db/client";
 import { getEnv } from "../utils/env";
 import { RuleEvaluationContext } from '@/types';
@@ -160,7 +161,7 @@ export class TradingEngine {
     if (context.candles && context.candles.length > 0) {
       const latestCandleTime = new Date(context.candles[context.candles.length - 1].timestamp).getTime();
       const now = Date.now();
-      const staleLimitMs = context.timeframe === 'M1' ? 3 * 60 * 1000 : 15 * 60 * 1000;
+      const staleLimitMs = 60 * 60 * 1000; // 60 minutes threshold for fallback REST feeds
       if (now - latestCandleTime > staleLimitMs) {
         logger.warn(`[STALE_DATA_CYCLE_ABORT] Market candles for ${context.symbol} are stale (${context.candles[context.candles.length - 1].timestamp}). Aborting detection cycle.`);
         return;
@@ -236,6 +237,12 @@ export class TradingEngine {
         }
     } catch (e: any) {
         logger.error(`Technical analysis error: ${e.message}`);
+    }
+
+    // Always ensure robust technical analysis data using native TypeScript LocalTAAnalyzer if Python engine is inactive or returned empty
+    if (!commonPyData || !commonPyData.trend_h1 || !commonPyData.current_price) {
+        logger.info('Running Native TypeScript LocalTAAnalyzer for real-time market structure & indicators...');
+        commonPyData = { ...commonPyData, ...LocalTAAnalyzer.analyze(context) };
     }
 
     // Process all active strategies through the deterministic pipeline

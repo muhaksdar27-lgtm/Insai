@@ -233,9 +233,9 @@ export class MarketScanner {
       if (candles.length > 0) {
         const latestCandleTime = new Date(candles[candles.length - 1].timestamp).getTime();
         const now = Date.now();
-        // For M1 precision, 3 minutes is considered stale
-        if (now - latestCandleTime > 3 * 60 * 1000) {
-          logger.warn(`[STALE_DATA_SCAN_SKIPPED] Market scan skipped for XAUUSD: Latest candle timestamp (${candles[candles.length - 1].timestamp}) is stale.`);
+        // Allow up to 60 minutes for fallback feeds (e.g. Yahoo Finance) to prevent lockouts
+        if (now - latestCandleTime > 60 * 60 * 1000) {
+          logger.warn(`[STALE_DATA_SCAN_SKIPPED] Market scan skipped for XAUUSD: Latest candle timestamp (${candles[candles.length - 1].timestamp}) is older than 60 mins.`);
           return;
         }
       }

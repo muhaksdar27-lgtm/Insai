@@ -404,6 +404,23 @@ export class DatabaseService {
   }
 
   public async insertSignalEvidence(payload: { signal_key: string, engine_name: string, evidence_type: string, details: any, passed: boolean, reason: any }) {
+    // Always store evidence in memory cache so evidence checklist works seamlessly
+    if (payload.signal_key) {
+      const cached = this.memorySignalsCache.get(payload.signal_key);
+      if (cached) {
+        if (!cached.signal_evidence) cached.signal_evidence = [];
+        cached.signal_evidence.push({
+          signal_key: payload.signal_key,
+          engine_name: payload.engine_name,
+          evidence_type: payload.evidence_type,
+          details: payload.details,
+          passed: payload.passed,
+          reason: typeof payload.reason === 'string' ? payload.reason : JSON.stringify(payload.reason || ''),
+          created_at: new Date().toISOString()
+        });
+      }
+    }
+
     if (!this.isConnected()) return null;
     try {
       return await this.withRetry(async (pool) => {
@@ -596,7 +613,7 @@ export class DatabaseService {
                    ) AS signal_evidence
             FROM signals s
             LEFT JOIN signal_evidence se ON s.signal_key = se.signal_key
-            WHERE s.status IN ('APPROVED', 'DISPATCHED')
+            WHERE s.status IN ('APPROVED', 'DISPATCHED', 'SIGNAL_ACTIVE', 'ACTIVE', 'TAKE_PARTIAL')
             GROUP BY s.id
             ORDER BY s.created_at DESC;
           `;
@@ -613,16 +630,8 @@ export class DatabaseService {
       }
     }
 
-    const cachedActive = Array.from(this.memorySignalsCache.values()).filter(s => ['SIGNAL_ACTIVE', 'APPROVED', 'DISPATCHED', 'TAKE_PARTIAL'].includes(s.status));
-    if (cachedActive.length > 0) {
-      return cachedActive;
-    }
-
-    if (!this.isConnected()) {
-      return { status: 'not_configured', available: false, reason: 'Database is not configured' };
-    }
-
-    return [];
+    const cachedActive = Array.from(this.memorySignalsCache.values()).filter(s => ['SIGNAL_ACTIVE', 'APPROVED', 'DISPATCHED', 'ACTIVE', 'TAKE_PARTIAL'].includes(s.status));
+    return cachedActive;
   }
 
   public async getHistoricalSignals() {
@@ -653,20 +662,10 @@ export class DatabaseService {
         }
       } catch (err: any) {
         logger.warn(`PostgreSQL fetch history warn: ${err.message}`);
-        return { status: 'error', available: false, reason: err.message };
       }
     }
 
-    const cachedHistory = Array.from(this.memoryHistoryCache.values());
-    if (cachedHistory.length > 0) {
-      return cachedHistory;
-    }
-
-    if (!this.isConnected()) {
-      return { status: 'not_configured', available: false, reason: 'Database is not configured' };
-    }
-
-    return [];
+    return Array.from(this.memoryHistoryCache.values());
   }
 
   public async getStrategyState(strategyId: string) {

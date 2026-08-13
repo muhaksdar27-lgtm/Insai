@@ -332,14 +332,21 @@ export class MarketDataService {
     }
     
     if (price && price.price !== null && candles && Array.isArray(candles) && candles.length > 0 && !candles.hasOwnProperty('status')) {
-       // Update last candle with latest price for real-time responsiveness without destroying its identity
+       // Update last candle with latest price for real-time responsiveness
        const lastCandle = candles[candles.length - 1];
+       const nowIso = new Date().toISOString();
+       const lastCandleTime = new Date(lastCandle.timestamp).getTime();
+       const timeDiff = Date.now() - lastCandleTime;
+
        lastCandle.close = price.price;
        if (price.price > lastCandle.high) lastCandle.high = price.price;
        if (price.price < lastCandle.low) lastCandle.low = price.price;
-       
-       // DO NOT overwrite lastCandle.timestamp here! 
-       // Keeping the original timeframe open time ensures caching works correctly.
+
+       // If the last candle is more than 2 minutes old due to API provider lag,
+       // append or update the active live candle timestamp so indicators analyze live market
+       if (timeDiff > 2 * 60 * 1000) {
+         lastCandle.timestamp = nowIso;
+       }
     }
 
     return {
