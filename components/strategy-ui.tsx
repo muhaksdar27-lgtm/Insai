@@ -51,7 +51,7 @@ export const TimelineCard = memo(function TimelineCard({ steps }: { steps: Strat
     return <div className="text-[10px] text-zinc-500 font-mono italic">No steps available</div>;
   }
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-9 gap-1.5 bg-zinc-950/80 rounded-lg p-2 border border-zinc-800/80 shadow-inner">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-1.5 bg-zinc-950/80 rounded-lg p-2 border border-zinc-800/80 shadow-inner">
       {steps.map((step: StrategyStep, sIdx: number) => {
         const statusLower = (step.status || '').toLowerCase();
         const isActive = statusLower === 'active' || statusLower === 'current';

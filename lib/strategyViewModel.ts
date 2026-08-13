@@ -1,5 +1,5 @@
 import { StrategyResponse, DashboardCard, StrategyStep } from "@/types";
-import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName, normalizeStateName } from "@/lib/trading-engine/state-machine";
+import { getStrategyFlow, getStep, getStepDisplayName as getSMStepDisplayName, normalizeStateName } from "@/lib/trading-engine/state-machine";
 import { getStrategyDefinition } from "@/lib/trading-engine/strategy-registry";
 import { transformCandidateRules, RuleValidationResult } from "@/lib/utils/rule-transformer";
 
@@ -80,21 +80,24 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
   const sequentialIds = sequentialSteps.map(s => s.id);
 
   const currentStep = strategy.currentStep || 'INITIALIZING';
+  const currentStepObj = getStep(strategy.id, currentStep);
+  const targetStepId = currentStepObj ? currentStepObj.id : currentStep;
+
   const normCurrent = normalizeStateName(currentStep);
-  const isFailed = normCurrent === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed' || strategy.status === 'rejected';
+  const isFailed = normCurrent === 'FAILED' || targetStepId === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed' || strategy.status === 'rejected';
   
   // Strict status mapping
   let setupStatus = 'active';
   if (isFailed) {
       if (strategy.currentStep?.toLowerCase().includes('expired') || (strategy as any).setupStatus === 'expired') setupStatus = 'expired';
       else setupStatus = 'rejected';
-  } else if (normCurrent === 'DISPATCHED' || (strategy as any).setupStatus === 'approved') {
+  } else if (normCurrent === 'DISPATCHED' || targetStepId === 'DISPATCHED' || (strategy as any).setupStatus === 'approved') {
       setupStatus = 'approved';
   }
 
-  let currentIdx = sequentialIds.indexOf(normCurrent as any);
+  let currentIdx = sequentialIds.indexOf(targetStepId as any);
   if (currentIdx === -1) {
-    if (normCurrent === 'DISPATCHED') currentIdx = sequentialIds.length - 1;
+    if (normCurrent === 'DISPATCHED' || setupStatus === 'approved') currentIdx = sequentialIds.length - 1;
     else currentIdx = 0;
   }
 
@@ -422,24 +425,21 @@ export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]):
       };
     }
 
+    const flowConfig = getStrategyFlow(canon.id);
+    const flowSteps = flowConfig?.steps.filter(s => s.id !== 'FAILED') || [];
+
     return {
       id: canon.id,
       name: canon.name,
       description: canon.description,
       status: 'offline',
       progress: 0,
-      currentStep: 'INITIALIZING',
-      steps: [
-        { name: 'Standby / Initializing', status: 'current' },
-        { name: 'Waiting Market', status: 'awaiting' },
-        { name: 'Market Scanning', status: 'awaiting' },
-        { name: 'Setup Identification', status: 'awaiting' },
-        { name: 'Rule Engine Validation', status: 'awaiting' },
-        { name: 'Risk & Price Parameters', status: 'awaiting' },
-        { name: 'AI Confluence Gate', status: 'awaiting' },
-        { name: 'Signal Assembly', status: 'awaiting' },
-        { name: 'Signal Dispatched', status: 'awaiting' },
-      ],
+      currentStep: flowSteps[0]?.title || 'Filter / Initializing',
+      steps: flowSteps.map((s, idx) => ({
+        id: s.id,
+        name: s.title,
+        status: idx === 0 ? 'current' : 'awaiting'
+      })),
       setupSnapshot: {},
       ruleResults: {},
       signal: null,

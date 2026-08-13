@@ -78,17 +78,61 @@ export interface StrategyFlowConfig {
   ui?: any;
 }
 
-export const CANONICAL_STEPS: StrategyStepConfig[] = [
-  { id: 'INITIALIZING', title: 'Standby / Initializing', description: 'System initializing and awaiting market cycle', status: 'awaiting', next: 'WAITING_MARKET', rollback: null, timeout: 0 },
-  { id: 'WAITING_MARKET', title: 'Waiting Market', description: 'Checking market session and data availability', status: 'awaiting', next: 'SCANNING', rollback: 'INITIALIZING', timeout: 0 },
-  { id: 'SCANNING', title: 'Market Scanning', description: 'Scanning live price feed and market structure', status: 'awaiting', next: 'SETUP_FOUND', rollback: 'INITIALIZING', timeout: 0 },
-  { id: 'SETUP_FOUND', title: 'Setup Identification', description: 'Detecting structure, zones, or liquidity sweeps', status: 'awaiting', next: 'RULE_VALIDATION', rollback: 'INITIALIZING', timeout: 0 },
-  { id: 'RULE_VALIDATION', title: 'Rule Engine Validation', description: 'Evaluating deterministic rule set', status: 'awaiting', next: 'RISK_VALIDATION', rollback: 'FAILED', timeout: 0 },
-  { id: 'RISK_VALIDATION', title: 'Risk & Price Parameters', description: 'Calculating entry, SL, TP levels and Risk/Reward ratio', status: 'awaiting', next: 'AI_VALIDATION', rollback: 'FAILED', timeout: 0 },
-  { id: 'AI_VALIDATION', title: 'AI Confluence Gate', description: 'Running AI verification and risk confluence checks', status: 'awaiting', next: 'SIGNAL_READY', rollback: 'FAILED', timeout: 0 },
-  { id: 'SIGNAL_READY', title: 'Signal Assembly', description: 'Compiling signal object with single source of truth', status: 'awaiting', next: 'DISPATCHED', rollback: 'FAILED', timeout: 0 },
-  { id: 'DISPATCHED', title: 'Signal Dispatched', description: 'Dispatched to notifications and telemetry stream', status: 'active', next: null, rollback: null, timeout: 0 },
-  { id: 'FAILED', title: 'Execution Failed', description: 'Setup or rule validation failed', status: 'terminal', next: null, rollback: null, timeout: 0 }
+export const STRATEGY_1_STEPS: StrategyStepConfig[] = [
+  { id: 'LONDON_FILTER' as StateName, title: 'Filter Sesi London', description: 'Memastikan waktu trading berada dalam jendela operasional Sesi London', status: 'awaiting', next: 'H1_TREND' as StateName, rollback: null, timeout: 0 },
+  { id: 'H1_TREND' as StateName, title: 'Analisis Trend H1', description: 'Menyesuaikan bias utama struktur pasar H1 (Bullish / Bearish)', status: 'awaiting', next: 'ASIA_SWEEP' as StateName, rollback: 'LONDON_FILTER' as StateName, timeout: 0 },
+  { id: 'ASIA_SWEEP' as StateName, title: 'Sweep Likuiditas Asia', description: 'Mendeteksi pengambilan likuiditas (sweep) pada High/Low Sesi Asia', status: 'awaiting', next: 'M15_CHOCH' as StateName, rollback: 'LONDON_FILTER' as StateName, timeout: 0 },
+  { id: 'M15_CHOCH' as StateName, title: 'Konfirmasi CHoCH M15', description: 'Mencari struktur pembalikan Change of Character pada M15', status: 'awaiting', next: 'OB_FVG' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'OB_FVG' as StateName, title: 'OB & FVG Alignment', description: 'Validasi posisi Entry pada Order Block atau Fair Value Gap', status: 'awaiting', next: 'RISK_PARAMS' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'RISK_PARAMS' as StateName, title: 'Parameter Risiko & SL/TP', description: 'Kalkulasi jarak ATR 0.5x, Stop Loss, dan Take Profit (Min 1:2 R:R)', status: 'awaiting', next: 'AI_GATE' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'AI_GATE' as StateName, title: 'AI Confluence Gate', description: 'Pemeriksaan verifikasi konfluen AI Gemini & Quality Gate', status: 'awaiting', next: 'DISPATCHED' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'DISPATCHED' as StateName, title: 'Signal Dispatched', description: 'Sinyal disetujui & dipublikasikan ke Dashboard & Telegram', status: 'active', next: null, rollback: null, timeout: 0 },
+  { id: 'FAILED' as StateName, title: 'Execution Failed', description: 'Gagal pada evaluasi aturan atau konfluen AI', status: 'terminal', next: null, rollback: null, timeout: 0 }
+];
+
+export const STRATEGY_2_STEPS: StrategyStepConfig[] = [
+  { id: 'MA_TREND' as StateName, title: 'MA Trend Alignment', description: 'Konfirmasi arah trend utama menggunakan Moving Average (D1/H1)', status: 'awaiting', next: 'SD_ZONE' as StateName, rollback: null, timeout: 0 },
+  { id: 'SD_ZONE' as StateName, title: 'Identifikasi Zona S&D', description: 'Mendeteksi area Supply atau Demand utama yang belum murni ter-mitigasi', status: 'awaiting', next: 'ENGULFING_TRIGGER' as StateName, rollback: 'MA_TREND' as StateName, timeout: 0 },
+  { id: 'ENGULFING_TRIGGER' as StateName, title: 'Engulfing Trigger Candle', description: 'Mencari konfirmasi candlestick Engulfing di dalam area S&D', status: 'awaiting', next: 'RISK_PARAMS' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'RISK_PARAMS' as StateName, title: 'Cek Spread & Parameter Risiko', description: 'Pengecekan ambang spread & penetapan rasio Risk:Reward (SL/TP)', status: 'awaiting', next: 'AI_GATE' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'AI_GATE' as StateName, title: 'AI Confluence Gate', description: 'Verifikasi konfluen AI Gemini & pemeriksaan konsistensi', status: 'awaiting', next: 'DISPATCHED' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'DISPATCHED' as StateName, title: 'Signal Dispatched', description: 'Sinyal disetujui & dipublikasikan ke Dashboard & Telegram', status: 'active', next: null, rollback: null, timeout: 0 },
+  { id: 'FAILED' as StateName, title: 'Execution Failed', description: 'Gagal pada evaluasi aturan atau konfluen AI', status: 'terminal', next: null, rollback: null, timeout: 0 }
+];
+
+export const STRATEGY_3_STEPS: StrategyStepConfig[] = [
+  { id: 'H1_TREND' as StateName, title: 'Analisis Trend H1', description: 'Memastikan alignment arah trend H1 untuk scalping aman', status: 'awaiting', next: 'M15_RETRACEMENT' as StateName, rollback: null, timeout: 0 },
+  { id: 'M15_RETRACEMENT' as StateName, title: 'Retracement M15', description: 'Mendeteksi gelombang koreksi/retracement pada M15', status: 'awaiting', next: 'M1_M5_SWEEP' as StateName, rollback: 'H1_TREND' as StateName, timeout: 0 },
+  { id: 'M1_M5_SWEEP' as StateName, title: 'Sweep Likuiditas Scalp', description: 'Deteksi sweep likuiditas mikro pada timeframe M1 / M5', status: 'awaiting', next: 'DOUBLE_TOP_BOTTOM' as StateName, rollback: 'H1_TREND' as StateName, timeout: 0 },
+  { id: 'DOUBLE_TOP_BOTTOM' as StateName, title: 'Pola Double Top/Bottom', description: 'Konfirmasi formasi struktur Double Top / Double Bottom M1', status: 'awaiting', next: 'NECKLINE_BREAK' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'NECKLINE_BREAK' as StateName, title: 'Breakout Neckline', description: 'Konfirmasi penetrasi garis Neckline dengan momentum', status: 'awaiting', next: 'RISK_NEWS_FILTER' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'RISK_NEWS_FILTER' as StateName, title: 'News Filter & Parameter Risiko', description: 'Pengecekan ketiadaan berita besar & kalkulasi SL/TP cepat', status: 'awaiting', next: 'AI_GATE' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'AI_GATE' as StateName, title: 'AI Confluence Gate', description: 'Verifikasi AI cepat untuk validasi momentum scalping', status: 'awaiting', next: 'DISPATCHED' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'DISPATCHED' as StateName, title: 'Signal Dispatched', description: 'Sinyal disetujui & dipublikasikan ke Dashboard & Telegram', status: 'active', next: null, rollback: null, timeout: 0 },
+  { id: 'FAILED' as StateName, title: 'Execution Failed', description: 'Gagal pada evaluasi aturan atau konfluen AI', status: 'terminal', next: null, rollback: null, timeout: 0 }
+];
+
+export const STRATEGY_4_STEPS: StrategyStepConfig[] = [
+  { id: 'NEWS_WINDOW' as StateName, title: 'Jendela High-Impact News', description: 'Deteksi periode rilis berita berdampak tinggi (CPI, NFP, FOMC)', status: 'awaiting', next: 'SPREAD_NORMAL' as StateName, rollback: null, timeout: 0 },
+  { id: 'SPREAD_NORMAL' as StateName, title: 'Normalisasi Spread', description: 'Memastikan spread broker telah kembali normal pasca lonjakan berita', status: 'awaiting', next: 'POST_NEWS_SWEEP' as StateName, rollback: 'NEWS_WINDOW' as StateName, timeout: 0 },
+  { id: 'POST_NEWS_SWEEP' as StateName, title: 'Post-News Spike Sweep', description: 'Mendeteksi spike sweep likuiditas di mana harga mengambil High/Low', status: 'awaiting', next: 'WICK_REJECTION' as StateName, rollback: 'NEWS_WINDOW' as StateName, timeout: 0 },
+  { id: 'WICK_REJECTION' as StateName, title: 'Candle Wick Rejection', description: 'Konfirmasi penolakan harga berupa ekor panjang (Wick Rejection)', status: 'awaiting', next: 'M1_BOS_REVERSAL' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'M1_BOS_REVERSAL' as StateName, title: 'M1 Reversal BOS', description: 'Konfirmasi pembalikan arah dengan Break of Structure M1', status: 'awaiting', next: 'RISK_PARAMS' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'RISK_PARAMS' as StateName, title: 'Parameter Risiko SL/TP', description: 'Kalkulasi Stop Loss di luar ekor spike & Take Profit rasio 1:2', status: 'awaiting', next: 'AI_GATE' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'AI_GATE' as StateName, title: 'AI Confluence Gate', description: 'Verifikasi konfluen AI Gemini khusus skenario volatilitas berita', status: 'awaiting', next: 'DISPATCHED' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'DISPATCHED' as StateName, title: 'Signal Dispatched', description: 'Sinyal disetujui & dipublikasikan ke Dashboard & Telegram', status: 'active', next: null, rollback: null, timeout: 0 },
+  { id: 'FAILED' as StateName, title: 'Execution Failed', description: 'Gagal pada evaluasi aturan atau konfluen AI', status: 'terminal', next: null, rollback: null, timeout: 0 }
+];
+
+export const STRATEGY_5_STEPS: StrategyStepConfig[] = [
+  { id: 'H1_M15_STRUCTURE' as StateName, title: 'Struktur H1 & M15', description: 'Alignment hirarki struktur pasar antara timeframe H1 dan M15', status: 'awaiting', next: 'SD_FIB_OVERLAP' as StateName, rollback: null, timeout: 0 },
+  { id: 'SD_FIB_OVERLAP' as StateName, title: 'Overlap Zona S&D & Fib', description: 'Validasi minimal 2 dari 3 overlap (Supply/Demand, FVG, Fibonacci OTE)', status: 'awaiting', next: 'CONFLUENCE_SWEEP' as StateName, rollback: 'H1_M15_STRUCTURE' as StateName, timeout: 0 },
+  { id: 'CONFLUENCE_SWEEP' as StateName, title: 'Confluence Level Sweep', description: 'Sweep likuiditas yang terjadi tepat pada level konfluen tinggi', status: 'awaiting', next: 'REJECTION_TRIGGER' as StateName, rollback: 'H1_M15_STRUCTURE' as StateName, timeout: 0 },
+  { id: 'REJECTION_TRIGGER' as StateName, title: 'Trigger Rejection Candle', description: 'Konfirmasi candlestick Rejection / CHoCH pembalikan pada M5/M1', status: 'awaiting', next: 'MIN_RR_CALC' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'MIN_RR_CALC' as StateName, title: 'Kalkulasi Risiko (Min 1:2+ R:R)', description: 'Pemeriksaan rasio Risk:Reward minimal 1:2 dengan buffer ATR', status: 'awaiting', next: 'AI_GATE' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'AI_GATE' as StateName, title: 'AI Confluence Gate', description: 'Verifikasi konfluen AI Gemini & Quality Gate multivariat', status: 'awaiting', next: 'DISPATCHED' as StateName, rollback: 'FAILED' as StateName, timeout: 0 },
+  { id: 'DISPATCHED' as StateName, title: 'Signal Dispatched', description: 'Sinyal disetujui & dipublikasikan ke Dashboard & Telegram', status: 'active', next: null, rollback: null, timeout: 0 },
+  { id: 'FAILED' as StateName, title: 'Execution Failed', description: 'Gagal pada evaluasi aturan atau konfluen AI', status: 'terminal', next: null, rollback: null, timeout: 0 }
 ];
 
 export const STRATEGY_FLOWS_CONFIG: StrategyFlowConfig[] = [
@@ -97,35 +141,35 @@ export const STRATEGY_FLOWS_CONFIG: StrategyFlowConfig[] = [
     name: 'STRATEGI 1 — SMC + Sesi London + M15',
     description: 'SMC Strategy strictly for London session on M15 timeframe. Relies on Asia session liquidity sweep and M15 CHoCH.',
     version: '2.0',
-    steps: CANONICAL_STEPS
+    steps: STRATEGY_1_STEPS
   },
   {
     id: 'strategy-2-snd',
     name: 'STRATEGI 2 — Supply & Demand + Engulfing',
     description: 'Supply and Demand zones paired with moving average confluence and engulfing trigger.',
     version: '2.0',
-    steps: CANONICAL_STEPS
+    steps: STRATEGY_2_STEPS
   },
   {
     id: 'strategy-3-scalping',
     name: 'STRATEGI 3 — Scalping SMC + Liquidity Sweep + Double Top/Bottom',
     description: 'Aggressive M1 scalping aligned with H1 trend, requiring liquidity sweep before double top/bottom structural formation.',
     version: '2.0',
-    steps: CANONICAL_STEPS
+    steps: STRATEGY_3_STEPS
   },
   {
     id: 'strategy-4-news',
     name: 'STRATEGI 4 — News Liquidity Sweep Reversal',
     description: 'Trades the post-news liquidity sweep. Strictly avoids the initial news candle, waiting for structural reversal.',
     version: '2.0',
-    steps: CANONICAL_STEPS
+    steps: STRATEGY_4_STEPS
   },
   {
     id: 'strategy-5-smc-sd-confluence',
     name: 'STRATEGI 5 — SMC-SD Pattern Confluence',
     description: 'High-probability confluence engine requiring overlaps between market structure, SD zones, and liquidity sweeps.',
     version: '2.0',
-    steps: CANONICAL_STEPS
+    steps: STRATEGY_5_STEPS
   }
 ];
 
@@ -150,14 +194,53 @@ export function getStrategyFlow(strategyId: string): StrategyFlowConfig | undefi
 }
 
 export function getStep(strategyId: string, stepId: string): StrategyStepConfig | undefined {
-  const normId = normalizeStateName(stepId);
+  if (!stepId) return undefined;
   const flow = getStrategyFlow(strategyId);
-  return flow?.steps.find(s => s.id === normId);
+  if (!flow || !flow.steps.length) return undefined;
+
+  // 1. Direct match by exact step id
+  let match = flow.steps.find(s => s.id === stepId);
+  if (match) return match;
+
+  // 2. Direct match by title (case insensitive)
+  const lower = stepId.toLowerCase().trim();
+  match = flow.steps.find(s => s.title.toLowerCase().trim() === lower);
+  if (match) return match;
+
+  // 3. Map normalized canonical state name (e.g. 'INITIALIZING', 'WAITING_MARKET', 'SCANNING', 'SETUP_FOUND', 'RULE_VALIDATION', 'RISK_VALIDATION', 'AI_VALIDATION', 'DISPATCHED', 'FAILED')
+  const normId = normalizeStateName(stepId);
+
+  const nonFailedSteps = flow.steps.filter(s => s.id !== 'FAILED');
+  if (normId === 'FAILED') {
+    return flow.steps.find(s => s.id === 'FAILED') || flow.steps[flow.steps.length - 1];
+  }
+  if (normId === 'INITIALIZING' || normId === 'WAITING_MARKET') {
+    return nonFailedSteps[0];
+  }
+  if (normId === 'SCANNING') {
+    return nonFailedSteps[Math.min(1, nonFailedSteps.length - 1)];
+  }
+  if (normId === 'SETUP_FOUND') {
+    return nonFailedSteps[Math.min(2, nonFailedSteps.length - 1)];
+  }
+  if (normId === 'RULE_VALIDATION') {
+    return nonFailedSteps[Math.min(3, nonFailedSteps.length - 1)];
+  }
+  if (normId === 'RISK_VALIDATION') {
+    return nonFailedSteps[Math.max(0, nonFailedSteps.length - 3)];
+  }
+  if (normId === 'AI_VALIDATION') {
+    return nonFailedSteps[Math.max(0, nonFailedSteps.length - 2)];
+  }
+  if (normId === 'SIGNAL_READY' || normId === 'DISPATCHED') {
+    return nonFailedSteps[nonFailedSteps.length - 1];
+  }
+
+  return nonFailedSteps[0];
 }
 
 export function getNextStep(strategyId: string, currentStepId: string): StrategyStepConfig | undefined {
-  const normId = normalizeStateName(currentStepId);
-  const step = getStep(strategyId, normId);
+  const step = getStep(strategyId, currentStepId);
   if (step?.next) {
     return getStep(strategyId, step.next);
   }
@@ -165,20 +248,25 @@ export function getNextStep(strategyId: string, currentStepId: string): Strategy
 }
 
 export function getPreviousStep(strategyId: string, currentStepId: string): StrategyStepConfig | undefined {
-  const normId = normalizeStateName(currentStepId);
+  const step = getStep(strategyId, currentStepId);
   const flow = getStrategyFlow(strategyId);
-  if (!flow) return undefined;
-  return flow.steps.find(s => s.next === normId);
+  if (!flow || !step) return undefined;
+  return flow.steps.find(s => s.next === step.id);
 }
 
-export function getCurrentProgress(_strategyId: string, currentStepId: string): number {
-  const normId = normalizeStateName(currentStepId);
-  if (normId === 'DISPATCHED') return 100;
-  if (normId === 'FAILED') return 0;
-  
-  const idx = CANONICAL_STATE_FLOW.indexOf(normId);
+export function getCurrentProgress(strategyId: string, currentStepId: string): number {
+  const flow = getStrategyFlow(strategyId);
+  if (!flow) return 0;
+
+  const nonFailedSteps = flow.steps.filter(s => s.id !== 'FAILED');
+  const step = getStep(strategyId, currentStepId);
+  if (!step || step.id === 'FAILED') return 0;
+
+  const idx = nonFailedSteps.findIndex(s => s.id === step.id);
   if (idx === -1) return 0;
-  return Math.round((idx / (CANONICAL_STATE_FLOW.length - 1)) * 100);
+  if (idx === nonFailedSteps.length - 1) return 100;
+
+  return Math.round((idx / (nonFailedSteps.length - 1)) * 100);
 }
 
 export function getCurrentStep(strategyId: string, currentStepId: string): StrategyStepConfig | undefined {
@@ -284,7 +372,7 @@ export class StateMachine {
     const normCurrent = normalizeStateName(this.currentState);
     const isTerm = ['DISPATCHED', 'FAILED'].includes(normState);
     
-    const currentStepConfig = CANONICAL_STEPS.find(s => s.id === normCurrent);
+    const currentStepConfig = getStep(this.strategyId, normCurrent);
     const expectedNext = currentStepConfig?.next;
     
     const isValidTransition = 
