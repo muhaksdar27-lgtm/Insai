@@ -1,4 +1,5 @@
 import { getDatabaseClient } from "../db/client";
+import { getEnv } from "../utils/env";
 import { RuleEvaluationContext } from '@/types';
 import { AIValidationOrchestrator } from './validation-pipeline/ai-orchestrator';
 import { consistencyEngine } from './validation-pipeline/consistency-engine';
@@ -193,9 +194,10 @@ export class TradingEngine {
     // 3. Technical analysis snapshot from Python Engine or fallback
     let commonPyData: any = {};
     try {
-        const pyPort = process.env.PYTHON_PORT || '8181';
-        const externalUrl = process.env.PYTHON_ENGINE_URL;
-        const pyUrl = externalUrl || `http://127.0.0.1:${pyPort}`;
+        const pyUrl = getEnv("PYTHON_ENGINE_URL");
+        if (!pyUrl) {
+            throw new Error('PYTHON_ENGINE_URL environment variable is not set.');
+        }
         const mds = getMarketDataService();
         
         const [h1, m15, m5, m1] = await Promise.all([
@@ -211,6 +213,7 @@ export class TradingEngine {
             const wsClient = PyWSClient.getInstance(pyUrl);
             commonPyData = await wsClient.analyze(payload);
         } catch (wsErr: any) {
+            logger.warn(`WebSocket to Python Engine failed (${wsErr.message}), falling back to HTTP...`);
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 10000);
             try {

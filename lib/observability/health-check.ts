@@ -188,10 +188,8 @@ class HealthCheckEngine {
     // Check Python Engine
     try {
         const start = Date.now();
-        const externalUrl = getEnv("PYTHON_ENGINE_URL");
-        {
-            const defaultPyPort = process.env.PYTHON_PORT || '8181';
-            const pyUrl = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
+        const pyUrl = getEnv("PYTHON_ENGINE_URL");
+        if (pyUrl) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
             try {
@@ -204,9 +202,11 @@ class HealthCheckEngine {
             } finally {
                 clearTimeout(timeout);
             }
+        } else {
+            this.updateServiceHealth('PythonEngine', 'NOT CONFIGURED', 0, 'PYTHON_ENGINE_URL is missing');
         }
     } catch (e: any) {
-        this.updateServiceHealth('PythonEngine', 'OFFLINE', 0, e.message.includes('missing') ? 'PYTHON_ENGINE_URL is missing' : 'Python service unreachable');
+        this.updateServiceHealth('PythonEngine', 'OFFLINE', 0, e.message.includes('missing') ? 'PYTHON_ENGINE_URL is missing' : `Python service unreachable: ${e.message}`);
     }
 
     // Check Redis

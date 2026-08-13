@@ -177,8 +177,10 @@ export class AIValidationOrchestrator {
              }
         } else {
              // Python Engine is online, perform quantitative validation
-             const defaultPyPort = process.env.PYTHON_PORT || '8181';
-             const pyUrl = getEnv("PYTHON_ENGINE_URL") || `http://127.0.0.1:${defaultPyPort}`;
+             const pyUrl = getEnv("PYTHON_ENGINE_URL");
+             if (!pyUrl) {
+                 throw new Error("PYTHON_ENGINE_URL is not set");
+             }
              
              // Build request payload
              const entryPrice = ruleResults['Entry Validator']?.evidence?.price || (candles && candles[candles.length-1]?.close) || 0;
@@ -230,7 +232,7 @@ export class AIValidationOrchestrator {
                                 riskNotes: 'Rejected by Python Quant Scorer',
                                 missingFactors: [],
                                 recommendedAction: 'block',
-                                scores: { score: pyData.score }
+                                scores: { score: pyData.quant_score || pyData.score || 0 }
                              };
                          }
                      } else {

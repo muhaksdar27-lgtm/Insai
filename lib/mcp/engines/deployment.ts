@@ -11,10 +11,10 @@ export class PythonEngineManager {
         }
 
         try {
-            const externalUrl = getEnv("PYTHON_ENGINE_URL");
-
-            const defaultPyPort = process.env.PYTHON_PORT || '8181';
-            const url = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
+            const url = getEnv("PYTHON_ENGINE_URL");
+            if (!url) {
+                return { status: 'NOT CONFIGURED', message: 'PYTHON_ENGINE_URL is missing' };
+            }
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 3000);
             const res = await fetch(`${url}/health`, { signal: controller.signal });
