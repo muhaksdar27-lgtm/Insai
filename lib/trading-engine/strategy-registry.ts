@@ -39,7 +39,7 @@ export interface StrategyDefinition {
 export const StrategyRegistry: Record<string, StrategyDefinition> = {
     'strategy-1-smc': {
         id: 'strategy-1-smc',
-        name: 'STRATEGI 1 — Canonical SMC',
+        name: 'STRATEGI 1 — SMC + Sesi London + M15',
         description: 'SMC Strategy strictly for London session on M15 timeframe. Relies on Asia session liquidity sweep and M15 CHoCH.',
         pairRestriction: ['XAUUSD'],
         sessionRestriction: ['London'],

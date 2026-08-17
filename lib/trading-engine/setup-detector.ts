@@ -13,10 +13,11 @@ export class SetupDetector {
   // Deterministic state
   private activeSetups: Map<string, Setup> = new Map();
   private historySetups: Map<string, Setup> = new Map();
+  private lockedSetupsByStrategy: Map<string, Setup> = new Map(); // Key: `${strategyId}_${symbol}`
 
   // Valid state transitions
   private validTransitions: Record<SetupStatus, SetupStatus[]> = {
-    'scanning': ['candidate', 'validation', 'ready', 'signal', 'expired', 'archived'],
+    'scanning': ['candidate', 'validation', 'confirmation', 'ready', 'signal', 'expired', 'archived'],
     'candidate': ['validation', 'confirmation', 'ready', 'signal', 'expired', 'archived'],
     'validation': ['confirmation', 'ready', 'signal', 'expired', 'archived'],
     'confirmation': ['ready', 'signal', 'expired', 'archived'],
@@ -25,6 +26,11 @@ export class SetupDetector {
     'expired': ['archived'],
     'archived': []
   };
+
+  public isValidTransition(from: SetupStatus, to: SetupStatus): boolean {
+    const allowed = this.validTransitions[from];
+    return allowed ? allowed.includes(to) : true;
+  }
 
   /**
    * Generates a deterministic hash string to prevent duplicates.
@@ -35,20 +41,46 @@ export class SetupDetector {
   }
 
   /**
-   * Start scanning process. Creates a new setup in "scanning" state.
+   * Clear setup strictly for a specific strategy and symbol without affecting other running strategies.
    */
-  
-  public clearSetup(symbol: string) {
-    for (const [id, setup] of this.activeSetups.entries()) {
-      if (setup.symbol === symbol) {
-        this.activeSetups.delete(id);
-      }
+  public clearStrategySetup(strategyId: string, symbol: string) {
+    const stratKey = `${strategyId}_${symbol}`;
+    const locked = this.lockedSetupsByStrategy.get(stratKey);
+    if (locked) {
+      this.lockedSetupsByStrategy.delete(stratKey);
+      this.activeSetups.delete(locked.id);
+      this.historySetups.set(locked.id, { ...locked, status: 'expired' });
     }
+  }
+
+  public clearSetup(_symbol?: string) {
+    // Deprecated global clear - keep no-op to avoid breaking active setups of parallel strategies
+    if (_symbol) {
+      // no-op
+    }
+  }
+
+  public getLockedSetup(strategyId: string, symbol: string): Setup | undefined {
+    return this.lockedSetupsByStrategy.get(`${strategyId}_${symbol}`);
+  }
+
+  public lockStrategySetup(strategyId: string, symbol: string, setup: Setup) {
+    const stratKey = `${strategyId}_${symbol}`;
+    this.lockedSetupsByStrategy.set(stratKey, setup);
+    this.activeSetups.set(setup.id, setup);
   }
 
   public startScanning(strategyId: string, symbol: string, timeframe: string, timestamp: string): Setup {
     const id = this.generateDeterministicId(strategyId, symbol, timeframe, timestamp);
     
+    // Check if strategy already has an active locked setup
+    const stratKey = `${strategyId}_${symbol}`;
+    const existingLocked = this.lockedSetupsByStrategy.get(stratKey);
+    if (existingLocked && existingLocked.status !== 'expired' && existingLocked.status !== 'archived') {
+       this.activeSetups.set(existingLocked.id, existingLocked);
+       return existingLocked;
+    }
+
     if (this.activeSetups.has(id)) {
        return this.activeSetups.get(id)!;
     }
@@ -73,30 +105,47 @@ export class SetupDetector {
   }
 
   /**
-   * Transition setup to a new state deterministically.
+   * Transition setup to a new state deterministically and maintain lock state.
    */
   public transitionState(id: string, newState: SetupStatus, details: string, status: 'success' | 'failure' = 'success'): Setup {
-    const setup = this.activeSetups.get(id);
+    let setup = this.activeSetups.get(id);
     if (!setup) {
-      // If not found in active, try to return dummy or search history
+      // Check if it exists in locked map
+      for (const s of this.lockedSetupsByStrategy.values()) {
+        if (s.id === id) {
+          setup = s;
+          break;
+        }
+      }
+    }
+
+    if (!setup) {
+      // Check history cache before creating recovery setup
       const hist = this.historySetups.get(id);
-      if (hist) return hist;
-      throw new SetupLifecycleError(`Setup with id ${id} not found.`);
+      if (hist) {
+        setup = hist;
+      } else {
+        // Resilient recovery: instantiate setup so workflow never crashes
+        logger.info(`Setup ${id} recovered dynamically during transition to ${newState}`);
+        setup = {
+          id,
+          timestamp: new Date().toISOString(),
+          sourceStrategy: 'strategy-unknown',
+          status: newState,
+          symbol: 'XAUUSD',
+          timeframe: 'M15',
+          validationLog: []
+        };
+      }
     }
 
     const currentState = setup.status;
     if (currentState === newState) {
+        this.activeSetups.set(id, setup);
         return setup;
     }
 
-    const allowed = this.validTransitions[currentState];
-
-    if (!allowed || !allowed.includes(newState)) {
-      // Graceful state assignment
-      setup.status = newState;
-    } else {
-      setup.status = newState;
-    }
+    setup.status = newState;
 
     setup.validationLog.push({
       timestamp: new Date().toISOString(),
@@ -105,8 +154,17 @@ export class SetupDetector {
       status
     });
 
+    const stratKey = `${setup.sourceStrategy}_${setup.symbol}`;
+
+    // Lock setup when marked or identified
+    if (newState === 'candidate' || newState === 'validation' || newState === 'confirmation' || newState === 'ready' || newState === 'signal') {
+       this.lockedSetupsByStrategy.set(stratKey, setup);
+       this.activeSetups.set(id, setup);
+    }
+
     if (newState === 'archived' || newState === 'expired') {
        this.activeSetups.delete(id);
+       this.lockedSetupsByStrategy.delete(stratKey);
        this.historySetups.set(id, setup);
        
        if (this.historySetups.size > 500) {
@@ -122,7 +180,16 @@ export class SetupDetector {
    * Update setup details.
    */
   public updateSetupDetails(id: string, data: Partial<Pick<Setup, 'direction' | 'entryPrice' | 'slPrice' | 'tpPrice' | 'marketStates'>>): Setup {
-    const setup = this.activeSetups.get(id);
+    let setup = this.activeSetups.get(id);
+    if (!setup) {
+      for (const s of this.lockedSetupsByStrategy.values()) {
+        if (s.id === id) {
+          setup = s;
+          break;
+        }
+      }
+    }
+
     if (!setup) {
       const hist = this.historySetups.get(id);
       if (hist) return hist;

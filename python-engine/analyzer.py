@@ -148,9 +148,9 @@ class TechnicalAnalyzer:
             result["double_bottom"] = result["double_top"] = False
             result["current_price"] = 0
 
-        # Spread/News placeholder logic
-        result["spread_acceptable"] = True
-        result["news_high_impact_active"] = False
+        # Spread and News status from payload if provided
+        result["spread_acceptable"] = data.get("spread_acceptable", True)
+        result["news_high_impact_active"] = data.get("news_high_impact_active", False)
         
         # Save to Redis
         if self.redis_client:

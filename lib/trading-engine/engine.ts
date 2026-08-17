@@ -292,7 +292,7 @@ export class TradingEngine {
           await this.advanceStateMachine(sm, step, reason || 'Waiting for market data or session', setup.id, context, { marketStates, ruleResults: evaluatedRules });
           logger.info(`[${step}] Strategy ${strategyId} waiting: ${reason}`);
           if (!isScanning) {
-            this.setupDetector.clearSetup(context.symbol);
+            this.setupDetector.clearStrategySetup(strategyId, context.symbol);
           }
           return;
         }
