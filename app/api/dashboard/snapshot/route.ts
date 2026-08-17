@@ -140,6 +140,11 @@ export async function GET(req: Request) {
     const totalLossPips = Math.abs(history.reduce((sum: number, h: any) => h.pips < 0 ? sum + h.pips : sum, 0));
     const profitFactor = totalLossPips > 0 ? Number((totalWinPips / totalLossPips).toFixed(2)) : totalWinPips > 0 ? 99.9 : 0;
     const netProfit = history.reduce((sum: number, h: any) => sum + (h.pips || 0), 0);
+    const winningTrades = history.filter((h: any) => h.pips > 0);
+    const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum: number, h: any) => sum + h.pips, 0) / winningTrades.length : 0;
+    const losingTrades = history.filter((h: any) => h.pips < 0);
+    const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((sum: number, h: any) => sum + Math.abs(h.pips), 0) / losingTrades.length : 0;
+    const avgRr = avgLoss > 0 ? Number((avgWin / avgLoss).toFixed(2)) : 0;
 
     // Parse News
     const newsData: any = newsResult.status === 'fulfilled' ? newsResult.value : [];
@@ -194,7 +199,7 @@ export async function GET(req: Request) {
         winRate,
         profitFactor,
         netProfit,
-        avgRr: 2.5,
+        avgRr,
         winCount,
         lossCount
       },

@@ -55,7 +55,8 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
   const riskDistance = atr * 0.5;
   const entryPriceVal = pyData.entry_price || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
   const slVal = pyData.sl_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined);
-  const tp1Val = pyData.tp_price || pyData.tp1_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
+  const tp1Val = pyData.tp1_price || pyData.tp_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
+  const tp2Val = pyData.tp2_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.5) : entryPriceVal - (riskDistance * 3.5)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'London';
 
@@ -75,10 +76,16 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
     slPrice: slVal,
     tp1: tp1Val,
     tp1Price: tp1Val,
+    tp2: tp2Val,
+    tp2Price: tp2Val,
     rr: candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
-    sweepStatus: (sweepBull || sweepBear) ? 'Asia Sweep Confirmed' : 'Asia Sweep Monitored',
+    dealingRangeZone: pyData.dealing_range_zone || 'EQUILIBRIUM',
+    fibLevel: pyData.fib_level ?? 0.5,
+    sweepStatus: (sweepBull || sweepBear || pyData.asian_sweep_bull || pyData.asian_sweep_bear) ? 'Asia Sweep Confirmed' : 'Asia Sweep Monitored',
     chochStatus: (chochBull || chochBear) ? 'M15 CHoCH Confirmed' : 'M15 CHoCH Monitored',
     obFvgStatus: (obFvgBull || obFvgBear) ? 'OB/FVG Aligned' : 'OB/FVG Monitored',
+    hasDisplacement: !!pyData.has_displacement,
+    idmTaken: !!pyData.idm_taken,
     atr14: atr,
     atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,
     confluenceScore,

@@ -60,7 +60,8 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
   const riskDistance = atr * 0.5;
   const entryPriceVal = pyData.entry_price || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
   const slVal = pyData.sl_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined);
-  const tp1Val = pyData.tp_price || pyData.tp1_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
+  const tp1Val = pyData.tp1_price || pyData.tp_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
+  const tp2Val = pyData.tp2_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.5) : entryPriceVal - (riskDistance * 3.5)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'Any';
 
@@ -80,9 +81,11 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
     slPrice: slVal,
     tp1: tp1Val,
     tp1Price: tp1Val,
+    tp2: tp2Val,
+    tp2Price: tp2Val,
     rr: candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
     newsStatus: pyData.news_active ? 'News Window Active' : 'News Window Inactive',
-    reversalStatus: ((bosBull || bosBear) && (sweepBull || sweepBear)) ? 'News Reversal Confirmed' : 'News Reversal Monitored',
+    reversalStatus: ((bosBull || bosBear || chochBull || chochBear) && (sweepBull || sweepBear)) ? 'News Reversal Confirmed' : 'News Reversal Monitored',
     atr14: atr,
     atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,
     confluenceScore,

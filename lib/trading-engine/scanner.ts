@@ -47,7 +47,7 @@ export class MarketScanner {
       const snapshot = msg.payload as MarketSnapshot;
       if (snapshot.symbol === 'XAUUSD') {
         const now = Date.now();
-        if (now - this.lastScanTime > 1000) { // 1s throttle per tick scan for fast processing
+        if (now - this.lastScanTime > 20000) { // 20s throttle per tick scan to prevent spamming
           this.lastScanTime = now;
           this.scan();
         }
@@ -64,15 +64,15 @@ export class MarketScanner {
     // Initial scan
     this.scan();
     
-    // Fallback interval (every 5 seconds) in case WebSocket/Redis is down
+    // Fallback interval (every 30 seconds) in case WebSocket/Redis is quiet
     this.timer = setInterval(() => {
       if (!this.isRunning || this.isScanning) return;
       const now = Date.now();
-      if (now - this.lastScanTime > 5000) {
+      if (now - this.lastScanTime > 30000) {
         this.lastScanTime = now;
         this.scan();
       }
-    }, 5000);
+    }, 30000);
   }
 
   public stop() {
@@ -217,8 +217,8 @@ export class MarketScanner {
 
       logger.info('Running market scan for XAUUSD (triggered by real-time WebSocket/throttle)...');
       
-      // 2. Get Context (Use M1 for precise tick-by-tick real-time evaluation instead of M15)
-      const baseContext = await getMarketDataService().getContextData("XAUUSD", "M1");
+      // 2. Get Context (Use M15 for precise institutional structure & trend evaluation)
+      const baseContext = await getMarketDataService().getContextData("XAUUSD", "M15");
       const correlationId = crypto.randomUUID();
       const context = { ...baseContext, correlationId };
 
@@ -227,6 +227,56 @@ export class MarketScanner {
       if (marketStatus.isHardBlocked) {
         logger.info(`[HARD_BLOCK_SCAN_SKIPPED] Market scan skipped for XAUUSD: ${marketStatus.blockReason}`);
         return;
+      }
+
+      // 2c. Monitor Active Signals for SL/TP hits
+      try {
+        const activeSignals = await getDatabaseClient().getActiveSignals();
+        if (activeSignals && activeSignals.length > 0) {
+          const pricesCache = new Map<string, number>();
+          pricesCache.set("XAUUSD", currentPrice);
+
+          for (const signal of activeSignals) {
+             const symbol = signal.symbol || 'XAUUSD';
+             let sigPrice = pricesCache.get(symbol);
+             if (sigPrice === undefined) {
+                 const snap = await getMarketDataService().getLatestPrice(symbol);
+                 sigPrice = snap?.price ?? 0;
+                 pricesCache.set(symbol, sigPrice);
+             }
+             if (sigPrice <= 0) continue;
+
+             const dir = (signal.direction || 'BUY').toUpperCase();
+             const sl = parseFloat(signal.sl_price || signal.slPrice || '0');
+             const tp = parseFloat(signal.tp1_price || signal.tp1Price || signal.tp_price || signal.tpPrice || '0');
+             const ep = parseFloat(signal.entry_price || signal.entryPrice || '0');
+             const pipMultiplier = symbol.includes('JPY') ? 100 : symbol === 'XAUUSD' ? 10 : 10000;
+             
+             if (dir === 'BUY') {
+               if (sl > 0 && sigPrice <= sl) {
+                 await getDatabaseClient().archiveToHistory(signal.signal_key, 'STOP_LOSS', -(Math.abs(ep - sl) * pipMultiplier), 'LOSS');
+                 logger.info(`[STOP LOSS] Signal ${signal.signal_key} hit SL at ${sigPrice}`);
+                 getQueueManager().publish('events', { type: 'SIGNAL_CLOSED', signalKey: signal.signal_key, reason: 'STOP_LOSS' });
+               } else if (tp > 0 && sigPrice >= tp) {
+                 await getDatabaseClient().archiveToHistory(signal.signal_key, 'TAKE_PROFIT', (Math.abs(tp - ep) * pipMultiplier), 'WIN');
+                 logger.info(`[TAKE PROFIT] Signal ${signal.signal_key} hit TP at ${sigPrice}`);
+                 getQueueManager().publish('events', { type: 'SIGNAL_CLOSED', signalKey: signal.signal_key, reason: 'TAKE_PROFIT' });
+               }
+             } else if (dir === 'SELL') {
+               if (sl > 0 && sigPrice >= sl) {
+                 await getDatabaseClient().archiveToHistory(signal.signal_key, 'STOP_LOSS', -(Math.abs(sl - ep) * pipMultiplier), 'LOSS');
+                 logger.info(`[STOP LOSS] Signal ${signal.signal_key} hit SL at ${sigPrice}`);
+                 getQueueManager().publish('events', { type: 'SIGNAL_CLOSED', signalKey: signal.signal_key, reason: 'STOP_LOSS' });
+               } else if (tp > 0 && sigPrice <= tp) {
+                 await getDatabaseClient().archiveToHistory(signal.signal_key, 'TAKE_PROFIT', (Math.abs(ep - tp) * pipMultiplier), 'WIN');
+                 logger.info(`[TAKE PROFIT] Signal ${signal.signal_key} hit TP at ${sigPrice}`);
+                 getQueueManager().publish('events', { type: 'SIGNAL_CLOSED', signalKey: signal.signal_key, reason: 'TAKE_PROFIT' });
+               }
+             }
+          }
+        }
+      } catch (e: any) {
+         logger.error(`Error monitoring active signals: ${e.message}`);
       }
 
       const candles = context.candles || [];
@@ -240,8 +290,8 @@ export class MarketScanner {
         }
       }
 
-      // 3. Pass to engine with M1 timeframe for high precision evaluation
-      await this.engine.processMarketData('XAUUSD', 'M1', context, activeStrategyIds);
+      // 3. Pass to engine with M15 timeframe for institutional strategy evaluation
+      await this.engine.processMarketData('XAUUSD', 'M15', context, activeStrategyIds);
       
     } catch (error: any) {
       if (error.message.includes('not configured')) {

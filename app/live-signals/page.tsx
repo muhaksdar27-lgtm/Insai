@@ -65,10 +65,13 @@ export default function LiveSignals() {
     }
   };
 
-  // Filter signals to active statuses
+  // Filter signals to active statuses (exclude only archived/closed ones)
   const allActiveSignals = (rawSignals || []).filter(s => {
-    const st = (s.status || s.baseStatus || '').toUpperCase();
-    return ['APPROVED', 'DISPATCHED', 'SIGNAL_ACTIVE', 'ACTIVE', 'TAKE_PARTIAL', 'PENDING'].includes(st);
+    const base = (s.baseStatus || '').toUpperCase();
+    const st = (s.status || '').toUpperCase();
+    const isClosed = ['CLOSED', 'FINISHED', 'ARCHIVED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'STOP_LOSS', 'TAKE_PROFIT', 'WIN', 'LOSS', 'SL HIT', 'TP1 HIT', 'TP2 HIT', 'TP3 HIT'].includes(base) || 
+                     ['CLOSED', 'FINISHED', 'ARCHIVED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'STOP_LOSS', 'TAKE_PROFIT', 'WIN', 'LOSS', 'SL HIT', 'TP1 HIT', 'TP2 HIT', 'TP3 HIT'].includes(st);
+    return !isClosed;
   });
 
   // Apply UI Filters
@@ -555,19 +558,71 @@ export default function LiveSignals() {
                   </div>
 
                   {/* Target Values */}
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-zinc-800">
+                  <div className="grid grid-cols-4 gap-2 pt-2 border-t border-zinc-800">
                     <div className="bg-zinc-950 p-2 rounded-lg border border-zinc-800 text-center">
                       <span className="block text-[9px] font-mono font-bold uppercase text-zinc-500 mb-0.5">Entry</span>
                       <span className="text-xs font-mono font-bold text-zinc-200">{Number(selectedSignal.entry || 0).toFixed(2)}</span>
                     </div>
                     <div className="bg-zinc-950 p-2 rounded-lg border border-zinc-800 text-center">
-                      <span className="block text-[9px] font-mono font-bold uppercase text-zinc-500 mb-0.5 text-rose-400">SL</span>
+                      <span className="block text-[9px] font-mono font-bold uppercase text-rose-400 mb-0.5">SL</span>
                       <span className="text-xs font-mono font-bold text-rose-400">{Number(selectedSignal.sl || 0).toFixed(2)}</span>
                     </div>
                     <div className="bg-zinc-950 p-2 rounded-lg border border-zinc-800 text-center">
-                      <span className="block text-[9px] font-mono font-bold uppercase text-zinc-500 mb-0.5 text-emerald-400">TP1</span>
+                      <span className="block text-[9px] font-mono font-bold uppercase text-emerald-400 mb-0.5">TP1</span>
                       <span className="text-xs font-mono font-bold text-emerald-400">{Number(selectedSignal.tp1 || 0).toFixed(2)}</span>
                     </div>
+                    <div className="bg-zinc-950 p-2 rounded-lg border border-zinc-800 text-center">
+                      <span className="block text-[9px] font-mono font-bold uppercase text-teal-400 mb-0.5">TP2</span>
+                      <span className="text-xs font-mono font-bold text-teal-400">{selectedSignal.tp2 ? Number(selectedSignal.tp2).toFixed(2) : '-'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trade Lifecycle Actions (Move to History) */}
+                <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 space-y-2">
+                  <h5 className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 flex items-center justify-between">
+                    <span>Trade Lifecycle Actions</span>
+                    <span className="text-zinc-500 text-[9px]">Archive to History</span>
+                  </h5>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(`/api/signals/${selectedSignal.signalKey || selectedSignal.id}/close`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ outcome: 'WIN', pips: selectedSignal.pips || 40, status: 'FINISHED' })
+                          });
+                          setSelectedSignal(null);
+                          await refetch();
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}
+                      className="w-full py-2 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Take Profit (History)
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(`/api/signals/${selectedSignal.signalKey || selectedSignal.id}/close`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ outcome: 'LOSS', pips: -18, status: 'FINISHED' })
+                          });
+                          setSelectedSignal(null);
+                          await refetch();
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}
+                      className="w-full py-2 px-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Stop Loss (History)
+                    </button>
                   </div>
                 </div>
 

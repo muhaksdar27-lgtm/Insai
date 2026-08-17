@@ -60,7 +60,8 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
   const riskDistance = atr * 0.5;
   const entryPriceVal = pyData.entry_price || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
   const slVal = pyData.sl_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined);
-  const tp1Val = pyData.tp_price || pyData.tp1_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
+  const tp1Val = pyData.tp1_price || pyData.tp_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 1.5) : entryPriceVal - (riskDistance * 1.5)) : undefined);
+  const tp2Val = pyData.tp2_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.5) : entryPriceVal - (riskDistance * 2.5)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'Any';
 
@@ -80,8 +81,10 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
     slPrice: slVal,
     tp1: tp1Val,
     tp1Price: tp1Val,
-    rr: candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
-    sweepStatus: (sweepBull || sweepBear) ? 'Scalp Sweep Confirmed' : 'Scalp Sweep Monitored',
+    tp2: tp2Val,
+    tp2Price: tp2Val,
+    rr: candidateRules['rule_risk_reward']?.evidence?.rr || '1:1.5',
+    sweepStatus: (sweepBull || sweepBear || pyData.asian_sweep_bull || pyData.asian_sweep_bear) ? 'Scalp Sweep Confirmed' : 'Scalp Sweep Monitored',
     doubleTopBottomStatus: (doubleTop || doubleBottom) ? 'Double Top/Bottom Confirmed' : 'Double Top/Bottom Monitored',
     atr14: atr,
     atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,

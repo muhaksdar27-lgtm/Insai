@@ -479,3 +479,376 @@ export function detectSessionBias(candles: Candle[], timestamp: string) {
     return 'neutral';
   });
 }
+
+// -----------------------------------------------------------------------------
+// INSTITUTIONAL / PROP-DESK ENHANCED INDICATORS
+// -----------------------------------------------------------------------------
+
+/**
+ * 1. Premium vs Discount Matrix (Dealing Range)
+ * Calculates the current dealing range from significant swing pivots
+ * and evaluates whether price is in Discount (< 50%) for BUY or Premium (> 50%) for SELL.
+ */
+export interface DealingRangeResult {
+  swingHigh: number;
+  swingLow: number;
+  equilibrium: number;
+  rangeSize: number;
+  fibLevel: number; // 0 (Low) to 1 (High)
+  zone: 'DEEP_DISCOUNT' | 'DISCOUNT' | 'EQUILIBRIUM' | 'PREMIUM' | 'DEEP_PREMIUM';
+  isDiscountForBuy: boolean; // True if price < 0.50 (favorable for BUY)
+  isPremiumForSell: boolean; // True if price > 0.50 (favorable for SELL)
+  oteZone: boolean; // Optimal Trade Entry zone (0.618 - 0.786)
+}
+
+export function calculateDealingRange(candles: Candle[], currentPrice?: number): DealingRangeResult {
+  return getCached(candles, `dealing_range_${currentPrice || 0}`, () => {
+    if (candles.length < 20) {
+      const price = currentPrice || (candles.length > 0 ? candles[candles.length - 1].close : 2700);
+      return {
+        swingHigh: price + 10,
+        swingLow: price - 10,
+        equilibrium: price,
+        rangeSize: 20,
+        fibLevel: 0.5,
+        zone: 'EQUILIBRIUM',
+        isDiscountForBuy: true,
+        isPremiumForSell: true,
+        oteZone: false
+      };
+    }
+
+    const { highs, lows } = findPivots(candles, 8, 8);
+    const price = currentPrice || candles[candles.length - 1].close;
+
+    // Use recent high and low from past 60 candles
+    const recentHighs = highs.slice(-5);
+    const recentLows = lows.slice(-5);
+
+    const swingHigh = recentHighs.length > 0 ? Math.max(...recentHighs.map(h => h.price)) : Math.max(...candles.slice(-40).map(c => c.high));
+    const swingLow = recentLows.length > 0 ? Math.min(...recentLows.map(l => l.price)) : Math.min(...candles.slice(-40).map(c => c.low));
+
+    const rangeSize = Math.max(0.001, swingHigh - swingLow);
+    const equilibrium = swingLow + (rangeSize * 0.5);
+    const fibLevel = Math.max(0, Math.min(1, (price - swingLow) / rangeSize));
+
+    let zone: DealingRangeResult['zone'] = 'EQUILIBRIUM';
+    if (fibLevel < 0.382) zone = 'DEEP_DISCOUNT';
+    else if (fibLevel < 0.50) zone = 'DISCOUNT';
+    else if (fibLevel <= 0.52 && fibLevel >= 0.48) zone = 'EQUILIBRIUM';
+    else if (fibLevel <= 0.618) zone = 'PREMIUM';
+    else zone = 'DEEP_PREMIUM';
+
+    const isDiscountForBuy = fibLevel <= 0.52; // At or below equilibrium
+    const isPremiumForSell = fibLevel >= 0.48; // At or above equilibrium
+
+    // OTE is 61.8% - 78.6% retracement from the origin
+    const oteZone = (fibLevel >= 0.618 && fibLevel <= 0.786) || (fibLevel >= 0.214 && fibLevel <= 0.382);
+
+    return {
+      swingHigh,
+      swingLow,
+      equilibrium,
+      rangeSize,
+      fibLevel: Number(fibLevel.toFixed(3)),
+      zone,
+      isDiscountForBuy,
+      isPremiumForSell,
+      oteZone
+    };
+  });
+}
+
+/**
+ * 2. Displacement Detection
+ * Identifies institutional momentum candles: Body >= 1.25x ATR and small wicks (< 25% total range).
+ */
+export interface DisplacementResult {
+  hasDisplacement: boolean;
+  direction: 'bullish' | 'bearish' | 'none';
+  bodyRatio: number;
+  candleIndex: number;
+  timestamp: string;
+}
+
+export function detectDisplacement(candles: Candle[]): DisplacementResult {
+  return getCached(candles, 'displacement', () => {
+    if (candles.length < 5) {
+      return { hasDisplacement: false, direction: 'none', bodyRatio: 1, candleIndex: -1, timestamp: '' };
+    }
+
+    const atr = calculateATR(candles, 14) || 2.0;
+    const recentCandles = candles.slice(-5);
+
+    for (let i = recentCandles.length - 1; i >= 0; i--) {
+      const c = recentCandles[i];
+      const totalRange = c.high - c.low;
+      const body = Math.abs(c.close - c.open);
+      
+      if (totalRange <= 0) continue;
+
+      const upperWick = c.high - Math.max(c.open, c.close);
+      const lowerWick = Math.min(c.open, c.close) - c.low;
+      const bodyRatio = body / atr;
+
+      // Displacement criteria: Body > 1.15x ATR and closing near high/low
+      if (body >= atr * 1.15) {
+        if (c.close > c.open && upperWick / totalRange < 0.28) {
+          return {
+            hasDisplacement: true,
+            direction: 'bullish',
+            bodyRatio: Number(bodyRatio.toFixed(2)),
+            candleIndex: candles.length - (recentCandles.length - i),
+            timestamp: c.timestamp
+          };
+        } else if (c.close < c.open && lowerWick / totalRange < 0.28) {
+          return {
+            hasDisplacement: true,
+            direction: 'bearish',
+            bodyRatio: Number(bodyRatio.toFixed(2)),
+            candleIndex: candles.length - (recentCandles.length - i),
+            timestamp: c.timestamp
+          };
+        }
+      }
+    }
+
+    return { hasDisplacement: false, direction: 'none', bodyRatio: 1, candleIndex: -1, timestamp: '' };
+  });
+}
+
+/**
+ * 3. Inducement (IDM) Detection
+ * Validates whether the first minor internal pullback (IDM) was taken out before confirming a True Break of Structure (BOS).
+ */
+export interface InducementResult {
+  hasIdmTaken: boolean;
+  idmType: 'bullish_idm' | 'bearish_idm' | 'none';
+  idmPrice: number;
+  timestamp: string;
+}
+
+export function detectInducement(candles: Candle[]): InducementResult {
+  return getCached(candles, 'idm', () => {
+    if (candles.length < 15) {
+      return { hasIdmTaken: false, idmType: 'none', idmPrice: 0, timestamp: '' };
+    }
+
+    const { highs, lows } = findPivots(candles, 3, 3); // minor micro pivots
+    const lastCandle = candles[candles.length - 1];
+
+    // Check recent minor lows swept for bullish inducement
+    const recentMinorLows = lows.slice(-4);
+    for (const ml of recentMinorLows) {
+      if (lastCandle.low < ml.price && lastCandle.close >= ml.price) {
+        return {
+          hasIdmTaken: true,
+          idmType: 'bullish_idm',
+          idmPrice: ml.price,
+          timestamp: lastCandle.timestamp
+        };
+      }
+    }
+
+    // Check recent minor highs swept for bearish inducement
+    const recentMinorHighs = highs.slice(-4);
+    for (const mh of recentMinorHighs) {
+      if (lastCandle.high > mh.price && lastCandle.close <= mh.price) {
+        return {
+          hasIdmTaken: true,
+          idmType: 'bearish_idm',
+          idmPrice: mh.price,
+          timestamp: lastCandle.timestamp
+        };
+      }
+    }
+
+    return { hasIdmTaken: false, idmType: 'none', idmPrice: 0, timestamp: '' };
+  });
+}
+
+/**
+ * 4. Supply & Demand Classification (DBR, RBD, RBR, DBD) & Freshness / Mitigation Tracking
+ */
+export interface SDZoneStructure {
+  type: 'supply' | 'demand';
+  pattern: 'DBR' | 'RBR' | 'RBD' | 'DBD';
+  top: number;
+  bottom: number;
+  freshness: 'FRESH' | 'TESTED_1' | 'TESTED_2' | 'BREACHED';
+  taps: number;
+  departureStrength: number; // in ATR multiples
+  time: string;
+}
+
+export function findSDZoneStructures(candles: Candle[]): SDZoneStructure[] {
+  return getCached(candles, 'sd_structures', () => {
+    if (candles.length < 15) return [];
+
+    const zones: SDZoneStructure[] = [];
+    const atr = calculateATR(candles, 14) || 2.0;
+
+    // Scan for Base structures (1 to 3 base candles followed by explosive departure)
+    for (let i = 5; i < candles.length - 3; i++) {
+      const prevMove = candles[i - 1].close - candles[i - 2].open;
+      const baseCandle = candles[i];
+      const departureCandle = candles[i + 1];
+
+      const departureMove = departureCandle.close - departureCandle.open;
+      const departureStrength = Math.abs(departureMove) / atr;
+
+      // Only consider explosive moves (Departure > 1.1x ATR)
+      if (departureStrength < 1.1) continue;
+
+      let pattern: SDZoneStructure['pattern'] | null = null;
+      let type: SDZoneStructure['type'] = 'demand';
+      let top = 0;
+      let bottom = 0;
+
+      if (departureMove > 0) {
+        // Bullish departure -> Demand Zone
+        type = 'demand';
+        top = Math.max(baseCandle.open, baseCandle.close);
+        bottom = baseCandle.low;
+        pattern = prevMove < 0 ? 'DBR' : 'RBR';
+      } else {
+        // Bearish departure -> Supply Zone
+        type = 'supply';
+        top = baseCandle.high;
+        bottom = Math.min(baseCandle.open, baseCandle.close);
+        pattern = prevMove > 0 ? 'RBD' : 'DBD';
+      }
+
+      // Calculate subsequent taps/mitigations
+      let taps = 0;
+      let breached = false;
+
+      for (let j = i + 2; j < candles.length; j++) {
+        const testCandle = candles[j];
+        if (type === 'demand') {
+          if (testCandle.low <= top && testCandle.high >= bottom) {
+            taps++;
+          }
+          if (testCandle.close < bottom) {
+            breached = true;
+            break;
+          }
+        } else {
+          if (testCandle.high >= bottom && testCandle.low <= top) {
+            taps++;
+          }
+          if (testCandle.close > top) {
+            breached = true;
+            break;
+          }
+        }
+      }
+
+      if (!breached) {
+        const freshness: SDZoneStructure['freshness'] = taps === 0 ? 'FRESH' : (taps === 1 ? 'TESTED_1' : 'TESTED_2');
+        zones.push({
+          type,
+          pattern: pattern || 'DBR',
+          top,
+          bottom,
+          freshness,
+          taps,
+          departureStrength: Number(departureStrength.toFixed(2)),
+          time: baseCandle.timestamp
+        });
+      }
+    }
+
+    return zones.slice(-8); // Keep the most recent 8 valid zones
+  });
+}
+
+/**
+ * 5. Session Liquidity Pools (Asian Range, Previous Session, Previous Day High/Low)
+ */
+export interface SessionPoolsResult {
+  asianHigh: number | null;
+  asianLow: number | null;
+  prevSessionHigh: number | null;
+  prevSessionLow: number | null;
+  sweepAsianHigh: boolean;
+  sweepAsianLow: boolean;
+  sweepPrevSessionHigh: boolean;
+  sweepPrevSessionLow: boolean;
+}
+
+export function detectSessionPools(candles: Candle[]): SessionPoolsResult {
+  return getCached(candles, 'session_pools', () => {
+    if (candles.length < 30) {
+      return {
+        asianHigh: null,
+        asianLow: null,
+        prevSessionHigh: null,
+        prevSessionLow: null,
+        sweepAsianHigh: false,
+        sweepAsianLow: false,
+        sweepPrevSessionHigh: false,
+        sweepPrevSessionLow: false
+      };
+    }
+
+    const currentCandle = candles[candles.length - 1];
+
+    // Filter Asian session candles (00:00 to 07:00 UTC)
+    const asianCandles = candles.filter(c => {
+      const h = new Date(c.timestamp).getUTCHours();
+      return h >= 0 && h < 7;
+    });
+
+    let asianHigh: number | null = null;
+    let asianLow: number | null = null;
+    let sweepAsianHigh = false;
+    let sweepAsianLow = false;
+
+    if (asianCandles.length > 0) {
+      const recentAsian = asianCandles.slice(-30);
+      asianHigh = Math.max(...recentAsian.map(c => c.high));
+      asianLow = Math.min(...recentAsian.map(c => c.low));
+
+      // Check if current candle swept Asian High (wick above, close below)
+      if (currentCandle.high > asianHigh && currentCandle.close <= asianHigh) {
+        sweepAsianHigh = true;
+      }
+      // Check if current candle swept Asian Low (wick below, close above)
+      if (currentCandle.low < asianLow && currentCandle.close >= asianLow) {
+        sweepAsianLow = true;
+      }
+    }
+
+    // Previous Session Pool (past 40 bars prior to last 5 bars)
+    const prevSessionCandles = candles.slice(-50, -5);
+    let prevSessionHigh: number | null = null;
+    let prevSessionLow: number | null = null;
+    let sweepPrevSessionHigh = false;
+    let sweepPrevSessionLow = false;
+
+    if (prevSessionCandles.length > 0) {
+      prevSessionHigh = Math.max(...prevSessionCandles.map(c => c.high));
+      prevSessionLow = Math.min(...prevSessionCandles.map(c => c.low));
+
+      if (currentCandle.high > prevSessionHigh && currentCandle.close <= prevSessionHigh) {
+        sweepPrevSessionHigh = true;
+      }
+      if (currentCandle.low < prevSessionLow && currentCandle.close >= prevSessionLow) {
+        sweepPrevSessionLow = true;
+      }
+    }
+
+    return {
+      asianHigh,
+      asianLow,
+      prevSessionHigh,
+      prevSessionLow,
+      sweepAsianHigh,
+      sweepAsianLow,
+      sweepPrevSessionHigh,
+      sweepPrevSessionLow
+    };
+  });
+}
+
