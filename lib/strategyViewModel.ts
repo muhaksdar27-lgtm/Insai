@@ -1,5 +1,5 @@
 import { StrategyResponse, DashboardCard, StrategyStep } from "@/types";
-import { getStrategyFlow, getStep, getStepDisplayName as getSMStepDisplayName, normalizeStateName } from "@/lib/trading-engine/state-machine";
+import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName } from "@/lib/trading-engine/state-machine";
 import { getStrategyDefinition } from "@/lib/trading-engine/strategy-registry";
 import { transformCandidateRules, RuleValidationResult } from "@/lib/utils/rule-transformer";
 
@@ -32,39 +32,32 @@ export const CANONICAL_STRATEGIES = [
 ] as const;
 
 export function normalizeStrategy(strategy: StrategyResponse) {
-  const s = strategy;
-  let setupStatus = s.status || 'inactive';
-  const steps = s.steps || [];
+  const steps = buildTimeline(strategy);
+  const validatedCount = steps.filter((s: StrategyStep) => s.status === 'validated' || s.status === 'approved').length;
+  const progress = steps.length > 0 ? Math.round((validatedCount / steps.length) * 100) : (strategy.progress || 0);
   
-  if (s.status === 'stopped' || s.status === 'disabled') {
+  let setupStatus = strategy.status || 'active';
+  if (strategy.status === 'stopped' || strategy.status === 'disabled') {
      setupStatus = 'disabled';
-  } else if (s.status === 'error' || (s.errors && s.errors.length > 0)) {
+  } else if (strategy.status === 'error') {
      setupStatus = 'error';
-  } else if (!steps || steps.length === 0) {
-     setupStatus = s.status || 'inactive';
+  } else if (progress === 100 || strategy.signal || strategy.currentStep === 'DISPATCHED' || (strategy as any).setupStatus === 'approved') {
+     setupStatus = 'approved';
+  } else if (steps.some((st: StrategyStep) => st.status === 'rejected')) {
+     setupStatus = 'rejected';
   } else {
-     const isRejected = steps.some((st: StrategyStep) => st.status === 'failed' || st.status === 'rejected');
-     if (isRejected) {
-        setupStatus = 'rejected';
-        if (s.currentStep?.toLowerCase().includes('expired')) setupStatus = 'expired';
-        if (s.currentStep?.toLowerCase().includes('suppress')) setupStatus = 'suppressed';
-     } else if (s.progress === 100) {
-        setupStatus = 'approved';
-     } else if (s.currentStep === 'Scanning' || s.currentStep === 'IDLE' || s.currentStep === 'Idle') {
-        setupStatus = 'scanning';
-     } else if (s.currentStep === 'Signal Active' || s.currentStep === 'Signal') {
-        setupStatus = 'approved';
-     } else {
-        setupStatus = 'active';
-     }
+     setupStatus = 'active';
   }
   
+  const activeStep = steps.find(s => s.status === 'active') || steps[steps.length - 1];
+  const currentStep = activeStep?.name || strategy.currentStep || 'Scanning';
+
   return {
     ...strategy,
     setupStatus,
-    progress: strategy.progress || 0,
-    steps: strategy.steps || [],
-    currentStep: strategy.currentStep || '',
+    progress,
+    steps,
+    currentStep,
     setupSnapshot: strategy.setupSnapshot || null,
     ruleResults: strategy.ruleResults || null,
     signal: strategy.signal || null
@@ -77,77 +70,207 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
   if (!flow.length) return strategy.steps || [];
 
   const sequentialSteps = flow.filter(s => s.id !== 'FAILED');
-  const sequentialIds = sequentialSteps.map(s => s.id);
+  const rules = strategy.ruleResults || {};
+  const snapshot: any = strategy.setupSnapshot || {};
+  const aiDecision = snapshot.aiDecision || (strategy as any).aiDecision;
+  const isDispatched = !!strategy.signal || strategy.currentStep === 'DISPATCHED' || strategy.currentStep === 'Signal Active' || strategy.status === 'finished' || (strategy as any).setupStatus === 'approved';
 
-  const currentStep = strategy.currentStep || 'INITIALIZING';
-  const currentStepObj = getStep(strategy.id, currentStep);
-  let targetStepId = currentStepObj ? currentStepObj.id : currentStep;
+  const checkRule = (ruleKey: string): boolean => {
+    const r = rules[ruleKey] || Object.values(rules).find((x: any) => x.ruleId === ruleKey || x.name === ruleKey);
+    if (!r) return false;
+    const st = String(r.status || '').toUpperCase();
+    return st === 'PASS' || st === 'VALID' || st === 'VALIDATED' || st === 'APPROVED' || r.passed === true;
+  };
 
-  // Clean prefix if any
-  if (typeof targetStepId === 'string' && (targetStepId.startsWith('Wait: ') || targetStepId.startsWith('Failed: '))) {
-    const cleaned = targetStepId.replace(/^(Wait:\s*|Failed:\s*)/i, '');
-    const foundStep = getStep(strategy.id, cleaned);
-    if (foundStep) targetStepId = foundStep.id;
+  const checkRuleFailed = (ruleKey: string): boolean => {
+    const r = rules[ruleKey] || Object.values(rules).find((x: any) => x.ruleId === ruleKey || x.name === ruleKey);
+    if (!r) return false;
+    const st = String(r.status || '').toUpperCase();
+    return st === 'FAIL' || st === 'INVALID' || st === 'REJECTED';
+  };
+
+  if (isDispatched) {
+    return sequentialSteps.map((stepConfig, idx) => ({
+      id: stepConfig.id,
+      name: stepConfig.title,
+      status: idx === sequentialSteps.length - 1 ? 'approved' : 'validated'
+    }));
   }
 
-  const normCurrent = normalizeStateName(targetStepId);
-  const isFailed = normCurrent === 'FAILED' || targetStepId === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed' || strategy.status === 'rejected';
-  
-  // Strict status mapping
-  let setupStatus = 'active';
-  if (isFailed) {
-      if (strategy.currentStep?.toLowerCase().includes('expired') || (strategy as any).setupStatus === 'expired') setupStatus = 'expired';
-      else setupStatus = 'rejected';
-  } else if (normCurrent === 'DISPATCHED' || targetStepId === 'DISPATCHED' || (strategy as any).setupStatus === 'approved' || strategy.status === 'finished') {
-      setupStatus = 'approved';
+  // Strategy-specific step evaluation
+  const strategyId = strategy.id;
+  const stepStatuses: Record<string, string> = {};
+
+  if (strategyId === 'strategy-1-smc') {
+    // 1. LONDON_FILTER
+    const londonPassed = checkRule('rule_session_restriction');
+    stepStatuses['LONDON_FILTER'] = londonPassed ? 'validated' : (checkRuleFailed('rule_session_restriction') ? 'rejected' : 'active');
+
+    // 2. H1_TREND
+    const trendPassed = checkRule('rule_h1_trend');
+    stepStatuses['H1_TREND'] = trendPassed ? 'validated' : (checkRuleFailed('rule_h1_trend') ? 'rejected' : (stepStatuses['LONDON_FILTER'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 3. ASIA_SWEEP
+    const sweepPassed = checkRule('rule_liquidity_sweep') || String(snapshot.sweepStatus || '').includes('Confirmed');
+    stepStatuses['ASIA_SWEEP'] = sweepPassed ? 'validated' : (checkRuleFailed('rule_liquidity_sweep') ? 'rejected' : (stepStatuses['H1_TREND'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 4. M15_CHOCH
+    const chochPassed = checkRule('rule_choch_confirmation') || String(snapshot.confirmationStatus || snapshot.chochStatus || '').includes('Confirmed');
+    stepStatuses['M15_CHOCH'] = chochPassed ? 'validated' : (checkRuleFailed('rule_choch_confirmation') ? 'rejected' : (stepStatuses['ASIA_SWEEP'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 5. OB_FVG
+    const obFvgPassed = checkRule('rule_ob_fvg_entry') || String(snapshot.obFvgStatus || '').includes('Aligned');
+    stepStatuses['OB_FVG'] = obFvgPassed ? 'validated' : (checkRuleFailed('rule_ob_fvg_entry') ? 'rejected' : (stepStatuses['M15_CHOCH'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 6. RISK_PARAMS
+    const riskPassed = checkRule('rule_spread_check') && checkRule('rule_atr_sl_buffer') && checkRule('rule_risk_reward');
+    stepStatuses['RISK_PARAMS'] = riskPassed ? 'validated' : (checkRuleFailed('rule_spread_check') ? 'rejected' : (stepStatuses['OB_FVG'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 7. AI_GATE
+    if (aiDecision === 'APPROVED') stepStatuses['AI_GATE'] = 'validated';
+    else if (aiDecision === 'REJECTED') stepStatuses['AI_GATE'] = 'rejected';
+    else stepStatuses['AI_GATE'] = stepStatuses['RISK_PARAMS'] === 'validated' ? 'active' : 'awaiting';
+
+    // 8. DISPATCHED
+    stepStatuses['DISPATCHED'] = isDispatched ? 'approved' : 'awaiting';
+  } else if (strategyId === 'strategy-2-snd') {
+    // 1. MA_TREND
+    const trendPassed = checkRule('rule_h1_trend') || checkRule('rule_pair_restriction');
+    stepStatuses['MA_TREND'] = trendPassed ? 'validated' : (checkRuleFailed('rule_h1_trend') ? 'rejected' : 'active');
+
+    // 2. SD_ZONE
+    const sdZonePassed = checkRule('rule_sd_zone') || String(snapshot.sdZoneStatus || '').includes('Active');
+    stepStatuses['SD_ZONE'] = sdZonePassed ? 'validated' : (checkRuleFailed('rule_sd_zone') ? 'rejected' : (stepStatuses['MA_TREND'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 3. ENGULFING_TRIGGER
+    const engulfPassed = checkRule('rule_engulfing_trigger') || String(snapshot.engulfingStatus || '').includes('Confirmed');
+    stepStatuses['ENGULFING_TRIGGER'] = engulfPassed ? 'validated' : (checkRuleFailed('rule_engulfing_trigger') ? 'rejected' : (stepStatuses['SD_ZONE'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 4. RISK_PARAMS
+    const riskPassed = checkRule('rule_spread_check') && checkRule('rule_atr_sl_buffer') && checkRule('rule_risk_reward');
+    stepStatuses['RISK_PARAMS'] = riskPassed ? 'validated' : (checkRuleFailed('rule_spread_check') ? 'rejected' : (stepStatuses['ENGULFING_TRIGGER'] === 'validated' ? 'active' : 'awaiting'));
+
+    // 5. AI_GATE
+    if (aiDecision === 'APPROVED') stepStatuses['AI_GATE'] = 'validated';
+    else if (aiDecision === 'REJECTED') stepStatuses['AI_GATE'] = 'rejected';
+    else stepStatuses['AI_GATE'] = stepStatuses['RISK_PARAMS'] === 'validated' ? 'active' : 'awaiting';
+
+    // 6. DISPATCHED
+    stepStatuses['DISPATCHED'] = isDispatched ? 'approved' : 'awaiting';
+  } else if (strategyId === 'strategy-3-scalping') {
+    // 1. H1_TREND
+    const trendPassed = checkRule('rule_h1_trend');
+    stepStatuses['H1_TREND'] = trendPassed ? 'validated' : (checkRuleFailed('rule_h1_trend') ? 'rejected' : 'active');
+
+    // 2. M15_RETRACEMENT
+    stepStatuses['M15_RETRACEMENT'] = trendPassed ? 'validated' : (stepStatuses['H1_TREND'] === 'validated' ? 'active' : 'awaiting');
+
+    // 3. M1_M5_SWEEP
+    const sweepPassed = checkRule('rule_liquidity_sweep') || String(snapshot.sweepStatus || '').includes('Confirmed');
+    stepStatuses['M1_M5_SWEEP'] = sweepPassed ? 'validated' : (stepStatuses['M15_RETRACEMENT'] === 'validated' ? 'active' : 'awaiting');
+
+    // 4. DOUBLE_TOP_BOTTOM
+    const patternPassed = checkRule('rule_scalp_pattern') || String(snapshot.doubleTopBottomStatus || '').includes('Confirmed');
+    stepStatuses['DOUBLE_TOP_BOTTOM'] = patternPassed ? 'validated' : (stepStatuses['M1_M5_SWEEP'] === 'validated' ? 'active' : 'awaiting');
+
+    // 5. NECKLINE_BREAK
+    stepStatuses['NECKLINE_BREAK'] = patternPassed ? 'validated' : (stepStatuses['DOUBLE_TOP_BOTTOM'] === 'validated' ? 'active' : 'awaiting');
+
+    // 6. RISK_NEWS_FILTER
+    const riskPassed = checkRule('rule_spread_check') && checkRule('rule_atr_sl_buffer');
+    stepStatuses['RISK_NEWS_FILTER'] = riskPassed ? 'validated' : (stepStatuses['NECKLINE_BREAK'] === 'validated' ? 'active' : 'awaiting');
+
+    // 7. AI_GATE
+    if (aiDecision === 'APPROVED') stepStatuses['AI_GATE'] = 'validated';
+    else if (aiDecision === 'REJECTED') stepStatuses['AI_GATE'] = 'rejected';
+    else stepStatuses['AI_GATE'] = stepStatuses['RISK_NEWS_FILTER'] === 'validated' ? 'active' : 'awaiting';
+
+    // 8. DISPATCHED
+    stepStatuses['DISPATCHED'] = isDispatched ? 'approved' : 'awaiting';
+  } else if (strategyId === 'strategy-4-news') {
+    // 1. NEWS_WINDOW
+    const newsWindowPassed = checkRule('rule_session_restriction');
+    stepStatuses['NEWS_WINDOW'] = newsWindowPassed ? 'validated' : 'active';
+
+    // 2. SPREAD_NORMAL
+    const spreadPassed = checkRule('rule_spread_check');
+    stepStatuses['SPREAD_NORMAL'] = spreadPassed ? 'validated' : (stepStatuses['NEWS_WINDOW'] === 'validated' ? 'active' : 'awaiting');
+
+    // 3. POST_NEWS_SWEEP
+    const sweepPassed = checkRule('rule_news_reversal') || String(snapshot.reversalStatus || '').includes('Confirmed');
+    stepStatuses['POST_NEWS_SWEEP'] = sweepPassed ? 'validated' : (stepStatuses['SPREAD_NORMAL'] === 'validated' ? 'active' : 'awaiting');
+
+    // 4. WICK_REJECTION
+    stepStatuses['WICK_REJECTION'] = sweepPassed ? 'validated' : (stepStatuses['POST_NEWS_SWEEP'] === 'validated' ? 'active' : 'awaiting');
+
+    // 5. M1_BOS_REVERSAL
+    stepStatuses['M1_BOS_REVERSAL'] = sweepPassed ? 'validated' : (stepStatuses['WICK_REJECTION'] === 'validated' ? 'active' : 'awaiting');
+
+    // 6. RISK_PARAMS
+    const riskPassed = checkRule('rule_atr_sl_buffer') && checkRule('rule_risk_reward');
+    stepStatuses['RISK_PARAMS'] = riskPassed ? 'validated' : (stepStatuses['M1_BOS_REVERSAL'] === 'validated' ? 'active' : 'awaiting');
+
+    // 7. AI_GATE
+    if (aiDecision === 'APPROVED') stepStatuses['AI_GATE'] = 'validated';
+    else if (aiDecision === 'REJECTED') stepStatuses['AI_GATE'] = 'rejected';
+    else stepStatuses['AI_GATE'] = stepStatuses['RISK_PARAMS'] === 'validated' ? 'active' : 'awaiting';
+
+    // 8. DISPATCHED
+    stepStatuses['DISPATCHED'] = isDispatched ? 'approved' : 'awaiting';
+  } else {
+    // strategy-5-smc-sd-confluence
+    // 1. H1_M15_STRUCTURE
+    const structPassed = checkRule('rule_h1_trend');
+    stepStatuses['H1_M15_STRUCTURE'] = structPassed ? 'validated' : 'active';
+
+    // 2. SD_FIB_OVERLAP
+    const sdFibPassed = checkRule('rule_sd_zone') || checkRule('rule_confluence_overlap') || String(snapshot.confluenceStatus || '').includes('Confirmed');
+    stepStatuses['SD_FIB_OVERLAP'] = sdFibPassed ? 'validated' : (stepStatuses['H1_M15_STRUCTURE'] === 'validated' ? 'active' : 'awaiting');
+
+    // 3. CONFLUENCE_SWEEP
+    const sweepPassed = checkRule('rule_liquidity_sweep') || String(snapshot.sweepStatus || '').includes('Confirmed');
+    stepStatuses['CONFLUENCE_SWEEP'] = sweepPassed ? 'validated' : (stepStatuses['SD_FIB_OVERLAP'] === 'validated' ? 'active' : 'awaiting');
+
+    // 4. REJECTION_TRIGGER
+    const trigPassed = checkRule('rule_confluence_overlap') || String(snapshot.confluenceStatus || '').includes('Confirmed');
+    stepStatuses['REJECTION_TRIGGER'] = trigPassed ? 'validated' : (stepStatuses['CONFLUENCE_SWEEP'] === 'validated' ? 'active' : 'awaiting');
+
+    // 5. MIN_RR_CALC
+    const minRRPassed = checkRule('rule_spread_check') && checkRule('rule_atr_sl_buffer') && checkRule('rule_risk_reward');
+    stepStatuses['MIN_RR_CALC'] = minRRPassed ? 'validated' : (stepStatuses['REJECTION_TRIGGER'] === 'validated' ? 'active' : 'awaiting');
+
+    // 6. AI_GATE
+    if (aiDecision === 'APPROVED') stepStatuses['AI_GATE'] = 'validated';
+    else if (aiDecision === 'REJECTED') stepStatuses['AI_GATE'] = 'rejected';
+    else stepStatuses['AI_GATE'] = stepStatuses['MIN_RR_CALC'] === 'validated' ? 'active' : 'awaiting';
+
+    // 7. DISPATCHED
+    stepStatuses['DISPATCHED'] = isDispatched ? 'approved' : 'awaiting';
   }
 
-  let currentIdx = sequentialIds.indexOf(targetStepId as any);
-  if (currentIdx === -1) {
-    if (normCurrent === 'DISPATCHED' || setupStatus === 'approved') {
-      currentIdx = sequentialIds.length - 1;
-    } else if (normCurrent === 'SETUP_FOUND' || normCurrent === 'RULE_VALIDATION') {
-      // Advance to structural confirmation trigger step (Step 3 or 4)
-      currentIdx = Math.min(3, sequentialIds.length - 1);
-    } else if (normCurrent === 'RISK_VALIDATION' || normCurrent === 'AI_VALIDATION') {
-      currentIdx = Math.min(5, sequentialIds.length - 1);
-    } else if (normCurrent === 'SIGNAL_READY') {
-      currentIdx = sequentialIds.length - 2;
-    } else {
-      // Check if trend and pair are validated in ruleResults
-      const rules = strategy.ruleResults || {};
-      const hasTrend = rules['rule_h1_trend']?.status === 'PASS' || rules['rule_h1_trend']?.passed;
-      if (hasTrend) {
-        currentIdx = Math.min(2, sequentialIds.length - 1);
-      } else {
-        currentIdx = 0;
+  // Ensure at least one step is active if none are active and not all validated
+  let hasActive = false;
+  for (const step of sequentialSteps) {
+    if (stepStatuses[step.id] === 'active') {
+      hasActive = true;
+      break;
+    }
+  }
+
+  if (!hasActive) {
+    for (const step of sequentialSteps) {
+      if (stepStatuses[step.id] === 'awaiting') {
+        stepStatuses[step.id] = 'active';
+        break;
       }
     }
   }
 
-  return sequentialSteps.map((stepConfig) => {
-    const idx = sequentialIds.indexOf(stepConfig.id);
-    let status = 'awaiting';
-    
-    if (setupStatus === 'expired' || setupStatus === 'rejected') {
-      if (idx < currentIdx) status = 'validated';
-      else if (idx === currentIdx) status = setupStatus;
-      else status = 'awaiting';
-    } else if (setupStatus === 'approved') {
-      status = 'validated';
-      if (idx === sequentialIds.length - 1) status = 'approved';
-    } else {
-      if (idx < currentIdx) status = 'validated';
-      else if (idx === currentIdx) status = 'active';
-      else status = 'awaiting';
-    }
-
-    return {
-      id: stepConfig.id,
-      name: stepConfig.title,
-      status: status
-    };
-  });
+  return sequentialSteps.map((stepConfig) => ({
+    id: stepConfig.id,
+    name: stepConfig.title,
+    status: stepStatuses[stepConfig.id] || 'awaiting'
+  }));
 }
 
 export function buildRules(strategy: StrategyResponse) {

@@ -183,26 +183,17 @@ export class TradingEngine {
     const marketStates = this.marketStateEngine.classifyState(context);
     logger.info(`Market States detected: ${marketStates.join(', ')}`);
     
-    // 2. Select Relevant Strategies
-    const { active, inactive } = this.marketStateEngine.getRelevantStrategies(marketStates);
-    
-    let relevantStrategies = active;
-    let irrelevantStrategies = inactive;
-    
-    if (activeStrategyIds && activeStrategyIds.length > 0) {
-        relevantStrategies = relevantStrategies.filter(id => activeStrategyIds.includes(id));
-        irrelevantStrategies = irrelevantStrategies.filter(s => activeStrategyIds.includes(s.id));
-    }
+    // 2. Select Strategies to Process
+    const allStrategies = ['strategy-1-smc', 'strategy-2-snd', 'strategy-3-scalping', 'strategy-4-news', 'strategy-5-smc-sd-confluence'];
+    let strategiesToProcess = activeStrategyIds && activeStrategyIds.length > 0
+        ? allStrategies.filter(id => activeStrategyIds.includes(id))
+        : allStrategies;
 
-    if (relevantStrategies.length === 0) {
-        relevantStrategies = activeStrategyIds.length > 0 ? activeStrategyIds : ['strategy-1-smc', 'strategy-2-snd', 'strategy-3-scalping', 'strategy-4-news', 'strategy-5-smc-sd-confluence'];
+    if (strategiesToProcess.length === 0) {
+        strategiesToProcess = allStrategies;
     }
     
-    logger.info(`Relevant Strategies based on market state: ${relevantStrategies.join(', ')}`);
-
-    for (const strat of irrelevantStrategies) {
-         await this.syncState(strat.id, STEPS.FAILED, 'expired', strat.reason, null, this.buildSetupSnapshot(context, { marketStates, validationSummary: strat.reason }));
-    }
+    logger.info(`Processing strategies on live market data: ${strategiesToProcess.join(', ')}`);
 
     // 3. Technical analysis snapshot from Python Engine or fallback
     let commonPyData: any = {};
@@ -275,7 +266,7 @@ export class TradingEngine {
       rrVal: number;
     }> = [];
 
-    await Promise.allSettled(relevantStrategies.map(async (strategyId) => {
+    await Promise.allSettled(strategiesToProcess.map(async (strategyId) => {
       const sm = new StateMachine(strategyId, STEPS.INITIALIZING);
       
       try {
