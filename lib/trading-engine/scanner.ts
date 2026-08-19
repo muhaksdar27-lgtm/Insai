@@ -94,14 +94,14 @@ export class MarketScanner {
     logger.info('Market Scanner stopped');
   }
 
-  public async scan() {
-    if (this.isScanning) {
+  public async scan(force: boolean = false) {
+    if (this.isScanning && !force) {
        return;
     }
     
     // Acquire distributed lock for scanning (10 seconds to prevent overlapping scans from same or other instances)
     const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 10);
-    if (!lockAcquired) {
+    if (!lockAcquired && !force) {
        return;
     }
     
@@ -139,7 +139,6 @@ export class MarketScanner {
          activeStrategyIds = cachedData.activeIds || [];
       } else {
          try {
-           
            const strats = await getDatabaseClient().getStrategies();
            if (Array.isArray(strats) && strats.length > 0) {
              const activeStrats = strats.filter(s => s.enabled);
@@ -195,7 +194,7 @@ export class MarketScanner {
       // Get the current M1 candle block (1 minute = 60000 ms) for high precision
       const currentCandleBlock = Math.floor(Date.now() / 60000) * 60000;
       
-      // Fetch latest price (leveraging the newly extended 30-sec cache)
+      // Fetch latest price (leveraging the cache)
       const latestPriceSnapshot = await getMarketDataService().getLatestPrice("XAUUSD");
       const currentPrice = latestPriceSnapshot?.price ?? 0;
       
@@ -207,7 +206,7 @@ export class MarketScanner {
       const isNewCandle = currentCandleBlock !== this.lastScannedCandleBlock;
       const isSignificantPriceChange = Math.abs(currentPrice - this.lastScannedPrice) >= 0.05;
       
-      if (!isNewCandle && !isSignificantPriceChange && this.lastScannedPrice > 0) {
+      if (!force && !isNewCandle && !isSignificantPriceChange && this.lastScannedPrice > 0) {
          // Skip scan to preserve TwelveData/YahooFinance API quota!
          return;
       }

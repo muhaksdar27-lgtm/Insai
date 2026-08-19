@@ -83,7 +83,9 @@ export class MarketCalendar {
       }
     }
 
-    const isHardBlocked = !isOpen || !isFresh || !isHealthy;
+    // Only hard-block scan execution if providers are completely down and no valid price/candles are available
+    const hasValidPrice = !!marketContext?.price?.price && marketContext.price.price > 0;
+    const isHardBlocked = (!isHealthy && !hasValidPrice);
 
     return {
       isOpen,

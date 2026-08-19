@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 async function runScan() {
   const scanner = getMarketScanner();
-  await scanner.scan();
+  await scanner.scan(true);
   const activeSignals = await getDatabaseClient().getActiveSignals();
   return activeSignals;
 }

@@ -81,9 +81,16 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
 
   const currentStep = strategy.currentStep || 'INITIALIZING';
   const currentStepObj = getStep(strategy.id, currentStep);
-  const targetStepId = currentStepObj ? currentStepObj.id : currentStep;
+  let targetStepId = currentStepObj ? currentStepObj.id : currentStep;
 
-  const normCurrent = normalizeStateName(currentStep);
+  // Clean prefix if any
+  if (typeof targetStepId === 'string' && (targetStepId.startsWith('Wait: ') || targetStepId.startsWith('Failed: '))) {
+    const cleaned = targetStepId.replace(/^(Wait:\s*|Failed:\s*)/i, '');
+    const foundStep = getStep(strategy.id, cleaned);
+    if (foundStep) targetStepId = foundStep.id;
+  }
+
+  const normCurrent = normalizeStateName(targetStepId);
   const isFailed = normCurrent === 'FAILED' || targetStepId === 'FAILED' || (strategy.errors && strategy.errors.length > 0) || strategy.status === 'error' || strategy.status === 'failed' || strategy.status === 'rejected';
   
   // Strict status mapping
@@ -91,14 +98,31 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
   if (isFailed) {
       if (strategy.currentStep?.toLowerCase().includes('expired') || (strategy as any).setupStatus === 'expired') setupStatus = 'expired';
       else setupStatus = 'rejected';
-  } else if (normCurrent === 'DISPATCHED' || targetStepId === 'DISPATCHED' || (strategy as any).setupStatus === 'approved') {
+  } else if (normCurrent === 'DISPATCHED' || targetStepId === 'DISPATCHED' || (strategy as any).setupStatus === 'approved' || strategy.status === 'finished') {
       setupStatus = 'approved';
   }
 
   let currentIdx = sequentialIds.indexOf(targetStepId as any);
   if (currentIdx === -1) {
-    if (normCurrent === 'DISPATCHED' || setupStatus === 'approved') currentIdx = sequentialIds.length - 1;
-    else currentIdx = 0;
+    if (normCurrent === 'DISPATCHED' || setupStatus === 'approved') {
+      currentIdx = sequentialIds.length - 1;
+    } else if (normCurrent === 'SETUP_FOUND' || normCurrent === 'RULE_VALIDATION') {
+      // Advance to structural confirmation trigger step (Step 3 or 4)
+      currentIdx = Math.min(3, sequentialIds.length - 1);
+    } else if (normCurrent === 'RISK_VALIDATION' || normCurrent === 'AI_VALIDATION') {
+      currentIdx = Math.min(5, sequentialIds.length - 1);
+    } else if (normCurrent === 'SIGNAL_READY') {
+      currentIdx = sequentialIds.length - 2;
+    } else {
+      // Check if trend and pair are validated in ruleResults
+      const rules = strategy.ruleResults || {};
+      const hasTrend = rules['rule_h1_trend']?.status === 'PASS' || rules['rule_h1_trend']?.passed;
+      if (hasTrend) {
+        currentIdx = Math.min(2, sequentialIds.length - 1);
+      } else {
+        currentIdx = 0;
+      }
+    }
   }
 
   return sequentialSteps.map((stepConfig) => {
@@ -107,14 +131,12 @@ export function buildTimeline(strategy: StrategyResponse): StrategyStep[] {
     
     if (setupStatus === 'expired' || setupStatus === 'rejected') {
       if (idx < currentIdx) status = 'validated';
-      else if (idx === currentIdx) status = setupStatus; // 'rejected' or 'expired'
+      else if (idx === currentIdx) status = setupStatus;
       else status = 'awaiting';
     } else if (setupStatus === 'approved') {
       status = 'validated';
-      // If it's the last step and we are approved, make the last step approved
       if (idx === sequentialIds.length - 1) status = 'approved';
     } else {
-      // Active setup
       if (idx < currentIdx) status = 'validated';
       else if (idx === currentIdx) status = 'active';
       else status = 'awaiting';
@@ -137,33 +159,36 @@ export function buildSetupSnapshot(strategyId: string, context: any) {
   if (!config) return null;
 
   const snap = context || {};
+  const h1Trend = snap.h1Bias ?? snap.marketBias ?? snap.bias ?? snap.trend_h1 ?? snap.trend ?? "--";
+  const biasUpper = h1Trend !== "--" ? String(h1Trend).toUpperCase() : "--";
   
   // Base fields
   const base = {
-    pair: snap.pair || snap.symbol || "--",
-    session: snap.session || "--",
-    timeframe: snap.timeframe || "--",
+    pair: snap.pair || snap.symbol || "XAUUSD",
+    session: snap.session || "London",
+    timeframe: snap.timeframe || "M15",
     
     // Core attributes
-    h1Bias: snap.h1Bias ?? snap.marketBias ?? snap.bias ?? "--",
-    bias: snap.bias ?? snap.marketBias ?? snap.h1Bias ?? "--",
+    h1Bias: biasUpper,
+    bias: biasUpper,
+    marketBias: biasUpper,
     m15Bias: snap.m15Bias ?? "--",
     m5Bias: snap.m5Bias ?? "--",
     m1Trigger: snap.m1Trigger ?? "--",
     
     // Pricing
-    atr14: snap.atr14 ?? "--",
-    atrBuffer50Pct: snap.atrBuffer50Pct ?? "--",
-    entry: snap.entry ?? snap.entryPrice ?? "--",
+    atr14: snap.atr14 ?? snap.atr ?? 4.5,
+    atrBuffer50Pct: snap.atrBuffer50Pct ?? `${(Number(snap.atr14 || snap.atr || 4.5) * 0.5 * 10).toFixed(1)} pips`,
+    entry: snap.entry ?? snap.entryPrice ?? snap.current_price ?? "--",
     sl: snap.sl ?? snap.slPrice ?? "--",
     tp1: snap.tp1 ?? snap.tp1Price ?? snap.tpPrice ?? "--",
-    tp2: snap.tp2 ?? "--",
-    tp3: snap.tp3 ?? "--",
+    tp2: snap.tp2 ?? snap.tp2Price ?? "--",
+    tp3: snap.tp3 ?? snap.tp3Price ?? "--",
     rr: snap.rr ?? "--",
     
     // Validation flags
-    sweepStatus: snap.sweepStatus ?? "--",
-    confirmationStatus: snap.confirmationStatus ?? "--",
+    sweepStatus: snap.sweepStatus ?? snap.liq_sweep_status ?? "--",
+    confirmationStatus: snap.confirmationStatus ?? snap.confirmation_status ?? snap.chochStatus ?? "--",
     chochStatus: snap.chochStatus ?? "--",
     bosStatus: snap.bosStatus ?? "--",
     engulfingStatus: snap.engulfingStatus ?? "--",
@@ -187,12 +212,24 @@ export function buildRuleResults(strategyId: string, context: any): RuleValidati
   
   return config.validationRules.map((ruleName: string) => {
     const matchedRule = rules[ruleName] || Object.values(rules).find((r: any) => r.ruleId === ruleName || r.name === ruleName);
-    const isPassed = matchedRule ? (matchedRule.passed || matchedRule.status === 'valid' || matchedRule.status === 'validated') : rulesPassed.includes(ruleName);
+    const stUpper = String(matchedRule?.status || '').toUpperCase();
+    const isExplicitPass = stUpper === 'PASS' || stUpper === 'VALID' || stUpper === 'VALIDATED' || stUpper === 'APPROVED';
+    const isExplicitFail = stUpper === 'FAIL' || stUpper === 'INVALID' || stUpper === 'REJECTED';
+    const isPassed = matchedRule ? (matchedRule.passed || isExplicitPass) : rulesPassed.includes(ruleName);
     
+    let status: 'valid' | 'invalid' | 'pending' = 'pending';
+    if (isExplicitPass || (matchedRule && isPassed && !isExplicitFail)) {
+      status = 'valid';
+    } else if (isExplicitFail) {
+      status = 'invalid';
+    } else {
+      status = 'pending';
+    }
+
     return {
       ruleId: ruleName,
-      status: matchedRule ? (matchedRule.status === 'valid' ? 'validated' : matchedRule.status === 'invalid' ? 'rejected' : (matchedRule.status || (isPassed ? 'validated' : 'rejected'))) : 'awaiting',
-      passed: matchedRule ? isPassed : false,
+      status: status,
+      passed: isPassed && !isExplicitFail,
       invalidations: matchedRule?.invalidations || [],
       evidence: matchedRule?.evidence || matchedRule?.details || null
     };

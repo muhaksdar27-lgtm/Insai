@@ -119,6 +119,8 @@ export interface StrategyConfig {
 }
 
 export interface SetupSnapshot {
+  pair?: string;
+  symbol?: string;
   entryPrice?: number;
   slPrice?: number;
   tp1Price?: number;
@@ -132,6 +134,7 @@ export interface SetupSnapshot {
   tpPrice?: number;
   rr?: number | string;
   bias?: string;
+  h1Bias?: string;
   marketStructure?: string;
   direction?: SignalDirection | string;
   timeframe?: string;
@@ -140,8 +143,10 @@ export interface SetupSnapshot {
   marketStates?: string[];
   validationLogSummary?: string;
   confirmation?: string | boolean;
+  confirmationStatus?: string;
   sweepStatus?: string;
   chochStatus?: string;
+  sdZoneStatus?: string;
   atr14?: number | string;
   atrBuffer50Pct?: string;
   aiDecision?: string;

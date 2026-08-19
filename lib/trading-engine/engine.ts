@@ -52,8 +52,12 @@ export class TradingEngine {
         if (risk > 0) rr = `1:${(reward / risk).toFixed(2)}`;
       }
 
+      const bias = setupDetails?.bias || setupDetails?.marketBias || setupDetails?.h1Bias || 'Undetermined';
+
       return {
           ...setupDetails,
+          pair: setupDetails?.pair || setupDetails?.symbol || context.symbol || 'XAUUSD',
+          symbol: setupDetails?.symbol || setupDetails?.pair || context.symbol || 'XAUUSD',
           entryPrice,
           entry: entryPrice,
           slPrice,
@@ -66,11 +70,17 @@ export class TradingEngine {
           rr: rr || undefined,
           timeframe: setupDetails?.timeframe || context.timeframe,
           session: setupDetails?.session || 'Off-Session',
-          marketBias: setupDetails?.marketBias || setupDetails?.bias || 'Undetermined',
-          bias: setupDetails?.bias || setupDetails?.marketBias || 'Undetermined',
+          marketBias: bias,
+          bias: bias,
+          h1Bias: bias,
           marketStates: marketStates || [],
           validationSummary: validationSummary,
           validationLogSummary: validationSummary,
+          sweepStatus: setupDetails?.sweepStatus,
+          confirmationStatus: setupDetails?.confirmationStatus,
+          sdZoneStatus: setupDetails?.sdZoneStatus,
+          atr14: setupDetails?.atr14,
+          atrBuffer50Pct: setupDetails?.atrBuffer50Pct,
           ruleResults: ruleResults || {},
           aiDecision: setupDetails?.aiDecision || 'PENDING'
       };
@@ -271,15 +281,18 @@ export class TradingEngine {
       try {
         let setup = this.setupDetector.startScanning(strategyId, context.symbol, context.timeframe, context.timestamp);
 
-        // Step 1: INITIALIZING & WAITING_MARKET check
-        await this.advanceStateMachine(sm, STEPS.INITIALIZING, 'System initialized', setup.id, context, { marketStates });
-
-        // Evaluate Rules via RuleEngine
         let pyData: any = commonPyData || {};
         const lastCandle = context.candles && context.candles.length > 0 ? context.candles[context.candles.length - 1] : null;
         if (!pyData.current_price && lastCandle) {
           pyData.current_price = lastCandle.close;
         }
+
+        // Generate full snapshot for this strategy with live real levels
+        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, pyData, context);
+        (setup as any).setupSnapshot = translatedSnapshot;
+
+        // Step 1: INITIALIZING check
+        await this.advanceStateMachine(sm, STEPS.INITIALIZING, 'System initialized', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
 
         const evaluatedRules = RuleEngine.evaluateStrategyRules(strategyId, context, pyData);
         const candidateEval = CandidateEvaluator.evaluateCandidate(strategyId, evaluatedRules);
@@ -287,9 +300,9 @@ export class TradingEngine {
         // Check if candidate evaluator returned WAITING
         if (candidateEval.isWaiting) {
           const reason = candidateEval.rejectionReason || '';
-          const isScanning = reason.includes('structure') || reason.includes('sweep') || reason.includes('CHoCH') || reason.includes('OB/FVG') || reason.includes('zone') || reason.includes('engulfing') || reason.includes('double');
+          const isScanning = reason.includes('structure') || reason.includes('sweep') || reason.includes('CHoCH') || reason.includes('OB/FVG') || reason.includes('zone') || reason.includes('engulfing') || reason.includes('double') || reason.includes('overlap') || reason.includes('pattern') || reason.includes('reversal') || reason.includes('Monitored');
           const step = isScanning ? STEPS.SCANNING : STEPS.WAITING_MARKET;
-          await this.advanceStateMachine(sm, step, reason || 'Waiting for market data or session', setup.id, context, { marketStates, ruleResults: evaluatedRules });
+          await this.advanceStateMachine(sm, step, reason || 'Waiting for market data or session', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
           logger.info(`[${step}] Strategy ${strategyId} waiting: ${reason}`);
           if (!isScanning) {
             this.setupDetector.clearStrategySetup(strategyId, context.symbol);
@@ -305,15 +318,12 @@ export class TradingEngine {
           await this.advanceStateMachine(sm, STEPS.FAILED, failMsg, setup.id, context, { 
             marketStates, 
             ruleResults: evaluatedRules,
-            setupDetails: { failedRules: candidateEval.failedRules, rejectionReason: failMsg }
+            setupDetails: { ...translatedSnapshot, failedRules: candidateEval.failedRules, rejectionReason: failMsg }
           });
           return;
         }
 
         // Candidate accepted -> Proceed deterministically
-        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, pyData, context);
-        (setup as any).setupSnapshot = translatedSnapshot;
-
         // Step 2: SCANNING
         await this.advanceStateMachine(sm, STEPS.SCANNING, 'Scanning market data feed', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
 

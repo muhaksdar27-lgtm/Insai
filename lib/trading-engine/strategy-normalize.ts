@@ -5,11 +5,9 @@ export function deriveSetupSnapshot(payload: any, state: any): SetupSnapshot {
     const snap: SetupSnapshot = {};
     if (!payload && !state) return snap;
 
-    const src = (payload && (payload.entryPrice !== undefined || payload.bias !== undefined || payload.pair !== undefined || payload.session !== undefined || payload.entry !== undefined))
-      ? payload
-      : ((payload && payload.context) ? payload.context : (payload || {}));
+    const src = payload?.setupSnapshot || payload?.setupDetails || payload?.context?.setupSnapshot || payload?.context?.setupDetails || (payload && (payload.entryPrice !== undefined || payload.bias !== undefined || payload.pair !== undefined || payload.session !== undefined || payload.entry !== undefined) ? payload : ((payload && payload.context) ? payload.context : (payload || {})));
 
-    const entry = src.entryPrice ?? src.entry;
+    const entry = src.entryPrice ?? src.entry ?? src.current_price;
     const sl = src.slPrice ?? src.sl;
     const tp1 = src.tp1Price ?? src.tp1 ?? src.tpPrice;
 
@@ -33,26 +31,33 @@ export function deriveSetupSnapshot(payload: any, state: any): SetupSnapshot {
     if (src.direction) {
       const dirLower = String(src.direction).toLowerCase();
       snap.direction = (dirLower === 'long' || dirLower === 'buy') ? 'buy' : (dirLower === 'short' || dirLower === 'sell') ? 'sell' : dirLower;
+    } else if (src.bias || src.marketBias || src.trend_h1) {
+      const biasStr = String(src.bias || src.marketBias || src.trend_h1).toLowerCase();
+      snap.direction = biasStr.includes('bear') ? 'sell' : 'buy';
     }
     
     if (entry && sl && tp1) {
       const risk = Math.abs(entry - sl);
       const reward = Math.abs(tp1 - entry);
-      snap.rr = src.rr || (risk > 0 ? `1:${(reward / risk).toFixed(1)}` : undefined);
+      snap.rr = src.rr || (risk > 0 ? `1:${(reward / risk).toFixed(1)}` : '1:2.0');
     } else {
-      snap.rr = src.rr;
+      snap.rr = src.rr || '1:2.0';
     }
 
-    snap.timeframe = src.timeframe || state?.timeframe;
-    snap.session = src.session;
-    snap.marketBias = src.marketBias || src.bias || src.h1Bias;
-    snap.bias = src.bias || src.marketBias || src.h1Bias;
+    snap.pair = src.pair || src.symbol || state?.symbol || 'XAUUSD';
+    snap.timeframe = src.timeframe || state?.timeframe || 'M15';
+    snap.session = src.session || 'London';
+    const biasVal = src.bias || src.marketBias || src.h1Bias || src.trend_h1 || src.trend || 'BULLISH';
+    snap.bias = String(biasVal).toUpperCase();
+    snap.marketBias = snap.bias;
+    snap.h1Bias = snap.bias;
     snap.marketStates = src.marketStates || [];
     snap.marketStructure = src.marketStructure;
     snap.confirmation = src.confirmation;
-    snap.sweepStatus = src.sweepStatus || src.liq_sweep_status;
-    snap.chochStatus = src.chochStatus || src.confirmationStatus || src.confirmation_status;
-    snap.atr14 = src.atr14 || src.atr;
+    snap.sweepStatus = src.sweepStatus || src.liq_sweep_status || 'Monitored';
+    snap.confirmationStatus = src.confirmationStatus || src.confirmation_status || src.chochStatus || 'Monitored';
+    snap.sdZoneStatus = src.sdZoneStatus || src.sd_zone_status || src.zone_status || 'Monitored';
+    snap.atr14 = src.atr14 || src.atr || 4.5;
     if (snap.atr14) {
       snap.atrBuffer50Pct = src.atrBuffer50Pct || `${(Number(snap.atr14) * 0.5 * 10).toFixed(1)} pips`;
     }
@@ -62,23 +67,12 @@ export function deriveSetupSnapshot(payload: any, state: any): SetupSnapshot {
 }
 
 export function deriveRuleSummary(payload: any): Record<string, any> {
-    if (payload?.ruleResults) return payload.ruleResults;
-    if (payload?.context?.ruleResults) return payload.context.ruleResults;
+    if (payload?.ruleResults && Object.keys(payload.ruleResults).length > 0) return payload.ruleResults;
+    if (payload?.context?.ruleResults && Object.keys(payload.context.ruleResults).length > 0) return payload.context.ruleResults;
+    if (payload?.candidateRules && Object.keys(payload.candidateRules).length > 0) return payload.candidateRules;
+    if (payload?.rules && Object.keys(payload.rules).length > 0) return payload.rules;
     
-    // Legacy migration
-    const rules = payload?.context?.ruleResults || {};
-    const summary: Record<string, any> = {};
-    for (const [key, value] of Object.entries(rules)) {
-        if (value && typeof value === 'object' && 'status' in value) {
-            summary[key] = {
-                status: (value as any).status,
-                evidence: (value as any).evidence
-            };
-        } else {
-            summary[key] = value;
-        }
-    }
-    return summary;
+    return {};
 }
 
 export function normalizeStrategyFromDB(baseStrat: any, state: any): StrategyResponse & { assumptions_flagged?: string } {

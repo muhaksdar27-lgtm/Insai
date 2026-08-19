@@ -30,12 +30,12 @@ export class MarketDataService {
     this.calendarChain = new FallbackChain<CalendarProvider>();
 
     // Fallback chain for price
-    // 1. TwelveData (Primary - with WebSocket for XAUUSD)
+    // 1. TwelveData (Primary - with WebSocket for XAU/USD Spot)
     this.priceChain.addProvider(new TwelveDataProvider(), 'TwelveData');
-    // 2. Yahoo Finance (Secondary/Fallback)
-    this.priceChain.addProvider(new YahooFinanceProvider(), 'YahooFinance');
-    // 3. Binance (Tertiary/Proxy Fallback)
+    // 2. Binance (Secondary / High-precision Spot Gold proxy matching MT5 Spot XAUUSD)
     this.priceChain.addProvider(new BinanceProvider(), 'Binance');
+    // 3. Yahoo Finance (Tertiary / Index Fallback)
+    this.priceChain.addProvider(new YahooFinanceProvider(), 'YahooFinance');
 
     // Fallback chain for news
     this.newsChain.addProvider(new NewsApiProvider(), 'NewsAPI');
