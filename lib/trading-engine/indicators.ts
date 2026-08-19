@@ -76,6 +76,18 @@ export function calculateSMA(candles: Candle[], period: number): number | null {
   });
 }
 
+export function calculateEMA(candles: Candle[], period: number): number | null {
+  return getCached(candles, `ema_${period}`, () => {
+    if (candles.length < period) return null;
+    const k = 2 / (period + 1);
+    let ema = candles.slice(0, period).reduce((sum, c) => sum + c.close, 0) / period;
+    for (let i = period; i < candles.length; i++) {
+      ema = (candles[i].close * k) + (ema * (1 - k));
+    }
+    return ema;
+  });
+}
+
 export function calculateRSI(candles: Candle[], period: number = 14): number | null {
   return getCached(candles, `rsi_${period}`, () => {
     if (candles.length < period + 1) return null;
@@ -578,7 +590,9 @@ export function detectDisplacement(candles: Candle[]): DisplacementResult {
     }
 
     const atr = calculateATR(candles, 14) || 2.0;
-    const recentCandles = candles.slice(-5);
+    // Check last 5 closed candles, ignore the forming candle
+    const closedCandles = candles.slice(0, candles.length - 1);
+    const recentCandles = closedCandles.slice(-5);
 
     for (let i = recentCandles.length - 1; i >= 0; i--) {
       const c = recentCandles[i];
@@ -792,6 +806,8 @@ export function detectSessionPools(candles: Candle[]): SessionPoolsResult {
       };
     }
 
+    // Check against the last closed candle and the current forming candle
+    const lastClosed = candles[candles.length - 2];
     const currentCandle = candles[candles.length - 1];
 
     // Filter Asian session candles (00:00 to 07:00 UTC)
@@ -810,12 +826,12 @@ export function detectSessionPools(candles: Candle[]): SessionPoolsResult {
       asianHigh = Math.max(...recentAsian.map(c => c.high));
       asianLow = Math.min(...recentAsian.map(c => c.low));
 
-      // Check if current candle swept Asian High (wick above, close below)
-      if (currentCandle.high > asianHigh && currentCandle.close <= asianHigh) {
+      // Check if current or last closed candle swept Asian High (wick above, close below)
+      if ((currentCandle.high > asianHigh && currentCandle.close <= asianHigh) || (lastClosed.high > asianHigh && lastClosed.close <= asianHigh)) {
         sweepAsianHigh = true;
       }
-      // Check if current candle swept Asian Low (wick below, close above)
-      if (currentCandle.low < asianLow && currentCandle.close >= asianLow) {
+      // Check if current or last closed candle swept Asian Low (wick below, close above)
+      if ((currentCandle.low < asianLow && currentCandle.close >= asianLow) || (lastClosed.low < asianLow && lastClosed.close >= asianLow)) {
         sweepAsianLow = true;
       }
     }
@@ -831,10 +847,10 @@ export function detectSessionPools(candles: Candle[]): SessionPoolsResult {
       prevSessionHigh = Math.max(...prevSessionCandles.map(c => c.high));
       prevSessionLow = Math.min(...prevSessionCandles.map(c => c.low));
 
-      if (currentCandle.high > prevSessionHigh && currentCandle.close <= prevSessionHigh) {
+      if ((currentCandle.high > prevSessionHigh && currentCandle.close <= prevSessionHigh) || (lastClosed.high > prevSessionHigh && lastClosed.close <= prevSessionHigh)) {
         sweepPrevSessionHigh = true;
       }
-      if (currentCandle.low < prevSessionLow && currentCandle.close >= prevSessionLow) {
+      if ((currentCandle.low < prevSessionLow && currentCandle.close >= prevSessionLow) || (lastClosed.low < prevSessionLow && lastClosed.close >= prevSessionLow)) {
         sweepPrevSessionLow = true;
       }
     }

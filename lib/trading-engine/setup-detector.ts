@@ -277,9 +277,10 @@ export class SetupDetector {
       }
       
       const setupTime = new Date(setup.timestamp).getTime();
-      if (now - setupTime > 300000) {
-          logger.warn(`Setup ${id} stuck in active state for > 5 mins. Forcing expiration.`);
-          this.transitionState(id, 'expired', 'Forced expiration due to stall');
+      // Allow setups to remain locked & monitored for up to 120 mins (2 hours) across session
+      if (now - setupTime > 120 * 60 * 1000) {
+          logger.warn(`Setup ${id} completed lifetime duration (> 2 hours). Clearing for fresh scan.`);
+          this.transitionState(id, 'expired', 'Expired after 2-hour monitoring window');
       }
     }
   }

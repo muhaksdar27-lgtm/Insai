@@ -282,22 +282,38 @@ export class TradingEngine {
         const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, pyData, context);
         (setup as any).setupSnapshot = translatedSnapshot;
 
-        // Step 1: INITIALIZING check
-        await this.advanceStateMachine(sm, STEPS.INITIALIZING, 'System initialized', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
+        // Restore previous state if it exists
+        if (setup.status !== 'scanning' && setup.status !== 'candidate' && setup.status !== 'archived') {
+            sm.forceState(setup.status as any, "Restoring state from cache");
+        }
 
         const evaluatedRules = RuleEngine.evaluateStrategyRules(strategyId, context, pyData);
         const candidateEval = CandidateEvaluator.evaluateCandidate(strategyId, evaluatedRules);
 
-        // Check if candidate evaluator returned WAITING
+        // Check if candidate evaluator returned WAITING (e.g. Monitoring for trigger candle)
         if (candidateEval.isWaiting) {
-          const reason = candidateEval.rejectionReason || '';
-          const isScanning = reason.includes('structure') || reason.includes('sweep') || reason.includes('CHoCH') || reason.includes('OB/FVG') || reason.includes('zone') || reason.includes('engulfing') || reason.includes('double') || reason.includes('overlap') || reason.includes('pattern') || reason.includes('reversal') || reason.includes('Monitored');
-          const step = isScanning ? STEPS.SCANNING : STEPS.WAITING_MARKET;
-          await this.advanceStateMachine(sm, step, reason || 'Waiting for market data or session', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
-          logger.info(`[${step}] Strategy ${strategyId} waiting: ${reason}`);
-          if (!isScanning) {
-            this.setupDetector.clearStrategySetup(strategyId, context.symbol);
+          const reason = candidateEval.rejectionReason || 'Monitoring for trigger confluence';
+          
+          let step: string = STEPS.SCANNING;
+          const waitRule = Object.values(evaluatedRules).find(r => r.status === 'WAIT' && r.mandatory);
+          if (waitRule) {
+             const rName = waitRule.ruleName;
+             if (rName === 'rule_session_restriction') step = STEPS.WAITING_MARKET;
+             else if (rName === 'rule_h1_trend' || rName === 'rule_market_data') step = STEPS.SCANNING;
+             else if (rName === 'rule_liquidity_sweep' || rName === 'rule_choch_confirmation' || rName === 'rule_sd_zone' || rName === 'rule_scalp_pattern' || rName === 'rule_news_reversal' || rName === 'rule_confluence_overlap') step = STEPS.SETUP_FOUND;
+             else if (rName === 'rule_ob_fvg_entry' || rName === 'rule_engulfing_trigger') step = STEPS.RULE_VALIDATION;
+             else if (rName === 'rule_risk_reward' || rName === 'rule_spread_check' || rName === 'rule_atr_sl_buffer') step = STEPS.RISK_VALIDATION;
           }
+          
+          // Lock setup in candidate/monitoring state so it stays locked across ticks
+          this.setupDetector.lockStrategySetup(strategyId, context.symbol, setup);
+
+          await this.advanceStateMachine(sm, step as any, reason, setup.id, context, { 
+            marketStates, 
+            ruleResults: evaluatedRules, 
+            setupDetails: translatedSnapshot 
+          });
+          logger.info(`[${step}] Strategy ${strategyId} locked & monitoring: ${reason}`);
           return;
         }
 
@@ -315,9 +331,6 @@ export class TradingEngine {
         }
 
         // Candidate accepted -> Proceed deterministically
-        // Step 2: SCANNING
-        await this.advanceStateMachine(sm, STEPS.SCANNING, 'Scanning market data feed', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
-
         // Step 3: SETUP_FOUND
         if (setup.status === 'scanning') {
           setup = this.setupDetector.transitionState(setup.id, 'candidate', 'Setup parameters identified');

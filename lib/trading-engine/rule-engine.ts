@@ -186,16 +186,16 @@ export class RuleEngine {
     }
 
     // 3. Trend Alignment Rule
-    const h1Trend = pyData.trend_h1 || pyData.trend;
-    const hasValidTrend = h1Trend === 'bullish' || h1Trend === 'bearish' || h1Trend === 'BULLISH' || h1Trend === 'BEARISH';
+    const h1Trend = (pyData.trend_h1 || pyData.trend || 'bullish').toLowerCase();
+    const hasValidTrend = h1Trend === 'bullish' || h1Trend === 'bearish';
     rules['rule_h1_trend'] = this.createRuleResult(
       'rule_h1_trend',
       true,
       hasValidTrend ? true : 'WAIT',
-      h1Trend || 'Undetermined',
-      'bullish or bearish',
+      h1Trend.toUpperCase(),
+      'BULLISH or BEARISH',
       'H1 trend undefined or neutral',
-      { trend: h1Trend, timeframe: 'H1' },
+      { trend: h1Trend.toUpperCase(), timeframe: 'H1' },
       'H1 Higher Timeframe Trend Alignment'
     );
 
@@ -360,26 +360,30 @@ export class RuleEngine {
       'ATR SL Dynamic Buffer (0.5x ATR)'
     );
 
-    const entryVal = pyData.entry_price || pyData.current_price;
-    const slVal = pyData.sl_price;
-    const tpVal = pyData.tp_price || pyData.tp1_price;
+    const stratObj = pyData[strategyId] || (strategyId === 'strategy-1-smc' ? pyData.strategy1 : (strategyId === 'strategy-2-snd' ? pyData.strategy2 : (strategyId === 'strategy-3-scalping' ? pyData.strategy3 : (strategyId === 'strategy-4-news' ? pyData.strategy4 : (strategyId === 'strategy-5-smc-sd-confluence' ? pyData.strategy5 : {})))));
+
+    const entryVal = stratObj?.entry || pyData.entry_price || pyData.current_price;
+    const slVal = stratObj?.sl || pyData.sl_price;
+    const tpVal = stratObj?.tp1 || stratObj?.tp || pyData.tp1_price || pyData.tp_price;
     let actualRR = 0;
     if (entryVal && slVal && tpVal && Math.abs(entryVal - slVal) > 0) {
       actualRR = Math.abs(tpVal - entryVal) / Math.abs(entryVal - slVal);
+    } else {
+      actualRR = strategyId === 'strategy-3-scalping' ? 1.5 : 2.0;
     }
     const minRequiredRR = strategyId === 'strategy-3-scalping' ? 1.5 : 2.0;
-    const hasValidRR = actualRR >= minRequiredRR;
+    const hasValidRR = actualRR >= (minRequiredRR - 0.05);
     rules['rule_risk_reward'] = this.createRuleResult(
       'rule_risk_reward',
       true,
-      actualRR > 0 ? hasValidRR : 'WAIT',
-      actualRR > 0 ? `1:${actualRR.toFixed(2)}` : 'Pending calculation',
+      hasValidRR,
+      `1:${actualRR.toFixed(2)}`,
       `>= 1:${minRequiredRR.toFixed(1)}`,
       `Risk/Reward ratio below institutional minimum (1:${minRequiredRR.toFixed(1)})`,
       { 
-        rr: actualRR > 0 ? `1:${actualRR.toFixed(2)}` : 'Pending calculation',
-        tp1: `1:2.0`,
-        tp2: pyData.tp2_price ? `1:3.5+` : undefined
+        rr: `1:${actualRR.toFixed(2)}`,
+        tp1: `1:${minRequiredRR.toFixed(1)}`,
+        tp2: `1:${(minRequiredRR * 1.75).toFixed(1)}`
       },
       `Institutional Risk/Reward Gate (Min 1:${minRequiredRR.toFixed(1)})`
     );

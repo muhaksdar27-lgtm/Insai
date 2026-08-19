@@ -47,7 +47,7 @@ export class MarketScanner {
       const snapshot = msg.payload as MarketSnapshot;
       if (snapshot.symbol === 'XAUUSD') {
         const now = Date.now();
-        if (now - this.lastScanTime > 20000) { // 20s throttle per tick scan to prevent spamming
+        if (now - this.lastScanTime > 5000) { // 5s throttle per tick scan for fast responsiveness
           this.lastScanTime = now;
           this.scan();
         }
@@ -64,15 +64,15 @@ export class MarketScanner {
     // Initial scan
     this.scan();
     
-    // Fallback interval (every 30 seconds) in case WebSocket/Redis is quiet
+    // Fallback interval (every 10 seconds) in case WebSocket/Redis is quiet
     this.timer = setInterval(() => {
       if (!this.isRunning || this.isScanning) return;
       const now = Date.now();
-      if (now - this.lastScanTime > 30000) {
+      if (now - this.lastScanTime > 10000) {
         this.lastScanTime = now;
         this.scan();
       }
-    }, 30000);
+    }, 10000);
   }
 
   public stop() {
@@ -282,10 +282,8 @@ export class MarketScanner {
       if (candles.length > 0) {
         const latestCandleTime = new Date(candles[candles.length - 1].timestamp).getTime();
         const now = Date.now();
-        // Allow up to 60 minutes for fallback feeds (e.g. Yahoo Finance) to prevent lockouts
-        if (now - latestCandleTime > 60 * 60 * 1000) {
-          logger.warn(`[STALE_DATA_SCAN_SKIPPED] Market scan skipped for XAUUSD: Latest candle timestamp (${candles[candles.length - 1].timestamp}) is older than 60 mins.`);
-          return;
+        if (now - latestCandleTime > 4 * 60 * 60 * 1000) {
+          logger.info(`[OFF_HOURS_DATA] Using latest market data candle timestamp (${candles[candles.length - 1].timestamp}) for setup evaluation.`);
         }
       }
 

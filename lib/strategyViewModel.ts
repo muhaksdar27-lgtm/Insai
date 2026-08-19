@@ -282,16 +282,21 @@ export function buildSetupSnapshot(strategyId: string, context: any) {
   if (!config) return null;
 
   const snap = context || {};
-  const h1Trend = snap.h1Bias ?? snap.marketBias ?? snap.bias ?? snap.trend_h1 ?? snap.trend ?? "--";
+  const h1Trend = snap.h1Bias ?? snap.marketBias ?? snap.bias ?? snap.h1Trend ?? snap.trend_h1 ?? snap.trend ?? "--";
   const biasUpper = h1Trend !== "--" ? String(h1Trend).toUpperCase() : "--";
   
+  const dir = snap.direction || snap.signal_direction || snap.signalDirection || (biasUpper === 'BULLISH' ? 'BUY' : (biasUpper === 'BEARISH' ? 'SELL' : '--'));
+  const dirUpper = String(dir).toUpperCase();
+  const normalizedDirection = (dirUpper === 'BUY' || dirUpper === 'LONG') ? 'BUY' : ((dirUpper === 'SELL' || dirUpper === 'SHORT') ? 'SELL' : '--');
+
   // Base fields
   const base = {
     pair: snap.pair || snap.symbol || "XAUUSD",
-    session: snap.session || "London",
+    session: snap.session || snap.current_session || "London",
     timeframe: snap.timeframe || "M15",
     
     // Core attributes
+    direction: normalizedDirection,
     h1Bias: biasUpper,
     bias: biasUpper,
     marketBias: biasUpper,
@@ -304,14 +309,15 @@ export function buildSetupSnapshot(strategyId: string, context: any) {
     atrBuffer50Pct: snap.atrBuffer50Pct ?? `${(Number(snap.atr14 || snap.atr || 4.5) * 0.5 * 10).toFixed(1)} pips`,
     entry: snap.entry ?? snap.entryPrice ?? snap.current_price ?? "--",
     sl: snap.sl ?? snap.slPrice ?? "--",
-    tp1: snap.tp1 ?? snap.tp1Price ?? snap.tpPrice ?? "--",
+    tp1: snap.tp1 ?? snap.tp1Price ?? snap.tpPrice ?? snap.tp ?? "--",
+    tp: snap.tp ?? snap.tpPrice ?? snap.tp1Price ?? snap.tp1 ?? "--",
     tp2: snap.tp2 ?? snap.tp2Price ?? "--",
     tp3: snap.tp3 ?? snap.tp3Price ?? "--",
     rr: snap.rr ?? "--",
     
     // Validation flags
     sweepStatus: snap.sweepStatus ?? snap.liq_sweep_status ?? "--",
-    confirmationStatus: snap.confirmationStatus ?? snap.confirmation_status ?? snap.chochStatus ?? "--",
+    confirmationStatus: snap.confirmationStatus ?? snap.confirmation_status ?? snap.chochStatus ?? snap.reversalStatus ?? snap.confluenceStatus ?? "--",
     chochStatus: snap.chochStatus ?? "--",
     bosStatus: snap.bosStatus ?? "--",
     engulfingStatus: snap.engulfingStatus ?? "--",
@@ -419,13 +425,13 @@ export function buildSetup(strategy: StrategyResponse) {
       const sl = Number(snap.sl);
       const tp1 = Number(snap.tp1);
       
-      const directionRaw = typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : '';
-      if (strategy.setupSnapshot?.direction === 'buy' || directionRaw === 'LONG' || directionRaw === 'BUY') {
-         risk = entry - sl;
-         reward = tp1 - entry;
-      } else if (strategy.setupSnapshot?.direction === 'sell' || directionRaw === 'SHORT' || directionRaw === 'SELL') {
-         risk = sl - entry;
-         reward = entry - tp1;
+      const directionRaw = typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : (snap.direction || '');
+      if (directionRaw === 'LONG' || directionRaw === 'BUY') {
+         risk = Math.abs(entry - sl);
+         reward = Math.abs(tp1 - entry);
+      } else if (directionRaw === 'SHORT' || directionRaw === 'SELL') {
+         risk = Math.abs(sl - entry);
+         reward = Math.abs(entry - tp1);
       }
       if (risk > 0) {
           rr = `1:${(reward / risk).toFixed(1)}`;
@@ -445,14 +451,14 @@ export function buildSetup(strategy: StrategyResponse) {
       bias: snap?.h1Bias && snap.h1Bias !== "--" ? snap.h1Bias : (snap?.bias && snap.bias !== "--" ? snap.bias : '--'),
       session: snap?.session && snap.session !== "--" ? snap.session : '--',
       direction: (() => {
-        const d = typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : '';
+        const d = (typeof strategy.setupSnapshot?.direction === 'string' ? strategy.setupSnapshot.direction.toUpperCase() : (snap?.direction || '')).toUpperCase();
         if (d === 'LONG' || d === 'BUY') return 'BUY';
         if (d === 'SHORT' || d === 'SELL') return 'SELL';
         return d && d !== '--' ? d : '--';
       })(),
       entry: formatPrice(snap?.entry),
       sl: formatPrice(snap?.sl),
-      tp: formatPrice(snap?.tp1),
+      tp: formatPrice(snap?.tp1 !== '--' ? snap?.tp1 : snap?.tp),
       rr: rr,
       validationLogSummary: snap?.validationLogSummary,
       timeframe: snap?.timeframe && snap.timeframe !== "--" ? snap.timeframe : '--',

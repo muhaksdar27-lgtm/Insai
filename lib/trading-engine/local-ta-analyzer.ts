@@ -2,6 +2,7 @@ import { Candle } from '@/types';
 import { 
   calculateATR, 
   calculateSMA, 
+  calculateEMA,
   findPivots, 
   findFVGs, 
   findBOS, 
@@ -47,9 +48,18 @@ export class LocalTAAnalyzer {
     const atr = calculateATR(candles, 14) || 4.5;
 
     // 2. Calculate Trend (Multi-Moving Average & HTF Structure Alignment)
-    const sma20 = calculateSMA(candles, Math.min(20, candles.length)) || currentPrice;
-    const sma50 = calculateSMA(candles, Math.min(50, candles.length)) || sma20;
-    const isBullishTrend = currentPrice >= sma20 || sma20 >= sma50;
+    const ema20 = calculateEMA(candles, Math.min(20, candles.length)) || currentPrice;
+    const ema50 = calculateEMA(candles, Math.min(50, candles.length)) || ema20;
+    const sma50 = calculateSMA(candles, Math.min(50, candles.length)) || ema50;
+    
+    // Check recent swing highs and lows structure (last 20 bars)
+    const recentBars = candles.slice(-20);
+    const recentPivots = findPivots(recentBars, 3, 3);
+    const higherHighs = recentPivots.highs.length >= 2 && recentPivots.highs[recentPivots.highs.length - 1].price > recentPivots.highs[0].price;
+    const higherLows = recentPivots.lows.length >= 2 && recentPivots.lows[recentPivots.lows.length - 1].price > recentPivots.lows[0].price;
+    const structureBullish = higherHighs || higherLows;
+
+    const isBullishTrend = (currentPrice >= ema20 && ema20 >= ema50) || (currentPrice >= sma50) || structureBullish;
     const trend_h1 = isBullishTrend ? 'bullish' : 'bearish';
 
     // 3. Premium vs Discount Matrix (Dealing Range)
@@ -135,9 +145,11 @@ export class LocalTAAnalyzer {
     // 11. Candlestick Engulfing Trigger (with body expansion check)
     let engulfing_bull = false;
     let engulfing_bear = false;
-    if (candles.length >= 2) {
-      const last = candles[candles.length - 1];
-      const prev = candles[candles.length - 2];
+    // We should check the last CLOSED candle, not the forming one
+    const closedCandles = candles.length > 1 ? candles.slice(0, candles.length - 1) : candles;
+    if (closedCandles.length >= 2) {
+      const last = closedCandles[closedCandles.length - 1];
+      const prev = closedCandles[closedCandles.length - 2];
       if (last.close > last.open && prev.close < prev.open && last.close >= prev.open && last.open <= prev.close) {
         engulfing_bull = true;
       } else if (last.close < last.open && prev.close > prev.open && last.close <= prev.open && last.open >= prev.close) {
@@ -220,9 +232,15 @@ export class LocalTAAnalyzer {
       ? ((s2_activeDemand?.bottom || s2_entry - atr) - (atr * 0.5))
       : ((s2_activeSupply?.top || s2_entry + atr) + (atr * 0.5));
     const s2_risk = Math.abs(s2_entry - s2_sl) || (atr * 0.5);
-    const s2_tp1 = s2_direction === 'buy'
+    
+    // Ensure minimum 1:2 RR
+    let s2_tp1 = s2_direction === 'buy'
       ? (s2_activeSupply?.bottom && s2_activeSupply.bottom > s2_entry ? s2_activeSupply.bottom : s2_entry + (s2_risk * 2.0))
       : (s2_activeDemand?.top && s2_activeDemand.top < s2_entry ? s2_activeDemand.top : s2_entry - (s2_risk * 2.0));
+    
+    if (s2_direction === 'buy' && (s2_tp1 - s2_entry) < s2_risk * 2.0) s2_tp1 = s2_entry + s2_risk * 2.0;
+    if (s2_direction === 'sell' && (s2_entry - s2_tp1) < s2_risk * 2.0) s2_tp1 = s2_entry - s2_risk * 2.0;
+    
     const s2_tp2 = s2_direction === 'buy' ? s2_entry + (s2_risk * 3.0) : s2_entry - (s2_risk * 3.0);
 
     // Strategy 3 (Scalping M1) Setup

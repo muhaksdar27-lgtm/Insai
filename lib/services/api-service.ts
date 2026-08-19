@@ -1,6 +1,7 @@
 import { getDatabaseClient } from '@/lib/db/client';
 import { getAllStrategies } from '@/lib/trading-engine/strategy-registry';
 import { normalizeStrategyFromDB } from '@/lib/trading-engine/strategy-normalize';
+import { getMarketScanner } from '@/lib/trading-engine/scanner';
 
 export async function getStrategiesData() {
     const allStrats = getAllStrategies();
@@ -20,10 +21,24 @@ export async function getStrategiesData() {
         }
       }
     }
-    const statePromises = baseStrategies.map(strategy =>
+    let statePromises = baseStrategies.map(strategy =>
       getDatabaseClient().getStrategyState(strategy.id).catch(() => null)
     );
-    const states = await Promise.all(statePromises);
+    let states = await Promise.all(statePromises);
+    
+    // If no states exist yet in DB or all are null, trigger an instant scan and reload
+    const hasAnyState = states.some(s => s && typeof s === 'object' && s.state_name);
+    if (!hasAnyState) {
+      try {
+        await getMarketScanner().scan(true);
+        statePromises = baseStrategies.map(strategy =>
+          getDatabaseClient().getStrategyState(strategy.id).catch(() => null)
+        );
+        states = await Promise.all(statePromises);
+      } catch (e) {
+        // Fallback gracefully
+      }
+    }
     
     let normalizedList = [];
     for (let i = 0; i < baseStrategies.length; i++) {

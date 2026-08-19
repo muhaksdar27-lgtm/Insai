@@ -85,11 +85,15 @@ export class QualityGate {
     }
 
     // 7. RR (Risk Reward) Ratio Check
-    const entry = state.context?.entryPrice || 0;
-    const sl = state.context?.slPrice || 0;
-    const tp1 = state.context?.tp1Price || 0;
+    const stateCtx = (state.context as any) || {};
+    const snap = stateCtx.setupSnapshot || stateCtx || {};
+    const stratKey = strategyId.replace('-', '_');
+    const stratData = marketContext?.[stratKey] || marketContext?.strategy1 || {};
+    const entry = Number(snap.entryPrice || snap.entry || stateCtx.entryPrice || stratData.entry || 0);
+    const sl = Number(snap.slPrice || snap.sl || stateCtx.slPrice || stratData.sl || 0);
+    const tp1 = Number(snap.tp1Price || snap.tp1 || snap.tpPrice || stateCtx.tp1Price || stratData.tp1 || 0);
     
-    if (entry && sl && tp1) {
+    if (entry > 0 && sl > 0 && tp1 > 0) {
        const risk = Math.abs(entry - sl);
        const reward = Math.abs(tp1 - entry);
        if (risk > 0) {
