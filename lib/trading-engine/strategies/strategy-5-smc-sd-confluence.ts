@@ -36,6 +36,7 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
   else if (hasPending) isCandidateValid = 'pending';
   else isCandidateValid = confluenceScore >= 80;
 
+  const s5 = pyData.strategy5 || {};
   const sweepBull = !!pyData.liq_sweep_bull;
   const sweepBear = !!pyData.liq_sweep_bear;
   const chochBull = !!pyData.choch_bull;
@@ -52,16 +53,15 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
 
   const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
   
-  const direction: 'buy' | 'sell' = (chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
+  const direction: 'buy' | 'sell' = s5.direction || ((chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy')));
 
   const confirmationStatus = ((bosBull || bosBear) && sdActive) ? 'SMC-SD Confluence Confirmed' : 'SMC-SD Confluence Monitored';
 
   const atr = pyData.atr || 4.5;
-  const riskDistance = atr * 0.5;
-  const entryPriceVal = pyData.entry_price || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
-  const slVal = pyData.sl_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined);
-  const tp1Val = pyData.tp1_price || pyData.tp_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
-  const tp2Val = pyData.tp2_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.5) : entryPriceVal - (riskDistance * 3.5)) : undefined);
+  const entryPriceVal = s5.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
+  const slVal = s5.sl || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - (atr * 0.5) : entryPriceVal + (atr * 0.5)) : undefined);
+  const tp1Val = s5.tp1 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.25) : entryPriceVal - (atr * 1.25)) : undefined);
+  const tp2Val = s5.tp2 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 2.0) : entryPriceVal - (atr * 2.0)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'Any';
 
@@ -83,11 +83,11 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
     tp1Price: tp1Val,
     tp2: tp2Val,
     tp2Price: tp2Val,
-    rr: candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
+    rr: s5.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.5',
     dealingRangeZone: pyData.dealing_range_zone || 'EQUILIBRIUM',
     sdPattern: pyData.sd_pattern || 'DBR',
     zoneFreshness: pyData.zone_freshness || 'FRESH',
-    confluenceStatus: ((bosBull || bosBear || chochBull || chochBear) && sdActive) ? `SMC + ${pyData.sd_pattern || 'S&D'} Confluence Confirmed` : 'Confluence Overlap Monitored',
+    confluenceStatus: s5.confluenceStatus || (((bosBull || bosBear || chochBull || chochBear) && sdActive) ? `SMC + ${pyData.sd_pattern || 'S&D'} Confluence Confirmed` : 'Confluence Overlap Monitored'),
     atr14: atr,
     atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,
     confluenceScore,

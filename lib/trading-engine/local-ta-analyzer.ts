@@ -192,32 +192,137 @@ export class LocalTAAnalyzer {
     const isBuySignal = bullishWeight >= bearishWeight;
     const signal_direction: 'buy' | 'sell' = isBuySignal ? 'buy' : 'sell';
 
-    // 15. Institutional Risk-Reward Engine (TP1 = 1:2.0 partial, TP2 = 1:3.5+ liquidity run)
-    const riskDistance = atr * 0.5;
-    const entry_price = currentPrice;
-    const sl_price = signal_direction === 'buy' ? currentPrice - riskDistance : currentPrice + riskDistance;
-    const tp1_price = signal_direction === 'buy' ? currentPrice + (riskDistance * 2.0) : currentPrice - (riskDistance * 2.0);
-    const tp2_price = signal_direction === 'buy' ? currentPrice + (riskDistance * 3.5) : currentPrice - (riskDistance * 3.5);
-    const tp_price = tp1_price;
-
     const maxScore = Math.max(bullishWeight, bearishWeight);
     const confluence_score = Math.min(98, Math.max(65, maxScore));
+
+    // 15. Strategy-Specific Precision Setups & Levels
+    // Strategy 1 (SMC London M15) Setup
+    const s1_direction: 'buy' | 'sell' = (asianSweepBull || liq_sweep_bull || choch_bull) ? 'buy' : ((asianSweepBear || liq_sweep_bear || choch_bear) ? 'sell' : signal_direction);
+    const s1_entry = s1_direction === 'buy'
+      ? (activeBullishFvg[activeBullishFvg.length - 1]?.top || activeBullishOb[activeBullishOb.length - 1]?.top || currentPrice)
+      : (activeBearishFvg[activeBearishFvg.length - 1]?.bottom || activeBearishOb[activeBearishOb.length - 1]?.bottom || currentPrice);
+    const s1_riskDist = Math.max(atr * 0.5, 1.2);
+    const s1_sl = s1_direction === 'buy'
+      ? (sessionPools.asianLow ? sessionPools.asianLow - (atr * 0.3) : s1_entry - s1_riskDist)
+      : (sessionPools.asianHigh ? sessionPools.asianHigh + (atr * 0.3) : s1_entry + s1_riskDist);
+    const s1_risk = Math.abs(s1_entry - s1_sl) || s1_riskDist;
+    const s1_tp1 = s1_direction === 'buy' ? s1_entry + (s1_risk * 2.0) : s1_entry - (s1_risk * 2.0);
+    const s1_tp2 = s1_direction === 'buy' ? s1_entry + (s1_risk * 3.5) : s1_entry - (s1_risk * 3.5);
+
+    // Strategy 2 (Supply & Demand M15) Setup
+    const s2_direction: 'buy' | 'sell' = (isNearDemand || engulfing_bull) ? 'buy' : ((isNearSupply || engulfing_bear) ? 'sell' : signal_direction);
+    const s2_activeDemand = freshDemandZones[freshDemandZones.length - 1];
+    const s2_activeSupply = freshSupplyZones[freshSupplyZones.length - 1];
+    const s2_entry = s2_direction === 'buy'
+      ? (s2_activeDemand?.top || currentPrice)
+      : (s2_activeSupply?.bottom || currentPrice);
+    const s2_sl = s2_direction === 'buy'
+      ? ((s2_activeDemand?.bottom || s2_entry - atr) - (atr * 0.5))
+      : ((s2_activeSupply?.top || s2_entry + atr) + (atr * 0.5));
+    const s2_risk = Math.abs(s2_entry - s2_sl) || (atr * 0.5);
+    const s2_tp1 = s2_direction === 'buy'
+      ? (s2_activeSupply?.bottom && s2_activeSupply.bottom > s2_entry ? s2_activeSupply.bottom : s2_entry + (s2_risk * 2.0))
+      : (s2_activeDemand?.top && s2_activeDemand.top < s2_entry ? s2_activeDemand.top : s2_entry - (s2_risk * 2.0));
+    const s2_tp2 = s2_direction === 'buy' ? s2_entry + (s2_risk * 3.0) : s2_entry - (s2_risk * 3.0);
+
+    // Strategy 3 (Scalping M1) Setup
+    const s3_direction: 'buy' | 'sell' = (double_bottom || liq_sweep_bull) ? 'buy' : ((double_top || liq_sweep_bear) ? 'sell' : signal_direction);
+    const s3_entry = currentPrice;
+    const s3_riskDist = Math.max(atr * 0.3, 0.8); // Tight scalp risk
+    const s3_sl = s3_direction === 'buy' ? s3_entry - s3_riskDist : s3_entry + s3_riskDist;
+    const s3_tp1 = s3_direction === 'buy' ? s3_entry + (s3_riskDist * 1.5) : s3_entry - (s3_riskDist * 1.5);
+    const s3_tp2 = s3_direction === 'buy' ? s3_entry + (s3_riskDist * 2.5) : s3_entry - (s3_riskDist * 2.5);
+
+    // Strategy 4 (News Sweep Reversal) Setup
+    const s4_direction: 'buy' | 'sell' = (liq_sweep_bull || choch_bull) ? 'buy' : ((liq_sweep_bear || choch_bear) ? 'sell' : (signal_direction === 'buy' ? 'sell' : 'buy'));
+    const s4_entry = currentPrice;
+    const s4_riskDist = Math.max(atr * 0.6, 1.5);
+    const s4_sl = s4_direction === 'buy' ? s4_entry - s4_riskDist : s4_entry + s4_riskDist;
+    const s4_tp1 = s4_direction === 'buy' ? s4_entry + (s4_riskDist * 2.5) : s4_entry - (s4_riskDist * 2.5);
+    const s4_tp2 = s4_direction === 'buy' ? s4_entry + (s4_riskDist * 4.0) : s4_entry - (s4_riskDist * 4.0);
+
+    // Strategy 5 (SMC-SD Confluence) Setup
+    const s5_direction: 'buy' | 'sell' = ((choch_bull || isNearDemand) && isDiscount) ? 'buy' : (((choch_bear || isNearSupply) && isPremium) ? 'sell' : signal_direction);
+    const fib618Price = dealingRange.swingLow + (dealingRange.rangeSize * 0.618);
+    const fib786Price = dealingRange.swingLow + (dealingRange.rangeSize * 0.786);
+    const s5_entry = s5_direction === 'buy'
+      ? (s2_entry || fib618Price || currentPrice)
+      : (s2_entry || fib618Price || currentPrice);
+    const s5_riskDist = Math.max(atr * 0.5, 1.2);
+    const s5_sl = s5_direction === 'buy'
+      ? (fib786Price < s5_entry ? fib786Price : s5_entry - s5_riskDist)
+      : (fib786Price > s5_entry ? fib786Price : s5_entry + s5_riskDist);
+    const s5_risk = Math.abs(s5_entry - s5_sl) || s5_riskDist;
+    const s5_tp1 = s5_direction === 'buy' ? s5_entry + (s5_risk * 2.5) : s5_entry - (s5_risk * 2.5);
+    const s5_tp2 = s5_direction === 'buy' ? s5_entry + (s5_risk * 4.0) : s5_entry - (s5_risk * 4.0);
 
     return {
       symbol,
       timeframe,
       current_price: currentPrice,
-      entry_price,
-      sl_price,
-      tp1_price,
-      tp2_price,
-      tp_price,
+      entry_price: currentPrice,
+      sl_price: signal_direction === 'buy' ? currentPrice - (atr * 0.5) : currentPrice + (atr * 0.5),
+      tp1_price: signal_direction === 'buy' ? currentPrice + (atr * 1.0) : currentPrice - (atr * 1.0),
+      tp2_price: signal_direction === 'buy' ? currentPrice + (atr * 1.75) : currentPrice - (atr * 1.75),
+      tp_price: signal_direction === 'buy' ? currentPrice + (atr * 1.0) : currentPrice - (atr * 1.0),
       signal_direction,
       session: current_session,
       current_session,
       trend_h1,
       trend: trend_h1,
       
+      // Strategy-specific setup structures
+      strategy1: {
+        direction: s1_direction,
+        entry: Number(s1_entry.toFixed(2)),
+        sl: Number(s1_sl.toFixed(2)),
+        tp1: Number(s1_tp1.toFixed(2)),
+        tp2: Number(s1_tp2.toFixed(2)),
+        rr: `1:${(Math.abs(s1_tp1 - s1_entry) / Math.abs(s1_entry - s1_sl)).toFixed(1)}`,
+        sweepStatus: (asianSweepBull || asianSweepBear || liq_sweep_bull || liq_sweep_bear) ? 'Asia Sweep Confirmed' : 'Asia Sweep Monitored',
+        chochStatus: (choch_bull || choch_bear) ? 'M15 CHoCH Confirmed' : 'M15 CHoCH Monitored',
+        obFvgStatus: (ob_fvg_bull || ob_fvg_bear) ? 'OB/FVG Aligned' : 'OB/FVG Monitored'
+      },
+      strategy2: {
+        direction: s2_direction,
+        entry: Number(s2_entry.toFixed(2)),
+        sl: Number(s2_sl.toFixed(2)),
+        tp1: Number(s2_tp1.toFixed(2)),
+        tp2: Number(s2_tp2.toFixed(2)),
+        rr: `1:${(Math.abs(s2_tp1 - s2_entry) / Math.abs(s2_entry - s2_sl)).toFixed(1)}`,
+        sdZoneStatus: `${primarySDPattern} (${zoneFreshness}) Active`,
+        engulfingStatus: (engulfing_bull || engulfing_bear || hasDisplacement) ? 'Engulfing / Momentum Confirmed' : 'Engulfing Monitored'
+      },
+      strategy3: {
+        direction: s3_direction,
+        entry: Number(s3_entry.toFixed(2)),
+        sl: Number(s3_sl.toFixed(2)),
+        tp1: Number(s3_tp1.toFixed(2)),
+        tp2: Number(s3_tp2.toFixed(2)),
+        rr: `1:${(Math.abs(s3_tp1 - s3_entry) / Math.abs(s3_entry - s3_sl)).toFixed(1)}`,
+        sweepStatus: (liq_sweep_bull || liq_sweep_bear) ? 'Scalp Sweep Confirmed' : 'Scalp Sweep Monitored',
+        doubleTopBottomStatus: (double_top || double_bottom) ? (double_top ? 'Double Top Confirmed' : 'Double Bottom Confirmed') : 'Pattern Monitored'
+      },
+      strategy4: {
+        direction: s4_direction,
+        entry: Number(s4_entry.toFixed(2)),
+        sl: Number(s4_sl.toFixed(2)),
+        tp1: Number(s4_tp1.toFixed(2)),
+        tp2: Number(s4_tp2.toFixed(2)),
+        rr: `1:${(Math.abs(s4_tp1 - s4_entry) / Math.abs(s4_entry - s4_sl)).toFixed(1)}`,
+        newsStatus: 'Normal Volatility',
+        reversalStatus: ((choch_bull || choch_bear || bos_bull || bos_bear) && (liq_sweep_bull || liq_sweep_bear)) ? 'Post-News Reversal Confirmed' : 'Reversal Monitored'
+      },
+      strategy5: {
+        direction: s5_direction,
+        entry: Number(s5_entry.toFixed(2)),
+        sl: Number(s5_sl.toFixed(2)),
+        tp1: Number(s5_tp1.toFixed(2)),
+        tp2: Number(s5_tp2.toFixed(2)),
+        rr: `1:${(Math.abs(s5_tp1 - s5_entry) / Math.abs(s5_entry - s5_sl)).toFixed(1)}`,
+        confluenceStatus: ((bos_bull || bos_bear || choch_bull || choch_bear) && sd_zone_active) ? `SMC + ${primarySDPattern} Confluence Confirmed` : 'Confluence Monitored'
+      },
+
       // Premium / Discount Dealing Range
       dealing_range_zone: dealingRangeZone,
       fib_level: fibLevel,

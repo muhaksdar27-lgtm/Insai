@@ -36,6 +36,7 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
   else if (hasPending) isCandidateValid = 'pending';
   else isCandidateValid = confluenceScore >= 80;
 
+  const s4 = pyData.strategy4 || {};
   const sweepBull = !!pyData.liq_sweep_bull;
   const sweepBear = !!pyData.liq_sweep_bear;
   const chochBull = !!pyData.choch_bull;
@@ -52,18 +53,17 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
 
   const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
   
-  const direction: 'buy' | 'sell' = (chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy'));
+  const direction: 'buy' | 'sell' = s4.direction || ((chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy')));
 
   const confirmationStatus = ((bosBull || bosBear) && (sweepBull || sweepBear)) ? 'Post-News Reversal Confirmed' : 'Post-News Reversal Monitored';
 
   const atr = pyData.atr || 4.5;
-  const riskDistance = atr * 0.5;
-  const entryPriceVal = pyData.entry_price || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
-  const slVal = pyData.sl_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - riskDistance : entryPriceVal + riskDistance) : undefined);
-  const tp1Val = pyData.tp1_price || pyData.tp_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 2.0) : entryPriceVal - (riskDistance * 2.0)) : undefined);
-  const tp2Val = pyData.tp2_price || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (riskDistance * 3.5) : entryPriceVal - (riskDistance * 3.5)) : undefined);
+  const entryPriceVal = s4.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
+  const slVal = s4.sl || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - (atr * 0.6) : entryPriceVal + (atr * 0.6)) : undefined);
+  const tp1Val = s4.tp1 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.5) : entryPriceVal - (atr * 1.5)) : undefined);
+  const tp2Val = s4.tp2 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 2.4) : entryPriceVal - (atr * 2.4)) : undefined);
   
-  const currentSession = pyData.current_session || pyData.session || 'Any';
+  const currentSession = pyData.current_session || pyData.session || 'News Window';
 
   const setupSnapshot = {
     strategyId: 'strategy-4-news',
@@ -83,11 +83,11 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
     tp1Price: tp1Val,
     tp2: tp2Val,
     tp2Price: tp2Val,
-    rr: candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
-    newsStatus: pyData.news_active ? 'News Window Active' : 'News Window Inactive',
-    reversalStatus: ((bosBull || bosBear || chochBull || chochBear) && (sweepBull || sweepBear)) ? 'News Reversal Confirmed' : 'News Reversal Monitored',
+    rr: s4.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.5',
+    newsStatus: s4.newsStatus || (pyData.news_high_impact_active ? 'High Impact Active' : 'Normal Post-News Volatility'),
+    reversalStatus: s4.reversalStatus || (((bosBull || bosBear || chochBull || chochBear) && (sweepBull || sweepBear)) ? 'Post-News Spike Reversal Confirmed' : 'News Reversal Monitored'),
     atr14: atr,
-    atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,
+    atrBuffer50Pct: `${((atr * 0.6) * 10).toFixed(1)} pips`,
     confluenceScore,
     confirmationStatus,
     aiDecision: pyData.aiDecision || 'PENDING'

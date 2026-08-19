@@ -26,21 +26,22 @@ export class SignalPipeline {
 
       const aiDecision = (setup as any).aiValidation?.decision || 'REJECTED';
       
-      // Global Cross-Strategy Market Setup Hash Deduplication
+      // Strategy-Specific Market Setup Hash Deduplication
+      const stratId = setup.sourceStrategy || (setup as any).strategyId || 'strategy-1-smc';
       const dir = (setup.direction || 'buy').toLowerCase();
       const entryRounded = Math.round((setup.entryPrice || 0) * 100);
       const slRounded = Math.round((setup.slPrice || 0) * 100);
       const snapshotTs = marketContext?.timestamp ? Math.floor(new Date(marketContext.timestamp).getTime() / 60000) : '';
-      const setupHash = crypto.createHash('sha256').update(`${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}_${snapshotTs}_${aiDecision}`).digest('hex').substring(0, 16);
+      const setupHash = crypto.createHash('sha256').update(`${stratId}_${setup.symbol}_${setup.timeframe}_${dir}_${entryRounded}_${slRounded}_${snapshotTs}_${aiDecision}`).digest('hex').substring(0, 16);
       
-      const GLOBAL_COOLDOWN_SECONDS = 300; // 5 minute global cross-strategy cooldown for exact same setup
-      const globalDedupKey = `global_signal_cooldown_${setupHash}`;
+      const STRATEGY_COOLDOWN_SECONDS = 120; // 2 minute cooldown for exact same setup under the same strategy
+      const strategyDedupKey = `strategy_signal_cooldown_${setupHash}`;
       
       let isDuplicateGlobalSetup = false;
       if (aiDecision === 'APPROVED' && !(setup as any).isSuppressed && (setup as any).qualityGatePassed !== false) {
-        const isGlobalNew = await getQueueManager().deduplicate(globalDedupKey, GLOBAL_COOLDOWN_SECONDS);
-        if (!isGlobalNew) {
-          logger.info(`[GLOBAL DEDUP] Signal ${setup.id} suppressed: Duplicate setup hash ${setupHash} across strategies.`);
+        const isStrategyNew = await getQueueManager().deduplicate(strategyDedupKey, STRATEGY_COOLDOWN_SECONDS);
+        if (!isStrategyNew) {
+          logger.info(`[STRATEGY DEDUP] Signal ${setup.id} suppressed: Duplicate setup hash ${setupHash} for strategy ${stratId}.`);
           isDuplicateGlobalSetup = true;
         }
       }

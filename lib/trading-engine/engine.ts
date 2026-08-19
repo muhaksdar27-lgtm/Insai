@@ -427,64 +427,34 @@ export class TradingEngine {
       }
     }));
 
-    // Step 7: Cross-Strategy Signal Deduplication & Final Dispatch
-    const candidateGroups: Record<string, typeof approvedCandidates> = {};
+    // Step 7: Independent Strategy Dispatch
     for (const cand of approvedCandidates) {
-      const groupKey = `${cand.setup.symbol}_${cand.setup.direction}`.toUpperCase();
-      if (!candidateGroups[groupKey]) candidateGroups[groupKey] = [];
-      candidateGroups[groupKey].push(cand);
-    }
+      const { winnerSetup, winner } = { winnerSetup: cand.setup, winner: cand };
+      
+      logger.info(`[SIGNAL CREATED] Strategy ${winner.strategyId} canonical signal object created for ${winnerSetup.symbol}`);
 
-    for (const [groupKey, candidates] of Object.entries(candidateGroups)) {
-      if (candidates.length === 0) continue;
+      let readySetup = this.setupDetector.transitionState(winnerSetup.id, 'ready', 'Setup confirmed and priced');
+      (readySetup as any).aiValidation = winner.validationResult;
+      (readySetup as any).qualityGatePassed = true;
+      (readySetup as any).marketStates = marketStates;
+      (readySetup as any).candidateRules = winner.evaluatedRules;
 
-      // Sort candidates by confidence -> score -> Risk/Reward to pick single best winner
-      candidates.sort((a, b) => {
-        if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-        if (b.score !== a.score) return b.score - a.score;
-        return b.rrVal - a.rrVal;
-      });
-
-      const winner = candidates[0];
-
-      // Suppress duplicate candidates
-      for (let i = 1; i < candidates.length; i++) {
-        const dup = candidates[i];
-        const suppressReason = `Suppressed: Duplicate strategy signal for same market event (lower confluence score than winner Strategy ${winner.strategyId})`;
-        logger.info(`[SUPPRESSED DUPLICATE] Strategy ${dup.strategyId} suppressed in favor of Strategy ${winner.strategyId} for ${groupKey}`);
-        this.setupDetector.transitionState(dup.setup.id, 'expired', suppressReason);
-        await this.advanceStateMachine(dup.sm, STEPS.FAILED, suppressReason, dup.setup.id, context, {
-          marketStates,
-          ruleResults: dup.evaluatedRules,
-          setupDetails: { ...dup.translatedSnapshot, aiDecision: 'SUPPRESSED' }
-        });
-      }
-
-      // Process Winner Dispatch
-      logger.info(`[SIGNAL CREATED] Strategy ${winner.strategyId} canonical signal object created for ${groupKey}`);
-
-      let winnerSetup = this.setupDetector.transitionState(winner.setup.id, 'ready', 'Setup confirmed and priced');
-      (winnerSetup as any).aiValidation = winner.validationResult;
-      (winnerSetup as any).qualityGatePassed = true;
-      (winnerSetup as any).marketStates = marketStates;
-      (winnerSetup as any).candidateRules = winner.evaluatedRules;
-
-      await this.advanceStateMachine(winner.sm, STEPS.SIGNAL_READY, 'Signal assembled with single source of truth', winnerSetup.id, context, {
+      await this.advanceStateMachine(winner.sm, STEPS.SIGNAL_READY, 'Signal assembled with single source of truth', readySetup.id, context, {
         marketStates,
         ruleResults: winner.evaluatedRules,
-        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: winnerSetup.direction, entryPrice: winnerSetup.entryPrice, slPrice: winnerSetup.slPrice, tpPrice: winnerSetup.tpPrice }
+        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: readySetup.direction, entryPrice: readySetup.entryPrice, slPrice: readySetup.slPrice, tpPrice: readySetup.tpPrice }
       });
 
-      winnerSetup = this.setupDetector.transitionState(winnerSetup.id, 'signal', 'Signal emitted');
-      await this.advanceStateMachine(winner.sm, STEPS.DISPATCHED, 'Signal dispatched to dashboard and execution feeds', winnerSetup.id, context, {
+      readySetup = this.setupDetector.transitionState(readySetup.id, 'signal', 'Signal emitted');
+      await this.advanceStateMachine(winner.sm, STEPS.DISPATCHED, 'Signal dispatched to dashboard and execution feeds', readySetup.id, context, {
         marketStates,
         ruleResults: winner.evaluatedRules,
-        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: winnerSetup.direction, entryPrice: winnerSetup.entryPrice, slPrice: winnerSetup.slPrice, tpPrice: winnerSetup.tpPrice }
+        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: readySetup.direction, entryPrice: readySetup.entryPrice, slPrice: readySetup.slPrice, tpPrice: readySetup.tpPrice }
       });
 
       // Dispatch signal (triggers [HISTORY SAVED], [LIVE SENT], and [TELEGRAM SENT])
-      await SignalBuilder.buildAndDispatchSignal(winnerSetup, context);
-      logger.info(`[DISPATCH COMPLETE] Signal ${winnerSetup.id} is now ACTIVE and published to Live Signals and Telegram.`);
+      await SignalBuilder.buildAndDispatchSignal(readySetup, context);
+      logger.info(`[DISPATCH COMPLETE] Signal ${readySetup.id} (${winner.strategyId}) is now ACTIVE and published.`);
     }
 
     this.setupDetector.audit();
