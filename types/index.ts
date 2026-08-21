@@ -50,7 +50,7 @@ export type StepStatus = 'awaiting' | 'active' | 'validated' | 'approved' | 'rej
 
 export type HealthStatus = 'ONLINE' | 'NOT CONFIGURED' | 'DISABLED' | 'UNAVAILABLE' | 'OFFLINE' | 'RATE LIMITED' | 'DEGRADED' | 'QUOTA_EXCEEDED' | 'LOCKED' | 'PROVIDER_ERROR' | 'CACHE_TIMEOUT' | 'INVALID_KEY';
 
-export type AIDecision = 'APPROVED' | 'REJECTED' | 'WAIT' | 'INVALIDATED' | 'FAILED' | 'PENDING' | 'AI OFFLINE';
+export type AIDecision = 'APPROVED' | 'REJECTED' | 'WAIT' | 'INVALIDATED' | 'FAILED' | 'PENDING' | 'AI OFFLINE' | 'AI_UNAVAILABLE' | 'VALIDATION_ERROR';
 
 export interface ProviderStatus {
   status?: string;
@@ -314,6 +314,10 @@ export interface MarketSnapshot extends ProviderStatus {
   freshness: 'live' | 'cached' | 'stale' | 'closed';
   session?: string;
   bias?: string;
+  ageMs?: number;
+  receivedAt?: string;
+  providerTimestamp?: string;
+  status?: string;
 }
 
 export interface Candle {

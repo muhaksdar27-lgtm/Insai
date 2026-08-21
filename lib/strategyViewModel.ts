@@ -51,6 +51,7 @@ export function normalizeStrategy(strategy: StrategyResponse) {
   
   const activeStep = steps.find(s => s.status === 'active') || steps[steps.length - 1];
   const currentStep = activeStep?.name || strategy.currentStep || 'Scanning';
+  const currentStepId = activeStep?.id || null;
 
   return {
     ...strategy,
@@ -58,6 +59,7 @@ export function normalizeStrategy(strategy: StrategyResponse) {
     progress,
     steps,
     currentStep,
+    currentStepId,
     setupSnapshot: strategy.setupSnapshot || null,
     ruleResults: strategy.ruleResults || null,
     signal: strategy.signal || null

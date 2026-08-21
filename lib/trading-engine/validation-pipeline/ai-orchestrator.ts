@@ -255,47 +255,32 @@ export class AIValidationOrchestrator {
     
     const aiHealth = getProviderRegistry().getProviderHealth("GeminiAI");
     if (aiHealth && aiHealth.circuitBreakerStatus === "open") {
-        const failsCount = validatorResults.filter(v => v.status === 'FAIL').length;
-        if (failsCount === 0 && passedCount > 0) {
-            logger.info(`AI Service circuit breaker is open (${aiHealth.healthStatus}), but Deterministic Rule Engine passed with 0 failures (${passedCount} rules passed). Approving signal via Deterministic Rule Engine fallback.`);
-            return {
-               strategyName: strategyId,
-               decision: "APPROVED",
-               checklist: validatorResults,
-               reasoning: "Approved via Deterministic Rule Engine (AI Circuit Breaker Fallback). All mandatory setup rules verified with 0 failures.",
-               evidence: "Deterministic Rule Engine Passed",
-               riskNotes: 'Rule Engine Validated',
-               missingFactors: [],
-               recommendedAction: "execute",
-               scores: { confidence: realScore || 100 }
-            };
-        }
-        logger.warn(`AI Service circuit breaker is open (${aiHealth.healthStatus}). Hard-blocking signal dispatch as AI validation is mandatory.`);
+        logger.warn(`AI Service circuit breaker is open (${aiHealth.healthStatus}). Setting decision to AI_UNAVAILABLE without auto-approving.`);
         return {
            strategyName: strategyId,
-           decision: "REJECTED",
+           decision: "AI_UNAVAILABLE",
            checklist: validatorResults,
-           reasoning: "AI Validation circuit breaker is OPEN. Signal suppressed per quality gate requirement.",
+           reasoning: "AI Validation circuit breaker is OPEN. Signal cannot be approved without AI validation layer.",
            evidence: "Circuit breaker open.",
-           riskNotes: "AI UNAVAILABLE - Circuit Breaker Open",
+           riskNotes: "AI_UNAVAILABLE - Circuit Breaker Open",
            missingFactors: ["AI Validation"],
-           recommendedAction: "block",
+           recommendedAction: "wait",
            scores: {}
         };
     }
     
     if (!this.isConfigured || !aiClient) {
-       logger.info('AI Service is not configured (Missing GEMINI_API_KEY). Proceeding with Deterministic Rule Engine validation.');
+       logger.info('AI Service is not configured (Missing GEMINI_API_KEY). Returning AI_UNAVAILABLE without auto-approving.');
        return {
           strategyName: strategyId,
-          decision: "APPROVED",
+          decision: "AI_UNAVAILABLE",
           checklist: validatorResults,
-          reasoning: "Approved via Deterministic Rule Engine (GEMINI_API_KEY optional). All mandatory setup rules verified.",
-          evidence: "Deterministic Rule Engine Passed",
-          riskNotes: 'Rule Engine Validated',
-          missingFactors: [],
-          recommendedAction: "execute",
-          scores: { confidence: realScore }
+          reasoning: "AI Service is not configured (Missing GEMINI_API_KEY). Signal held in AI_UNAVAILABLE state.",
+          evidence: "AI Service Not Configured",
+          riskNotes: 'AI_UNAVAILABLE',
+          missingFactors: ['AI Validation Layer'],
+          recommendedAction: "wait",
+          scores: { confidence: 0 }
        };
     }
 
@@ -462,39 +447,17 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       logger.warn(`AI Validation notice for ${strategyId}: ${cleanMsg}`);
       getProviderRegistry().reportError('GeminiAI', cleanMsg);
 
-      const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-      const failsCount = validatorResults.filter(v => v.status === 'FAIL').length;
-
-      if (failsCount === 0 && passedCount > 0) {
-        logger.info(`AI Service rate-limited (${cleanMsg}), but Deterministic Rule Engine passed with 0 failures (${passedCount} rules passed). Approving setup via Deterministic Rule Engine fallback.`);
-        const fallbackRes: ValidationPipelineResult = {
-           strategyName: strategyId,
-           decision: 'APPROVED',
-           checklist: validatorResults,
-           reasoning: `Approved via Deterministic Rule Engine fallback (${cleanMsg}). All mandatory setup rules verified with 0 failures.`,
-           evidence: "Deterministic Rule Engine Passed",
-           riskNotes: 'Rule Engine Validated',
-           missingFactors: [],
-           recommendedAction: 'allow_signal',
-           scores: { confidence: realScore || 90 }
-        };
-
-        this.cache.set(cacheKey, fallbackRes);
-        setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
-
-        return fallbackRes;
-      }
-
+      const fallbackDecision: AIDecision = (isQuotaExceeded || isTimeout) ? 'AI_UNAVAILABLE' : 'VALIDATION_ERROR';
       const fallbackRes: ValidationPipelineResult = {
          strategyName: strategyId,
-         decision: 'REJECTED',
+         decision: fallbackDecision,
          checklist: validatorResults,
-         reasoning: `AI Validation unavailable (${cleanMsg}). Signal suppressed per quality gate requirement.`,
-         evidence: "AI Validation failed.",
-         riskNotes: isQuotaExceeded ? 'AI UNAVAILABLE - Quota Exceeded' : (isTimeout ? 'AI UNAVAILABLE - Request Timeout' : 'AI UNAVAILABLE - System Error'),
-         missingFactors: ['AI Validation'],
-         recommendedAction: 'block',
-         scores: {}
+         reasoning: `AI Validation error (${cleanMsg}). Signal held without automatic approval per strict validation policy.`,
+         evidence: "AI Validation Error / Offline.",
+         riskNotes: isQuotaExceeded ? 'AI_UNAVAILABLE - Quota Exceeded' : (isTimeout ? 'AI_UNAVAILABLE - Request Timeout' : 'VALIDATION_ERROR - Service Error'),
+         missingFactors: ['AI Validation Layer'],
+         recommendedAction: 'wait',
+         scores: { confidence: 0 }
       };
 
       this.cache.set(cacheKey, fallbackRes);

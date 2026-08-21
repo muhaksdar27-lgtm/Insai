@@ -12,7 +12,7 @@ import crypto from 'crypto';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0';
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const port = 3000;
 const turbopack = false;
 
 export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed' | 'shutting_down';

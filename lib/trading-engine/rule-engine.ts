@@ -186,16 +186,32 @@ export class RuleEngine {
     }
 
     // 3. Trend Alignment Rule
-    const h1Trend = (pyData.trend_h1 || pyData.trend || 'bullish').toLowerCase();
-    const hasValidTrend = h1Trend === 'bullish' || h1Trend === 'bearish';
+    const rawTrend = (pyData.trend_h1 || pyData.trend || 'NEUTRAL').toUpperCase();
+    let trendPassed: boolean | 'WAIT' = false;
+    let trendReason = 'H1 trend is neutral';
+
+    if (rawTrend === 'BULLISH' || rawTrend === 'BEARISH') {
+      trendPassed = true;
+      trendReason = `H1 trend confirmed ${rawTrend}`;
+    } else if (rawTrend === 'INSUFFICIENT_DATA') {
+      trendPassed = 'WAIT';
+      trendReason = 'Insufficient H1 candle history for trend evaluation';
+    } else if (rawTrend === 'ANALYSIS_ERROR') {
+      trendPassed = false;
+      trendReason = 'H1 trend analysis calculation error';
+    } else {
+      trendPassed = 'WAIT';
+      trendReason = 'H1 trend is neutral/ranging, waiting for directional expansion';
+    }
+
     rules['rule_h1_trend'] = this.createRuleResult(
       'rule_h1_trend',
       true,
-      hasValidTrend ? true : 'WAIT',
-      h1Trend.toUpperCase(),
+      trendPassed,
+      rawTrend,
       'BULLISH or BEARISH',
-      'H1 trend undefined or neutral',
-      { trend: h1Trend.toUpperCase(), timeframe: 'H1' },
+      trendReason,
+      { trend: rawTrend, timeframe: 'H1', evidence: pyData.htf_trend?.evidence },
       'H1 Higher Timeframe Trend Alignment'
     );
 

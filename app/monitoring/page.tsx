@@ -51,7 +51,39 @@ function formatTime(dateString?: string | Date | null) {
   return isNaN(d.getTime()) ? "--:--:--" : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function StatusBadge({ status }: { status: string }) {
+const STEP_SCAN_LABELS: Record<string, string> = {
+  'LONDON_FILTER': 'SCANNING: LONDON SESSION',
+  'H1_TREND': 'SCANNING: H1 TREND',
+  'ASIA_SWEEP': 'SCANNING: ASIA LIQUIDITY',
+  'M15_CHOCH': 'SCANNING: M15 CHOCH',
+  'OB_FVG': 'SCANNING: OB / FVG ZONE',
+  'MA_TREND': 'SCANNING: MA TREND',
+  'SD_ZONE': 'SCANNING: SUPPLY & DEMAND',
+  'ENGULFING_TRIGGER': 'SCANNING: ENGULFING TRIGGER',
+  'M15_RETRACEMENT': 'SCANNING: M15 RETRACEMENT',
+  'M1_M5_SWEEP': 'SCANNING: M1/M5 SWEEP',
+  'DOUBLE_TOP_BOTTOM': 'SCANNING: DOUBLE TOP/BOTTOM',
+  'NECKLINE_BREAK': 'SCANNING: NECKLINE BREAK',
+  'NEWS_WINDOW': 'SCANNING: NEWS WINDOW',
+  'SPREAD_NORMAL': 'SCANNING: SPREAD NORMALITY',
+  'POST_NEWS_SWEEP': 'SCANNING: POST-NEWS SWEEP',
+  'WICK_REJECTION': 'SCANNING: WICK REJECTION',
+  'M1_BOS_REVERSAL': 'SCANNING: M1 BOS REVERSAL',
+  'H1_M15_STRUCTURE': 'SCANNING: HTF STRUCTURE',
+  'SD_FIB_OVERLAP': 'SCANNING: SD/FIB OVERLAP',
+  'CONFLUENCE_SWEEP': 'SCANNING: LIQUIDITY SWEEP',
+  'REJECTION_TRIGGER': 'SCANNING: REJECTION TRIGGER',
+  'RISK_PARAMS': 'SCANNING: RISK PARAMETERS',
+  'RISK_NEWS_FILTER': 'SCANNING: RISK FILTER',
+  'MIN_RR_CALC': 'SCANNING: 1:2 R:R CHECK',
+  'AI_GATE': 'EVALUATING: AI CONFLUENCE',
+  'SETUP_FOUND': 'SCANNING: SETUP IDENTIFICATION',
+  'SCANNING_TREND': 'SCANNING: TREND ALIGNMENT',
+  'SCANNING_LIQUIDITY': 'SCANNING: LIQUIDITY SWEEP',
+  'SCANNING_STRUCTURE': 'SCANNING: MARKET STRUCTURE'
+};
+
+function StatusBadge({ status, currentStepId, currentStepName }: { status: string; currentStepId?: string; currentStepName?: string }) {
   const s = (status || '').toLowerCase();
   if (s === 'approved' || s === 'dispatched') return (
     <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1">
@@ -63,11 +95,22 @@ function StatusBadge({ status }: { status: string }) {
       <CheckCircle2 className="w-3 h-3 text-blue-400" /> VALIDATED
     </span>
   );
-  if (s === 'active' || s === 'scanning' || s === 'setup_found') return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/30 uppercase tracking-wider animate-pulse flex items-center gap-1">
-      <Loader2 className="w-3 h-3 text-amber-400 animate-spin" /> ACTIVE SCAN
-    </span>
-  );
+  if (s === 'active' || s === 'scanning' || s === 'setup_found') {
+    let label = 'ACTIVE SCAN';
+    if (currentStepId && STEP_SCAN_LABELS[currentStepId]) {
+      label = STEP_SCAN_LABELS[currentStepId];
+    } else if (currentStepId) {
+      label = `SCANNING: ${currentStepId.replace(/_/g, ' ')}`;
+    } else if (currentStepName) {
+      label = `SCANNING: ${currentStepName.toUpperCase()}`;
+    }
+
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/30 uppercase tracking-wider animate-pulse flex items-center gap-1 font-mono">
+        <Loader2 className="w-3 h-3 text-amber-400 animate-spin" /> {label}
+      </span>
+    );
+  }
   if (s === 'rejected' || s === 'failed') return (
     <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/30 uppercase tracking-wider flex items-center gap-1">
       <XCircle className="w-3 h-3 text-rose-400" /> REJECTED
@@ -444,7 +487,7 @@ export default function MonitoringPage() {
                         STRATEGI {idx + 1} / 5
                       </span>
                       <h2 className="text-xs font-black text-zinc-100 tracking-wider uppercase font-mono">{strat.name || strat.id}</h2>
-                      <StatusBadge status={strat.setupStatus} />
+                      <StatusBadge status={strat.setupStatus} currentStepId={(strat as any).currentStepId} currentStepName={strat.currentStep} />
                     </div>
                     <p className="text-[10px] text-zinc-400 leading-snug">{strat.description}</p>
                     

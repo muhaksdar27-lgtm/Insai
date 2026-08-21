@@ -56,14 +56,51 @@ class TechnicalAnalyzer:
             
         result = {}
         
-        # 1. H1 Trend (Bias)
+        # 1. H1 Trend (Multi-EMA & Swing Structure Bias)
         h1_c = data.get("H1", {}).get("candles", [])
-        if len(h1_c) >= 5:
+        if len(h1_c) >= 15:
+            try:
+                closes = np.array([float(c.get("close", getattr(c, "close", 0))) for c in h1_c], dtype=np.float64)
+                highs = np.array([float(c.get("high", getattr(c, "high", 0))) for c in h1_c], dtype=np.float64)
+                lows = np.array([float(c.get("low", getattr(c, "low", 0))) for c in h1_c], dtype=np.float64)
+                
+                # Exponential Moving Averages
+                def calc_ema(arr, period):
+                    alpha = 2.0 / (period + 1.0)
+                    ema = np.empty_like(arr)
+                    ema[0] = arr[0]
+                    for i in range(1, len(arr)):
+                        ema[i] = alpha * arr[i] + (1.0 - alpha) * ema[i - 1]
+                    return ema[-1]
+
+                ema20 = calc_ema(closes, min(20, len(closes)))
+                ema50 = calc_ema(closes, min(50, len(closes)))
+                c_last = float(closes[-1])
+
+                is_bull_ma = (c_last >= ema20 and ema20 >= ema50) or (c_last >= ema20 * 1.001)
+                is_bear_ma = (c_last <= ema20 and ema20 <= ema50) or (c_last <= ema20 * 0.999)
+
+                # Recent swing structure (Higher Highs / Lower Lows)
+                if len(highs) >= 8:
+                    hh = np.max(highs[-4:]) > np.max(highs[-8:-4])
+                    ll = np.min(lows[-4:]) < np.min(lows[-8:-4])
+                else:
+                    hh, ll = False, False
+
+                if is_bull_ma or (hh and not ll):
+                    result["trend_h1"] = "bullish"
+                elif is_bear_ma or (ll and not hh):
+                    result["trend_h1"] = "bearish"
+                else:
+                    result["trend_h1"] = "neutral"
+            except Exception:
+                result["trend_h1"] = "neutral"
+        elif len(h1_c) >= 5:
             c_first = float(h1_c[-5].get("close", getattr(h1_c[-5], "close", 0)))
             c_last = float(h1_c[-1].get("close", getattr(h1_c[-1], "close", 0)))
             result["trend_h1"] = "bullish" if c_last > c_first else ("bearish" if c_last < c_first else "neutral")
         else:
-            result["trend_h1"] = "neutral"
+            result["trend_h1"] = "insufficient_data"
             
         # 2. M15 Structure (Context)
         m15_c = data.get("M15", {}).get("candles", [])

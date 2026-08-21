@@ -3,6 +3,7 @@ import { MarketSnapshot, Candle, ProviderStatus } from '@/types';
 import { getProviderRegistry } from '../provider-registry';
 import { logger } from '../../utils/logger';
 import { fetchWithRetry } from '../../utils/fetch-retry';
+import { toCanonicalSymbol, toProviderSymbol } from '../canonical-symbol';
 
 const YAHOO_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -13,21 +14,13 @@ const YAHOO_HEADERS = {
 export class YahooFinanceProvider implements PriceProvider {
   public name = 'YahooFinance';
 
-  private formatSymbol(symbol: string): string {
-    const norm = symbol.toUpperCase().trim();
-    if (norm === 'XAUUSD' || norm === 'GOLD') return 'GC=F';
-    if (norm === 'DXY') return 'DX-Y.NYB';
-    if (norm === 'US10Y') return '^TNX';
-    return norm;
-  }
-
   private mapTimeframe(tf: string): string {
     const map: Record<string, string> = {
       'M1': '1m', 'M5': '5m', 'M15': '15m', 'M30': '30m',
       'H1': '60m', 'H4': '60m',
       'D1': '1d', 'W1': '1wk'
     };
-    return map[tf.toUpperCase()] || '15m';
+    return map[tf.toUpperCase()] || '15min';
   }
 
   private async fetchChartApi(formattedSymbol: string, interval: string = '1m', range: string = '1d'): Promise<any> {
@@ -63,10 +56,11 @@ export class YahooFinanceProvider implements PriceProvider {
   }
 
   async getLatestPrice(symbol: string): Promise<MarketSnapshot> {
-    const formattedSymbol = this.formatSymbol(symbol);
+    const canonicalSymbol = toCanonicalSymbol(symbol);
+    const formattedSymbol = toProviderSymbol(canonicalSymbol, this.name);
     
     try {
-      logger.info(`YahooFinance REST: Fetching live price (input: ${symbol}, mapped: ${formattedSymbol})`);
+      logger.info(`YahooFinance REST: Fetching price (canonical: ${canonicalSymbol}, provider: ${formattedSymbol})`);
       
       const chartResult = await this.fetchChartApi(formattedSymbol, '1m', '1d');
       const meta = chartResult.meta;
@@ -76,14 +70,23 @@ export class YahooFinanceProvider implements PriceProvider {
         throw new Error(`Invalid price received from Yahoo Finance: ${price}`);
       }
 
+      const receivedAt = new Date().toISOString();
+      const providerTs = new Date(meta.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now()).toISOString();
+      const ageMs = Math.max(0, Date.now() - new Date(providerTs).getTime());
+      const freshness = ageMs > 60000 ? 'stale' as const : 'live' as const;
+
       getProviderRegistry().reportSuccess(this.name);
       
       return {
-        symbol,
+        symbol: canonicalSymbol,
         price,
-        timestamp: new Date(meta.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now()).toISOString(),
+        timestamp: providerTs,
         provider: this.name,
-        freshness: 'live'
+        freshness,
+        providerTimestamp: providerTs,
+        receivedAt,
+        ageMs,
+        status: freshness === 'live' ? 'OK' : 'STALE'
       };
     } catch (e: any) {
       getProviderRegistry().reportError(this.name, e.message);
@@ -92,7 +95,8 @@ export class YahooFinanceProvider implements PriceProvider {
   }
 
   async getCandles(symbol: string, timeframe: string, limit: number = 100): Promise<Candle[] & ProviderStatus> {
-    const formattedSymbol = this.formatSymbol(symbol);
+    const canonicalSymbol = toCanonicalSymbol(symbol);
+    const formattedSymbol = toProviderSymbol(canonicalSymbol, this.name);
     
     try {
       const interval = this.mapTimeframe(timeframe);
@@ -119,11 +123,17 @@ export class YahooFinanceProvider implements PriceProvider {
         throw new Error(`No candle quotes received from Yahoo Finance for ${formattedSymbol}`);
       }
 
+      const now = Date.now();
       const candles: Candle[] = [];
       for (let i = 0; i < timestamps.length; i++) {
         if (closes[i] !== null && closes[i] !== undefined && !isNaN(closes[i])) {
+          const tsMs = timestamps[i] * 1000;
+          const isoDate = new Date(tsMs).toISOString();
+          const candleAgeMs = now - tsMs;
+          const freshness = candleAgeMs > 4 * 60 * 60 * 1000 ? 'stale' as const : 'live' as const;
+
           candles.push({
-            timestamp: new Date(timestamps[i] * 1000).toISOString(),
+            timestamp: isoDate,
             open: opens[i] ?? closes[i],
             high: highs[i] ?? closes[i],
             low: lows[i] ?? closes[i],
@@ -131,18 +141,17 @@ export class YahooFinanceProvider implements PriceProvider {
             volume: volumes[i] ?? 0,
             provider: this.name,
             latency,
-            freshness: 'live' as const,
+            freshness,
             confidence: 0.95
           });
         }
       }
 
       if (candles.length === 0) {
-        throw new Error('All candle points were invalid or null');
+        throw new Error('All candle points from Yahoo Finance were invalid or null');
       }
 
       getProviderRegistry().reportSuccess(this.name);
-
       return candles.slice(-limit) as any;
     } catch (e: any) {
       getProviderRegistry().reportError(this.name, e.message);

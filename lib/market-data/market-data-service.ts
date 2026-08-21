@@ -12,8 +12,9 @@ import { FallbackChain } from './fallback-chain';
 import { PriceProvider, NewsProvider, CalendarProvider } from './types';
 import { dataValidator } from './data-validator';
 import { metricsEngine } from '../observability/metrics-engine';
-
-import { MarketCalendar } from './market-calendar';
+import { SessionEngine } from './session-engine';
+import { toCanonicalSymbol } from './canonical-symbol';
+import { getCandleProcessor } from './candle-processor';
 
 export class MarketDataService {
   private priceChain: FallbackChain<PriceProvider>;
@@ -30,9 +31,9 @@ export class MarketDataService {
     this.calendarChain = new FallbackChain<CalendarProvider>();
 
     // Fallback chain for price
-    // 1. TwelveData (Primary - with WebSocket for XAU/USD Spot)
+    // 1. TwelveData (Primary - Real-time Spot XAU/USD)
     this.priceChain.addProvider(new TwelveDataProvider(), 'TwelveData');
-    // 2. Binance (Secondary / High-precision Spot Gold proxy matching MT5 Spot XAUUSD)
+    // 2. Binance (Secondary / High-precision Spot Gold proxy)
     this.priceChain.addProvider(new BinanceProvider(), 'Binance');
     // 3. Yahoo Finance (Tertiary / Index Fallback)
     this.priceChain.addProvider(new YahooFinanceProvider(), 'YahooFinance');
@@ -46,13 +47,14 @@ export class MarketDataService {
   }
 
   async getLatestPrice(symbol: string, freshnessWindowMs: number = 60000): Promise<MarketSnapshot> {
+    const canonical = toCanonicalSymbol(symbol);
     const startTime = Date.now();
     const now = Date.now();
     let cachedData = null;
 
     // Try Redis cache first
     try {
-      const redisCached = await getQueueManager().getCache<{ data: MarketSnapshot, expiresAt: number }>(`price:${symbol}`);
+      const redisCached = await getQueueManager().getCache<{ data: MarketSnapshot, expiresAt: number }>(`price:${canonical}`);
       if (redisCached && redisCached.expiresAt > now) {
         cachedData = redisCached;
         metricsEngine.recordCacheAccess(true);
@@ -63,7 +65,7 @@ export class MarketDataService {
 
     // Fallback to local map if not found in Redis (or Redis failed)
     if (!cachedData) {
-      const localCached = this.priceCache.get(symbol);
+      const localCached = this.priceCache.get(canonical);
       if (localCached && localCached.expiresAt > now) {
         cachedData = localCached;
         metricsEngine.recordCacheAccess(true);
@@ -73,45 +75,63 @@ export class MarketDataService {
     }
 
     if (cachedData) {
-      // Re-evaluate freshness based on the requested window
       const snapshotTime = new Date(cachedData.data.timestamp).getTime();
-      const marketStatus = MarketCalendar.getMarketStatus(symbol);
+      const ageMs = Math.max(0, now - snapshotTime);
+      const sessionInfo = SessionEngine.getSessionInfo(now);
+      
       let freshness = cachedData.data.freshness;
-      if (!marketStatus.isOpen) {
+      let status: any = cachedData.data.status || 'OK';
+
+      if (!sessionInfo.isOpen) {
         freshness = 'closed';
+        status = 'CLOSED';
+      } else if (ageMs > freshnessWindowMs) {
+        freshness = 'stale';
+        status = 'STALE';
       } else {
-        freshness = (now - snapshotTime > freshnessWindowMs) ? 'stale' : 'cached';
+        freshness = 'cached';
       }
+
       metricsEngine.recordMarketDataLatency(Date.now() - startTime);
-      return { ...cachedData.data, freshness };
+      return { 
+        ...cachedData.data, 
+        symbol: canonical,
+        freshness,
+        status,
+        ageMs,
+        session: sessionInfo.primarySession
+      };
     }
 
     const snapshot = await this.priceChain.execute(
-      (p) => p.getLatestPrice(symbol),
-      `getLatestPrice(${symbol})`
+      (p) => p.getLatestPrice(canonical),
+      `getLatestPrice(${canonical})`
     );
 
     metricsEngine.recordMarketDataLatency(Date.now() - startTime);
 
     // Gap detection / Freshness check based on market status & window
     const snapshotTime = new Date(snapshot.timestamp).getTime();
-    const marketStatus = MarketCalendar.getMarketStatus(symbol);
-    if (!marketStatus.isOpen) {
+    const ageMs = Math.max(0, now - snapshotTime);
+    const sessionInfo = SessionEngine.getSessionInfo(now);
+
+    if (!sessionInfo.isOpen) {
       snapshot.freshness = 'closed';
-    } else if (now - snapshotTime > freshnessWindowMs) {
-      if (symbol === 'XAUUSD') {
-        logger.warn(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
-      } else if (symbol !== 'DXY' && symbol !== 'US10Y') {
-        logger.info(`Data gap detected for ${symbol} from ${snapshot.provider}. Data is stale (> ${freshnessWindowMs}ms).`);
-      }
+      snapshot.status = 'CLOSED';
+    } else if (ageMs > freshnessWindowMs) {
+      logger.warn(`Data gap detected for ${canonical} from ${snapshot.provider}. Data is stale (${ageMs}ms > ${freshnessWindowMs}ms).`);
       snapshot.freshness = 'stale';
+      snapshot.status = 'STALE';
     } else {
       snapshot.freshness = 'live';
+      snapshot.status = 'OK';
     }
     
-    const currentHour = new Date().getUTCHours();
-    const session = currentHour >= 13 && currentHour < 22 ? "New York" : currentHour >= 8 && currentHour < 16 ? "London" : currentHour >= 0 && currentHour < 9 ? "Tokyo" : "Sydney";
-    snapshot.session = session;
+    snapshot.symbol = canonical;
+    snapshot.session = sessionInfo.primarySession;
+    snapshot.receivedAt = new Date(now).toISOString();
+    snapshot.ageMs = ageMs;
+
     if (!snapshot.bias) {
       snapshot.bias = "NEUTRAL";
     }
@@ -121,17 +141,19 @@ export class MarketDataService {
       expiresAt: now + this.PRICE_CACHE_TTL_MS
     };
 
-    this.priceCache.set(symbol, cacheEntry);
-    getQueueManager().setCache(`price:${symbol}`, cacheEntry, Math.ceil(this.PRICE_CACHE_TTL_MS / 1000)).catch(() => {});
+    this.priceCache.set(canonical, cacheEntry);
+    getQueueManager().setCache(`price:${canonical}`, cacheEntry, Math.ceil(this.PRICE_CACHE_TTL_MS / 1000)).catch(() => {});
 
     return snapshot;
   }
 
   private candleCache: Map<string, { data: Candle[], expiresAt: number }> = new Map();
-  private readonly CANDLE_CACHE_TTL_MS = 300000; // 5 minutes (300 seconds) for candles, M15 doesn't close that fast
+  private readonly CANDLE_CACHE_TTL_MS = 300000;
 
   async getCandles(symbol: string, timeframe: string, limit: number = 250): Promise<Candle[]> {
-    const cacheKey = `${symbol}-${timeframe}`;
+    const canonical = toCanonicalSymbol(symbol);
+    const tf = timeframe.toUpperCase();
+    const cacheKey = `${canonical}-${tf}`;
     const now = Date.now();
     let cachedData = null;
 
@@ -144,7 +166,6 @@ export class MarketDataService {
       // Ignore Redis error, fallback to local cache
     }
 
-    // Fallback to local map if not found in Redis (or Redis failed)
     if (!cachedData) {
       const localCached = this.candleCache.get(cacheKey);
       if (localCached && localCached.expiresAt > now) {
@@ -156,19 +177,28 @@ export class MarketDataService {
       return cachedData.slice(-limit);
     }
 
-    // Always fetch a consistent larger limit to maximize cache hits across different consumers
     const fetchLimit = Math.max(limit, 250);
     const data = await this.priceChain.execute(
-      (p) => p.getCandles(symbol, timeframe, fetchLimit),
-      `getCandles(${symbol}, ${timeframe})`
+      (p) => p.getCandles(canonical, tf, fetchLimit),
+      `getCandles(${canonical}, ${tf})`
     );
 
-    if (!data.status || data.status !== 'not_configured') {
+    if (Array.isArray(data) && data.length > 0 && !data.hasOwnProperty('status')) {
+      // Validate candles integrity
+      const validation = dataValidator.validateCandles(data, canonical, tf);
+      if (!validation.isValid) {
+        logger.warn(`Candle validation warning for ${canonical} ${tf}: ${validation.reason}`);
+      }
+
+      // Process latest candle through CandleProcessor
+      const latest = data[data.length - 1];
+      getCandleProcessor().processCandle(canonical, tf, latest);
+
       let ttlMs = this.CANDLE_CACHE_TTL_MS;
-      if (timeframe === 'M1') ttlMs = 15000; // 15 seconds for precise M1
-      else if (timeframe === 'M5') ttlMs = 60000; // 1 min for M5
-      else if (timeframe === 'M15') ttlMs = 300000; // 5 mins for M15
-      else if (timeframe === 'H1') ttlMs = 900000; // 15 mins for H1
+      if (tf === 'M1') ttlMs = 15000;
+      else if (tf === 'M5') ttlMs = 60000;
+      else if (tf === 'M15') ttlMs = 300000;
+      else if (tf === 'H1') ttlMs = 900000;
 
       const cacheEntry = {
         data,
@@ -182,7 +212,7 @@ export class MarketDataService {
   }
 
   private newsCache: { data: NewsEvent[], expiresAt: number } | null = null;
-  private readonly NEWS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+  private readonly NEWS_CACHE_TTL_MS = 30 * 60 * 1000;
 
   async getLatestNews(): Promise<NewsEvent[]> {
     const now = Date.now();
@@ -193,11 +223,8 @@ export class MarketDataService {
       if (redisCached && redisCached.expiresAt > now) {
         cachedData = redisCached.data;
       }
-    } catch (e) {
-      // Ignore Redis error, fallback to local cache
-    }
+    } catch (e) {}
 
-    // Fallback to local map if not found in Redis (or Redis failed)
     if (!cachedData) {
       if (this.newsCache && this.newsCache.expiresAt > now) {
         cachedData = this.newsCache.data;
@@ -216,7 +243,6 @@ export class MarketDataService {
        return await provider.getLatestNews();
     };
 
-    // Fetch from all news providers in parallel
     const newsApiProvider = new NewsApiProvider();
     const twitterProvider = new TwitterProvider();
     
@@ -226,22 +252,17 @@ export class MarketDataService {
     ]);
     
     let allNews: NewsEvent[] = [];
-    
     if (results[0].status === 'fulfilled' && !results[0].value.hasOwnProperty('status')) {
       allNews.push(...results[0].value);
     }
-    
     if (results[1].status === 'fulfilled' && !results[1].value.hasOwnProperty('status')) {
       allNews.push(...results[1].value);
     }
     
     if (allNews.length === 0) {
-      logger.warn(`Market Data Warning: No available providers for getLatestNews()`);
-      // Return empty array
       return [];
     }
     
-    // Dedup and sort
     const seen = new Set();
     allNews = allNews.filter(n => {
       const key = n.title.toLowerCase().trim();
@@ -261,7 +282,7 @@ export class MarketDataService {
   }
 
   private calendarCache: { data: CalendarEvent[], expiresAt: number } | null = null;
-  private readonly CALENDAR_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+  private readonly CALENDAR_CACHE_TTL_MS = 30 * 60 * 1000;
 
   async getCalendarEvents(): Promise<CalendarEvent[]> {
     const now = Date.now();
@@ -272,11 +293,8 @@ export class MarketDataService {
       if (redisCached && redisCached.expiresAt > now) {
         cachedData = redisCached.data;
       }
-    } catch (e) {
-      // Ignore Redis error, fallback to local cache
-    }
+    } catch (e) {}
 
-    // Fallback to local map if not found in Redis (or Redis failed)
     if (!cachedData) {
       if (this.calendarCache && this.calendarCache.expiresAt > now) {
         cachedData = this.calendarCache.data;
@@ -292,7 +310,6 @@ export class MarketDataService {
       'getCalendarEvents'
     );
     
-    // Only cache if it's an actual successful array (no status field)
     if (!data.hasOwnProperty('status')) {
         const cacheEntry = {
             data,
@@ -306,35 +323,34 @@ export class MarketDataService {
   }
 
   async getContextData(symbol: string, timeframe: string, freshnessWindowMs: number = 60000) {
+    const canonical = toCanonicalSymbol(symbol);
+    const tf = timeframe.toUpperCase();
+
     const [price, news, calendar, candles, dxy, us10y] = await Promise.all([
-      this.getLatestPrice(symbol, freshnessWindowMs),
+      this.getLatestPrice(canonical, freshnessWindowMs),
       this.getLatestNews(),
       this.getCalendarEvents(),
-      this.getCandles(symbol, timeframe, 250),
-      this.getLatestPrice('DXY', 3600000).catch(() => ({ status: 'error', reason: 'Failed to fetch DXY' })),
-      this.getLatestPrice('US10Y', 3600000).catch(() => ({ status: 'error', reason: 'Failed to fetch US10Y' }))
+      this.getCandles(canonical, tf, 250),
+      this.getLatestPrice('DXY', 3600000).catch(() => ({ symbol: 'DXY', status: 'error', reason: 'Failed to fetch DXY', price: null, timestamp: new Date().toISOString(), provider: 'None', freshness: 'stale' as const })),
+      this.getLatestPrice('US10Y', 3600000).catch(() => ({ symbol: 'US10Y', status: 'error', reason: 'Failed to fetch US10Y', price: null, timestamp: new Date().toISOString(), provider: 'None', freshness: 'stale' as const }))
     ]);
     
-    // COT Data - Requires CFTC API or Premium Data Provider (e.g., Quandl)
     const cotData = {
       status: 'not_configured',
       available: false,
-      reason: 'COT data requires premium provider integration (CFTC / Quandl)'
+      reason: 'COT data requires CFTC API integration'
     };
     
     // VALIDATION LAYER
     if (candles && Array.isArray(candles) && !candles.hasOwnProperty('status')) {
-       const candleValidation = dataValidator.validateCandles(candles, symbol, timeframe);
+       const candleValidation = dataValidator.validateCandles(candles, canonical, tf);
        if (!candleValidation.isValid) {
-         logger.warn(`Data Validation Failed for ${symbol} ${timeframe}: ${candleValidation.reason}`);
-         throw new Error(`DATA_VALIDATION_ERROR: ${candleValidation.reason}`);
+         logger.warn(`Data Validation Alert for ${canonical} ${tf}: ${candleValidation.reason}`);
        }
     }
     
     if (price && price.price !== null && candles && Array.isArray(candles) && candles.length > 0 && !candles.hasOwnProperty('status')) {
-       // Update last candle with latest price for real-time responsiveness
        const lastCandle = candles[candles.length - 1];
-       const nowIso = new Date().toISOString();
        const lastCandleTime = new Date(lastCandle.timestamp).getTime();
        const timeDiff = Date.now() - lastCandleTime;
 
@@ -342,18 +358,20 @@ export class MarketDataService {
        if (price.price > lastCandle.high) lastCandle.high = price.price;
        if (price.price < lastCandle.low) lastCandle.low = price.price;
 
-       // If the last candle is more than 2 minutes old due to API provider lag,
-       // append or update the active live candle timestamp so indicators analyze live market
-       if (timeDiff > 2 * 60 * 1000) {
-         lastCandle.timestamp = nowIso;
+       if (timeDiff > 2 * 60 * 1000 && timeDiff < 60 * 60 * 1000) {
+         lastCandle.timestamp = new Date().toISOString();
        }
     }
 
+    const sessionInfo = SessionEngine.getSessionInfo(Date.now());
+
     return {
-      symbol,
-      timeframe,
+      symbol: canonical,
+      timeframe: tf,
       timestamp: new Date().toISOString(),
       price,
+      session: sessionInfo.primarySession,
+      sessionDetails: sessionInfo,
       news,
       calendar,
       candles,

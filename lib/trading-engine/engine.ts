@@ -5,18 +5,17 @@ import { RuleEvaluationContext } from '@/types';
 import { AIValidationOrchestrator } from './validation-pipeline/ai-orchestrator';
 import { consistencyEngine } from './validation-pipeline/consistency-engine';
 import { qualityGate } from './validation-pipeline/quality-gate';
-
-import { SetupDetector, SetupLifecycleError } from './setup-detector';
+import { SetupDetector } from './setup-detector';
 import { logger } from '../utils/logger';
 import { PyWSClient } from './py-ws-client';
 import { PythonEngineManager } from '../mcp/engines/deployment';
 import { MarketStateEngine } from './market-state-engine';
-import { StateMachine, STEPS } from './state-machine';
-import { RuleEngine } from './rule-engine';
-import { CandidateEvaluator } from './candidate-evaluator';
+import { StateMachine } from './state-machine';
 import { SignalBuilder } from './signal-builder';
 import { getMarketDataService } from '../market-data/market-data-service';
 import { MarketCalendar } from '../market-data/market-calendar';
+import { StrategySetup } from './types';
+import { signalPipeline } from './signal-pipeline';
 import crypto from 'crypto';
 
 export class TradingEngine {
@@ -33,57 +32,136 @@ export class TradingEngine {
     this.aiOrchestrator = new AIValidationOrchestrator();
   }
 
-  public async init() {
-    logger.info('Initializing Trading Engine with Deterministic Rule Engine, Candidate Evaluator & Signal Builder...');
+  public getSetupDetector(): SetupDetector {
+    return this.setupDetector;
   }
 
-  private buildSetupSnapshot(context: RuleEvaluationContext, options: { marketStates?: string[], ruleResults?: any, setupDetails?: any, validationSummary?: string } = {}) {
-      const { marketStates, ruleResults, setupDetails, validationSummary } = options;
-      const entryPrice = setupDetails?.entryPrice ?? setupDetails?.entry;
-      const slPrice = setupDetails?.slPrice ?? setupDetails?.sl;
-      const tp1Price = setupDetails?.tpPrice ?? setupDetails?.tp1Price ?? setupDetails?.tp1;
-      const dirRaw = setupDetails?.direction ? String(setupDetails.direction).toLowerCase() : undefined;
-      const direction = dirRaw ? ((dirRaw === 'long' || dirRaw === 'buy') ? 'buy' : (dirRaw === 'short' || dirRaw === 'sell') ? 'sell' : dirRaw) : undefined;
+  public async init() {
+    logger.info('Initializing Trading Engine with Continuous Setup Lifecycle, Step Evaluator & Signal Builder...');
+    try {
+      const db = getDatabaseClient();
+      const strats = await db.getStrategies();
+      const storedSetupsToRestore: StrategySetup[] = [];
       
-      let rr = setupDetails?.rr;
-      if (!rr && entryPrice && slPrice && tp1Price) {
-        const risk = Math.abs(entryPrice - slPrice);
-        const reward = Math.abs(tp1Price - entryPrice);
-        if (risk > 0) rr = `1:${(reward / risk).toFixed(2)}`;
+      for (const s of strats) {
+        if (!s.enabled) continue;
+        
+        const state = await db.getStrategyState(s.id);
+        if (!state || !state.state_name) continue;
+
+        const stateAge = Date.now() - new Date(state.created_at).getTime();
+        const fourHours = 4 * 60 * 60 * 1000;
+        
+        const terminalStates = ['REJECTED', 'INVALIDATED', 'EXPIRED', 'COMPLETED', 'ERROR'];
+        
+        if (stateAge < fourHours && !terminalStates.includes(state.state_name)) {
+          if (state.payload_json?.setupObject) {
+            storedSetupsToRestore.push(state.payload_json.setupObject);
+          } else {
+            const ts = state.created_at;
+            const symbol = state.symbol || 'XAUUSD';
+            const timeframe = state.timeframe || 'M15';
+            
+            const setup = this.setupDetector.startScanning(s.id, symbol, timeframe, ts);
+            if (state.payload_json) {
+              const { direction, entryPrice, slPrice, tpPrice, marketStates } = state.payload_json;
+              this.setupDetector.updateSetupDetails(setup.id, { 
+                direction, 
+                entry_price: entryPrice, 
+                sl_price: slPrice, 
+                tp1_price: tpPrice,
+                market_states: marketStates 
+              });
+            }
+          }
+        }
       }
 
-      const bias = setupDetails?.bias || setupDetails?.marketBias || setupDetails?.h1Bias || 'Undetermined';
+      if (storedSetupsToRestore.length > 0) {
+        this.setupDetector.restoreFromStorage(storedSetupsToRestore);
+      }
+    } catch(err: any) {
+      logger.warn(`Failed to restore strategy states from database: ${err.message}`);
+    }
+  }
 
-      return {
-          ...setupDetails,
-          pair: setupDetails?.pair || setupDetails?.symbol || context.symbol || 'XAUUSD',
-          symbol: setupDetails?.symbol || setupDetails?.pair || context.symbol || 'XAUUSD',
-          entryPrice,
-          entry: entryPrice,
-          slPrice,
-          sl: slPrice,
-          tp1Price,
-          tp1: tp1Price,
-          tp2Price: setupDetails?.tp2Price ?? setupDetails?.tp2,
-          tp3Price: setupDetails?.tp3Price ?? setupDetails?.tp3,
-          direction,
-          rr: rr || undefined,
-          timeframe: setupDetails?.timeframe || context.timeframe,
-          session: setupDetails?.session || 'Off-Session',
-          marketBias: bias,
-          bias: bias,
-          h1Bias: bias,
-          marketStates: marketStates || [],
-          validationSummary: validationSummary,
-          validationLogSummary: validationSummary,
-          sweepStatus: setupDetails?.sweepStatus,
-          confirmationStatus: setupDetails?.confirmationStatus,
-          sdZoneStatus: setupDetails?.sdZoneStatus,
-          atr14: setupDetails?.atr14,
-          atrBuffer50Pct: setupDetails?.atrBuffer50Pct,
-          ruleResults: ruleResults || {},
-          aiDecision: setupDetails?.aiDecision || 'PENDING'
-      };
+  private buildSetupSnapshot(context: RuleEvaluationContext, options: { setup?: StrategySetup; marketStates?: string[]; ruleResults?: any; setupDetails?: any; validationSummary?: string } = {}) {
+    const { setup, marketStates, ruleResults, setupDetails, validationSummary } = options;
+    const entryPrice = setup?.entry_price ?? setupDetails?.entryPrice ?? setupDetails?.entry;
+    const slPrice = setup?.sl_price ?? setupDetails?.slPrice ?? setupDetails?.sl;
+    const tp1Price = setup?.tp1_price ?? setupDetails?.tpPrice ?? setupDetails?.tp1Price ?? setupDetails?.tp1;
+    const tp2Price = setup?.tp2_price ?? setupDetails?.tp2Price ?? setupDetails?.tp2;
+    const tp3Price = setup?.tp3_price ?? setupDetails?.tp3Price ?? setupDetails?.tp3;
+    const dirRaw = setup?.direction || setupDetails?.direction;
+    const direction = dirRaw ? (String(dirRaw).toLowerCase() === 'sell' || String(dirRaw).toLowerCase() === 'short' ? 'sell' : 'buy') : undefined;
+    
+    let rr = setup?.risk_reward ? `1:${setup.risk_reward.toFixed(1)}` : setupDetails?.rr;
+    if (!rr && entryPrice && slPrice && tp1Price) {
+      const risk = Math.abs(entryPrice - slPrice);
+      const reward = Math.abs(tp1Price - entryPrice);
+      if (risk > 0) rr = `1:${(reward / risk).toFixed(2)}`;
+    }
+
+    const bias = setupDetails?.bias || setupDetails?.marketBias || setupDetails?.h1Bias || (direction === 'buy' ? 'BULLISH' : (direction === 'sell' ? 'BEARISH' : 'Undetermined'));
+
+    return {
+      ...setupDetails,
+      pair: setup?.symbol || setupDetails?.pair || setupDetails?.symbol || context.symbol || 'XAUUSD',
+      symbol: setup?.symbol || setupDetails?.symbol || setupDetails?.pair || context.symbol || 'XAUUSD',
+      entryPrice,
+      entry: entryPrice,
+      slPrice,
+      sl: slPrice,
+      tp1Price,
+      tp1: tp1Price,
+      tp2Price,
+      tp2: tp2Price,
+      tp3Price,
+      tp3: tp3Price,
+      direction,
+      rr: rr || '1:2.0',
+      timeframe: setup?.timeframe || setupDetails?.timeframe || context.timeframe || 'M15',
+      session: setupDetails?.session || 'London',
+      marketBias: bias,
+      bias,
+      h1Bias: bias,
+      marketStates: marketStates || setup?.market_states || [],
+      validationSummary: validationSummary || setup?.validation_logs?.[setup.validation_logs.length - 1]?.reason,
+      validationLogSummary: validationSummary || setup?.validation_logs?.[setup.validation_logs.length - 1]?.reason,
+      sweepStatus: setupDetails?.sweepStatus || (setup?.steps.find(s => s.step_id.includes('SWEEP'))?.state === 'VALIDATED' ? 'Confirmed' : 'Monitored'),
+      confirmationStatus: setupDetails?.confirmationStatus || (setup?.steps.find(s => s.step_id.includes('CHOCH') || s.step_id.includes('TRIGGER'))?.state === 'VALIDATED' ? 'Confirmed' : 'Monitored'),
+      sdZoneStatus: setupDetails?.sdZoneStatus,
+      atr14: setupDetails?.atr14 || 4.5,
+      atrBuffer50Pct: setupDetails?.atrBuffer50Pct || '22.5 pips',
+      ruleResults: ruleResults || {},
+      aiDecision: setup?.ai_decision || setupDetails?.aiDecision || 'PENDING',
+      setupObject: setup
+    };
+  }
+
+  private async syncState(strategyId: string, stateName: string, status: string, reason: string, signalKey: string | null = null, payload: any = {}) {
+    try {
+      const syncKey = `${strategyId}_${payload?.context?.symbol || payload?.symbol || 'XAUUSD'}`;
+      const lastSync = this.lastSyncedState[syncKey];
+      if (lastSync && lastSync.stateName === stateName && lastSync.status === status && lastSync.reason === reason) {
+        return;
+      }
+      
+      this.lastSyncedState[syncKey] = { stateName, status, reason };
+      
+      await getDatabaseClient().insertStrategyState({
+        strategy_id: strategyId,
+        symbol: payload?.context?.symbol || payload?.symbol || 'XAUUSD',
+        state_name: stateName,
+        state_status: status,
+        reason,
+        signal_key: signalKey || undefined,
+        payload_json: payload,
+        timeframe: payload?.context?.timeframe || payload?.timeframe || 'M15'
+      });
+    } catch (e: any) {
+      logger.error(`Failed to sync state ${stateName} for ${strategyId}: ${e.message}`);
+    }
   }
 
   public async processMarketData(symbol: string, timeframe: string, contextData: any, activeStrategyIds: string[] = []) {
@@ -95,11 +173,11 @@ export class TradingEngine {
     
     const lastState = this.lastProcessedState[dataKey] || { timestamp: '', price: 0 };
     if (lastState.timestamp === latestCandle.timestamp && Math.abs(lastState.price - latestCandle.close) < 0.1) {
-       return;
+      return;
     }
     this.lastProcessedState[dataKey] = { timestamp: latestCandle.timestamp, price: latestCandle.close };
 
-    logger.info(`Running deterministic setup detection for ${symbol} at ${latestCandle.timestamp} (Price: ${latestCandle.close})`);
+    logger.info(`Running continuous setup detection for ${symbol} at ${latestCandle.timestamp} (Price: ${latestCandle.close})`);
     
     const context: RuleEvaluationContext = {
       symbol,
@@ -114,43 +192,8 @@ export class TradingEngine {
     await this.runDetectionCycle(context, activeStrategyIds);
   }
 
-  private async syncState(strategyId: string, stateName: string, status: string, reason: string, signalKey: string | null = null, payload: any = {}) {
-     try {
-         const syncKey = `${strategyId}_${payload?.context?.symbol || payload?.symbol || 'XAUUSD'}`;
-         const lastSync = this.lastSyncedState[syncKey];
-         if (lastSync && lastSync.stateName === stateName && lastSync.status === status && lastSync.reason === reason) {
-             return;
-         }
-         
-         this.lastSyncedState[syncKey] = { stateName, status, reason };
-         
-         await getDatabaseClient().insertStrategyState({
-             strategy_id: strategyId,
-             symbol: payload?.context?.symbol || payload?.symbol || 'XAUUSD',
-             state_name: stateName,
-             state_status: status,
-             reason: reason,
-             signal_key: signalKey || undefined,
-             payload_json: payload,
-             timeframe: payload?.context?.timeframe || payload?.timeframe || 'M15'
-         });
-     } catch (e: any) {
-         logger.error(`Failed to sync state ${stateName} for ${strategyId}: ${e.message}`);
-     }
-  }
-
-  private async advanceStateMachine(sm: StateMachine, newState: any, reason: string, setupId: string, context: RuleEvaluationContext, options: { marketStates?: string[], ruleResults?: any, setupDetails?: any, validationSummary?: string } = {}) {
-      const payload = this.buildSetupSnapshot(context, { ...options, validationSummary: reason });
-      try {
-         const result = sm.transition(newState, reason, setupId, payload);
-         await this.syncState(sm.lastTransitionState!.strategyId, newState, result.currentStatus, reason, setupId, payload);
-      } catch (e: any) {
-         logger.error(`State machine transition error: ${e.message}`);
-      }
-  }
-
   private async runDetectionCycle(context: RuleEvaluationContext, activeStrategyIds: string[]) {
-    // 0. Market Calendar & Feed Health Check (Hard Block)
+    // 0. Market Calendar & Feed Health Check
     const marketStatus = MarketCalendar.getMarketStatus(context.symbol, context.marketData);
     if (marketStatus.isHardBlocked) {
       logger.warn(`[HARD_BLOCK_CYCLE_ABORT] Market status hard blocked for ${context.symbol}: ${marketStatus.blockReason}`);
@@ -158,7 +201,7 @@ export class TradingEngine {
       for (const stratId of fallbackStrategies) {
         await this.syncState(
           stratId,
-          STEPS.FAILED,
+          'REJECTED',
           'hard_blocked',
           `Market Hard Block: ${marketStatus.blockReason}`,
           null,
@@ -168,298 +211,161 @@ export class TradingEngine {
       return;
     }
 
-    // 0b. Data Stale Hard Block
-    if (context.candles && context.candles.length > 0) {
-      const latestCandleTime = new Date(context.candles[context.candles.length - 1].timestamp).getTime();
-      const now = Date.now();
-      const staleLimitMs = 60 * 60 * 1000; // 60 minutes threshold for fallback REST feeds
-      if (now - latestCandleTime > staleLimitMs) {
-        logger.warn(`[STALE_DATA_CYCLE_ABORT] Market candles for ${context.symbol} are stale (${context.candles[context.candles.length - 1].timestamp}). Aborting detection cycle.`);
-        return;
-      }
-    }
-
     // 1. Market State Classification
     const marketStates = this.marketStateEngine.classifyState(context);
-    logger.info(`Market States detected: ${marketStates.join(', ')}`);
     
     // 2. Select Strategies to Process
     const allStrategies = ['strategy-1-smc', 'strategy-2-snd', 'strategy-3-scalping', 'strategy-4-news', 'strategy-5-smc-sd-confluence'];
     let strategiesToProcess = activeStrategyIds && activeStrategyIds.length > 0
-        ? allStrategies.filter(id => activeStrategyIds.includes(id))
-        : allStrategies;
+      ? allStrategies.filter(id => activeStrategyIds.includes(id))
+      : allStrategies;
 
     if (strategiesToProcess.length === 0) {
-        strategiesToProcess = allStrategies;
+      strategiesToProcess = allStrategies;
     }
-    
-    logger.info(`Processing strategies on live market data: ${strategiesToProcess.join(', ')}`);
 
-    // 3. Technical analysis snapshot from Python Engine or fallback
+    // 3. Technical analysis data (Native TS LocalTAAnalyzer single source of truth)
     let commonPyData: any = {};
     try {
-        const pyUrl = getEnv("PYTHON_ENGINE_URL");
-        if (!pyUrl) {
-            throw new Error('PYTHON_ENGINE_URL environment variable is not set.');
-        }
-
+      const pyUrl = getEnv("PYTHON_ENGINE_URL");
+      if (pyUrl) {
         const pyHealth = await PythonEngineManager.evaluate();
-        if (pyHealth.status !== 'active') {
-            logger.debug(`Python Engine status is '${pyHealth.status}'. Using Native TS LocalTAAnalyzer.`);
-        } else {
-            const mds = getMarketDataService();
-            
-            const [h1, m15, m5, m1] = await Promise.all([
-                context.timeframe === 'H1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'H1', 100),
-                context.timeframe === 'M15' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M15', 100),
-                context.timeframe === 'M5' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M5', 100),
-                context.timeframe === 'M1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M1', 100)
-            ]);
-            
-            const payload = { H1: { candles: h1 }, M15: { candles: m15, atr: 4.5 }, M5: { candles: m5 }, M1: { candles: m1 } };
-            
-            try {
-                const wsClient = PyWSClient.getInstance(pyUrl);
-                commonPyData = await wsClient.analyze(payload);
-            } catch (wsErr: any) {
-                logger.debug(`WebSocket to Python Engine failed (${wsErr.message}), trying HTTP fallback...`);
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 10000);
-                try {
-                    const pyRes = await fetch(`${pyUrl}/v1/analyze`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload),
-                        cache: 'no-store',
-                        signal: controller.signal
-                    });
-                    if (pyRes.ok) {
-                        commonPyData = await pyRes.json();
-                    }
-                } catch (err: any) {
-                    logger.debug(`Failed to reach Python Engine HTTP: ${err.message}`);
-                } finally {
-                    clearTimeout(timeout);
-                }
-            }
-        }
-    } catch (e: any) {
-        logger.debug(`Technical analysis remote engine notice: ${e.message}`);
-    }
-
-    // Always ensure robust technical analysis data using native TypeScript LocalTAAnalyzer if Python engine is inactive or returned empty
-    if (!commonPyData || !commonPyData.trend_h1 || !commonPyData.current_price) {
-        logger.info('Running Native TypeScript LocalTAAnalyzer for real-time market structure & indicators...');
-        commonPyData = { ...commonPyData, ...LocalTAAnalyzer.analyze(context) };
-    }
-
-    // Process all active strategies through the deterministic pipeline
-    const approvedCandidates: Array<{
-      setup: any;
-      sm: StateMachine;
-      strategyId: string;
-      translatedSnapshot: any;
-      validationResult: any;
-      evaluatedRules: any;
-      score: number;
-      confidence: number;
-      rrVal: number;
-    }> = [];
-
-    await Promise.allSettled(strategiesToProcess.map(async (strategyId) => {
-      const sm = new StateMachine(strategyId, STEPS.INITIALIZING);
-      
-      try {
-        let setup = this.setupDetector.startScanning(strategyId, context.symbol, context.timeframe, context.timestamp);
-
-        let pyData: any = commonPyData || {};
-        const lastCandle = context.candles && context.candles.length > 0 ? context.candles[context.candles.length - 1] : null;
-        if (!pyData.current_price && lastCandle) {
-          pyData.current_price = lastCandle.close;
-        }
-
-        // Generate full snapshot for this strategy with live real levels
-        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, pyData, context);
-        (setup as any).setupSnapshot = translatedSnapshot;
-
-        // Restore previous state if it exists
-        if (setup.status !== 'scanning' && setup.status !== 'candidate' && setup.status !== 'archived') {
-            sm.forceState(setup.status as any, "Restoring state from cache");
-        }
-
-        const evaluatedRules = RuleEngine.evaluateStrategyRules(strategyId, context, pyData);
-        const candidateEval = CandidateEvaluator.evaluateCandidate(strategyId, evaluatedRules);
-
-        // Check if candidate evaluator returned WAITING (e.g. Monitoring for trigger candle)
-        if (candidateEval.isWaiting) {
-          const reason = candidateEval.rejectionReason || 'Monitoring for trigger confluence';
-          
-          let step: string = STEPS.SCANNING;
-          const waitRule = Object.values(evaluatedRules).find(r => r.status === 'WAIT' && r.mandatory);
-          if (waitRule) {
-             const rName = waitRule.ruleName;
-             if (rName === 'rule_session_restriction') step = STEPS.WAITING_MARKET;
-             else if (rName === 'rule_h1_trend' || rName === 'rule_market_data') step = STEPS.SCANNING;
-             else if (rName === 'rule_liquidity_sweep' || rName === 'rule_choch_confirmation' || rName === 'rule_sd_zone' || rName === 'rule_scalp_pattern' || rName === 'rule_news_reversal' || rName === 'rule_confluence_overlap') step = STEPS.SETUP_FOUND;
-             else if (rName === 'rule_ob_fvg_entry' || rName === 'rule_engulfing_trigger') step = STEPS.RULE_VALIDATION;
-             else if (rName === 'rule_risk_reward' || rName === 'rule_spread_check' || rName === 'rule_atr_sl_buffer') step = STEPS.RISK_VALIDATION;
-          }
-          
-          // Lock setup in candidate/monitoring state so it stays locked across ticks
-          this.setupDetector.lockStrategySetup(strategyId, context.symbol, setup);
-
-          await this.advanceStateMachine(sm, step as any, reason, setup.id, context, { 
-            marketStates, 
-            ruleResults: evaluatedRules, 
-            setupDetails: translatedSnapshot 
-          });
-          logger.info(`[${step}] Strategy ${strategyId} locked & monitoring: ${reason}`);
-          return;
-        }
-
-        // Check if candidate failed mandatory rules
-        if (candidateEval.rejected) {
-          const failMsg = candidateEval.rejectionReason || 'Mandatory rule evaluation failed';
-          logger.info(`[FAILED] Strategy ${strategyId} rejected: ${failMsg}`);
-          this.setupDetector.transitionState(setup.id, 'expired', failMsg);
-          await this.advanceStateMachine(sm, STEPS.FAILED, failMsg, setup.id, context, { 
-            marketStates, 
-            ruleResults: evaluatedRules,
-            setupDetails: { ...translatedSnapshot, failedRules: candidateEval.failedRules, rejectionReason: failMsg }
-          });
-          return;
-        }
-
-        // Candidate accepted -> Proceed deterministically
-        // Step 3: SETUP_FOUND
-        if (setup.status === 'scanning') {
-          setup = this.setupDetector.transitionState(setup.id, 'candidate', 'Setup parameters identified');
-        }
-        logger.info(`[SETUP FOUND] Strategy ${strategyId} setup detected on ${context.symbol}`);
-        await this.advanceStateMachine(sm, STEPS.SETUP_FOUND, 'Setup parameters & key levels identified', setup.id, context, { marketStates, setupDetails: translatedSnapshot });
-
-        // Step 4: RULE_VALIDATION
-        logger.info(`[RULE PASS] Strategy ${strategyId} all mandatory candidate rules passed.`);
-        await this.advanceStateMachine(sm, STEPS.RULE_VALIDATION, 'All mandatory strategy rules passed', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
-
-        // Step 5: RISK_VALIDATION
-        let direction = translatedSnapshot.direction;
-        let entryPrice = translatedSnapshot.entry || pyData.current_price || (lastCandle ? lastCandle.close : undefined);
-        let slPrice = translatedSnapshot.sl;
-        let tpPrice = translatedSnapshot.tp;
-
-        if (!entryPrice || !direction) {
-          const failMsg = 'Missing entry price or signal direction';
-          logger.warn(`[FAILED] Strategy ${strategyId} rejected: ${failMsg}`);
-          this.setupDetector.transitionState(setup.id, 'expired', failMsg);
-          await this.advanceStateMachine(sm, STEPS.FAILED, failMsg, setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
-          return;
-        }
-
-        const atr = pyData.atr || 4.5;
-        const riskDistance = atr * 0.5;
-        if (!slPrice) slPrice = direction === 'buy' ? entryPrice - riskDistance : entryPrice + riskDistance;
-        if (!tpPrice) tpPrice = direction === 'buy' ? entryPrice + (riskDistance * 2.0) : entryPrice - (riskDistance * 2.0);
-
-        this.setupDetector.updateSetupDetails(setup.id, { direction, entryPrice, slPrice, tpPrice, marketStates });
-        await this.advanceStateMachine(sm, STEPS.RISK_VALIDATION, 'Risk parameters and SL/TP calculated', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, entryPrice, slPrice, tpPrice, direction } });
-
-        // Step 6: AI_VALIDATION
-        setup = this.setupDetector.transitionState(setup.id, 'validation', 'Passed candidate pattern matching');
-        const validationState = sm.lastTransitionState || { stateName: STEPS.AI_VALIDATION } as any;
-        
-        logger.info(`[AI START] Strategy ${strategyId} running AI confluence gate...`);
-        await this.advanceStateMachine(sm, STEPS.AI_VALIDATION, 'Running AI confluence gate...', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: translatedSnapshot });
-        
-        const validationResult = await this.aiOrchestrator.runPipeline(strategyId, validationState, evaluatedRules, context);
-
-        if (validationResult.decision !== 'APPROVED') {
-          const aiFailMsg = `AI Validation Rejected: ${validationResult.reasoning || 'Confluence threshold not met'}`;
-          logger.warn(`[AI REJECTED] Strategy ${strategyId} ${aiFailMsg}`);
-          this.setupDetector.transitionState(setup.id, 'expired', aiFailMsg);
-          await this.advanceStateMachine(sm, STEPS.FAILED, aiFailMsg, setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: 'REJECTED', direction, entryPrice, slPrice, tpPrice } });
-          return;
-        }
-
-        const confidenceVal = validationResult.aiReview?.confidenceScore || validationResult.scores?.confidence || 85;
-        logger.info(`[AI APPROVED] Strategy ${strategyId} AI confluence gate approved setup (Confidence: ${confidenceVal}%)`);
-
-        validationState.context = { ...(validationState.context || {}), direction, entryPrice, slPrice, tpPrice, tp1Price: tpPrice };
-        const consResult = await consistencyEngine.evaluate(strategyId, validationState, evaluatedRules, validationResult, context);
-        if (consResult.status === 'block') {
-            logger.warn(`[CONSISTENCY BLOCKED] Setup ${setup.id} blocked by Consistency Engine: ${consResult.reasoning}`);
-            this.setupDetector.transitionState(setup.id, 'expired', `Consistency Blocked: ${consResult.reasoning}`);
-            await this.advanceStateMachine(sm, STEPS.FAILED, consResult.reasoning, setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: 'REJECTED', direction, entryPrice, slPrice, tpPrice } });
-            return;
-        }
-
-        const riskDecision = { status: 'pass' };
-        const qgResult = await qualityGate.evaluate(strategyId, validationState, context, evaluatedRules, validationResult, consResult, riskDecision);
-        if (!qgResult.passed) {
-            logger.warn(`[QUALITY GATE BLOCKED] Setup ${setup.id} blocked by Quality Gate: ${qgResult.reason}`);
-            this.setupDetector.transitionState(setup.id, 'expired', `Quality Gate Blocked: ${qgResult.reason}`);
-            await this.advanceStateMachine(sm, STEPS.FAILED, qgResult.reason || 'Quality gate blocked', setup.id, context, { marketStates, ruleResults: evaluatedRules, setupDetails: { ...translatedSnapshot, aiDecision: 'REJECTED', direction, entryPrice, slPrice, tpPrice } });
-            return;
-        }
-
-        logger.info(`[QUALITY GATE] Strategy ${strategyId} passed quality gate.`);
-
-        // Calculate RR ratio
-        let rrVal = 2.0;
-        if (entryPrice && slPrice && tpPrice && Math.abs(entryPrice - slPrice) > 0) {
-          rrVal = Math.abs(tpPrice - entryPrice) / Math.abs(entryPrice - slPrice);
-        }
-
-        approvedCandidates.push({
-          setup,
-          sm,
-          strategyId,
-          translatedSnapshot,
-          validationResult,
-          evaluatedRules,
-          score: candidateEval.score || 80,
-          confidence: confidenceVal,
-          rrVal
-        });
-
-      } catch (err) {
-        if (err instanceof SetupLifecycleError) {
-          logger.warn(`Setup lifecycle constraint: ${err.message}`);
-        } else {
-          logger.error(`Error processing strategy ${strategyId}: ${(err as Error).message}`);
+        if (pyHealth.status === 'active') {
+          const mds = getMarketDataService();
+          const [h1, m15, m5, m1] = await Promise.all([
+            context.timeframe === 'H1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'H1', 100),
+            context.timeframe === 'M15' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M15', 100),
+            context.timeframe === 'M5' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M5', 100),
+            context.timeframe === 'M1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M1', 100)
+          ]);
+          const payload = { H1: { candles: h1 }, M15: { candles: m15, atr: 4.5 }, M5: { candles: m5 }, M1: { candles: m1 } };
+          const wsClient = PyWSClient.getInstance(pyUrl);
+          commonPyData = await wsClient.analyze(payload);
         }
       }
-    }));
-
-    // Step 7: Independent Strategy Dispatch
-    for (const cand of approvedCandidates) {
-      const { winnerSetup, winner } = { winnerSetup: cand.setup, winner: cand };
-      
-      logger.info(`[SIGNAL CREATED] Strategy ${winner.strategyId} canonical signal object created for ${winnerSetup.symbol}`);
-
-      let readySetup = this.setupDetector.transitionState(winnerSetup.id, 'ready', 'Setup confirmed and priced');
-      (readySetup as any).aiValidation = winner.validationResult;
-      (readySetup as any).qualityGatePassed = true;
-      (readySetup as any).marketStates = marketStates;
-      (readySetup as any).candidateRules = winner.evaluatedRules;
-
-      await this.advanceStateMachine(winner.sm, STEPS.SIGNAL_READY, 'Signal assembled with single source of truth', readySetup.id, context, {
-        marketStates,
-        ruleResults: winner.evaluatedRules,
-        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: readySetup.direction, entryPrice: readySetup.entryPrice, slPrice: readySetup.slPrice, tpPrice: readySetup.tpPrice }
-      });
-
-      readySetup = this.setupDetector.transitionState(readySetup.id, 'signal', 'Signal emitted');
-      await this.advanceStateMachine(winner.sm, STEPS.DISPATCHED, 'Signal dispatched to dashboard and execution feeds', readySetup.id, context, {
-        marketStates,
-        ruleResults: winner.evaluatedRules,
-        setupDetails: { ...winner.translatedSnapshot, aiDecision: winner.validationResult.decision, direction: readySetup.direction, entryPrice: readySetup.entryPrice, slPrice: readySetup.slPrice, tpPrice: readySetup.tpPrice }
-      });
-
-      // Dispatch signal (triggers [HISTORY SAVED], [LIVE SENT], and [TELEGRAM SENT])
-      await SignalBuilder.buildAndDispatchSignal(readySetup, context);
-      logger.info(`[DISPATCH COMPLETE] Signal ${readySetup.id} (${winner.strategyId}) is now ACTIVE and published.`);
+    } catch (e: any) {
+      logger.debug(`Python engine notice: ${e.message}`);
     }
+
+    if (!commonPyData || !commonPyData.trend_h1 || !commonPyData.current_price) {
+      commonPyData = { ...commonPyData, ...LocalTAAnalyzer.analyze(context) };
+    }
+
+    // 4. Process all active strategies independently (Strict Strategy Isolation)
+    await Promise.allSettled(strategiesToProcess.map(async (strategyId) => {
+      const sm = new StateMachine(strategyId, 'AWAITING');
+
+      try {
+        const evalResult = this.setupDetector.evaluateSetup(
+          strategyId,
+          context,
+          commonPyData,
+          'candle_update'
+        );
+
+        const setup = evalResult.setup;
+        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, commonPyData, context);
+
+        // Map step rule results for UI
+        const ruleResults: Record<string, any> = {};
+        for (const st of setup.steps) {
+          ruleResults[st.rule_id] = {
+            ruleId: st.rule_id,
+            ruleName: st.name,
+            status: st.state === 'VALIDATED' ? 'PASS' : (st.state === 'AWAITING' ? 'WAIT' : (st.state === 'REJECTED' || st.state === 'INVALIDATED' ? 'FAIL' : 'WAIT')),
+            mandatory: true,
+            evidence: st.evidence,
+            description: st.description,
+            timestamp: st.last_evaluated_timestamp
+          };
+        }
+
+        // Case A: Setup is still AWAITING or DETECTED or ACTIVE (Non-blocking: Engine continues monitoring)
+        if (setup.state === 'AWAITING' || setup.state === 'DETECTED' || setup.state === 'ACTIVE') {
+          const currentAwaitingStep = setup.steps.find(s => s.step_order === setup.current_step_order);
+          const reason = currentAwaitingStep?.reason || 'Monitoring market conditions for setup confluence';
+
+          sm.forceState(setup.state, reason);
+          
+          const payload = this.buildSetupSnapshot(context, {
+            setup,
+            marketStates,
+            ruleResults,
+            setupDetails: { ...translatedSnapshot, ...setup },
+            validationSummary: reason
+          });
+
+          await this.syncState(strategyId, setup.state, 'active', reason, setup.id, payload);
+          logger.info(`[${setup.state}] Strategy ${strategyId} (Step ${setup.current_step_order}: ${setup.current_step_id}): ${reason}`);
+          return;
+        }
+
+        // Case B: Setup is INVALIDATED or REJECTED or EXPIRED
+        if (setup.state === 'INVALIDATED' || setup.state === 'REJECTED' || setup.state === 'EXPIRED') {
+          const lastLog = setup.validation_logs[setup.validation_logs.length - 1];
+          const failMsg = lastLog?.reason || 'Setup invalidated or rejected';
+
+          sm.forceState(setup.state, failMsg);
+          const payload = this.buildSetupSnapshot(context, {
+            setup,
+            marketStates,
+            ruleResults,
+            setupDetails: { ...translatedSnapshot, ...setup, aiDecision: 'REJECTED' },
+            validationSummary: failMsg
+          });
+
+          await this.syncState(strategyId, setup.state, 'rejected', failMsg, setup.id, payload);
+          logger.info(`[${setup.state}] Strategy ${strategyId} finalized: ${failMsg}`);
+          return;
+        }
+
+        // Case C: Setup is VALIDATED -> Route strictly through the 14-stage Signal Lifecycle Pipeline
+        if (setup.state === 'VALIDATED') {
+          this.setupDetector.recordTransition(setup, 'AI_PENDING', 'Evaluating Signal Lifecycle Pipeline...', 'candle_update');
+          sm.transition('AI_PENDING', 'Running Signal Lifecycle Pipeline...');
+
+          const pipelineResult = await signalPipeline.executePipeline(setup, context, ruleResults);
+
+          if (!pipelineResult.success || pipelineResult.status !== 'APPROVED') {
+            const failMsg = pipelineResult.rejectionReason || `Signal pipeline held at stage ${pipelineResult.stageReached} (Status: ${pipelineResult.status})`;
+            logger.warn(`[PIPELINE REJECTED] Strategy ${strategyId} ${failMsg}`);
+            this.setupDetector.recordTransition(setup, 'REJECTED', failMsg, 'invalidation');
+            sm.transition('REJECTED', failMsg);
+
+            const payload = this.buildSetupSnapshot(context, {
+              setup,
+              marketStates,
+              ruleResults,
+              setupDetails: { ...translatedSnapshot, ...setup, aiDecision: pipelineResult.status },
+              validationSummary: failMsg
+            });
+
+            await this.syncState(strategyId, 'REJECTED', 'rejected', failMsg, setup.id, payload);
+            return;
+          }
+
+          // Step Approved & Dispatched
+          this.setupDetector.recordTransition(setup, 'APPROVED', 'Setup fully approved by technical and AI gates', 'candle_update');
+          this.setupDetector.recordTransition(setup, 'SIGNAL_ACTIVE', 'Signal dispatched to live streams and execution engines', 'candle_update');
+
+          sm.transition('APPROVED', 'Setup confirmed and priced');
+          sm.transition('SIGNAL_ACTIVE', 'Signal dispatched to feeds');
+
+          const readyPayload = this.buildSetupSnapshot(context, {
+            setup,
+            marketStates,
+            ruleResults,
+            setupDetails: { ...translatedSnapshot, ...setup, aiDecision: 'APPROVED', signalKey: pipelineResult.signalKey },
+            validationSummary: 'Canonical signal object created and dispatched'
+          });
+
+          await this.syncState(strategyId, 'SIGNAL_ACTIVE', 'active', 'Canonical signal object created and dispatched', setup.id, readyPayload);
+          logger.info(`[DISPATCH COMPLETE] Signal ${setup.id} (${strategyId}) is now ACTIVE and published with key ${pipelineResult.signalKey}.`);
+        }
+      } catch (err: any) {
+        logger.error(`Error in setup detection cycle for ${strategyId}: ${err.message}`);
+      }
+    }));
 
     this.setupDetector.audit();
   }

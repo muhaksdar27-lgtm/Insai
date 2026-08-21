@@ -28,58 +28,86 @@ export interface NotificationPayload {
 }
 
 export class NotificationEngine {
-  private notifiedSignals: Set<string> = new Set();
+  private notifiedKeys: Set<string> = new Set();
   private maxHistorySize = 1000;
+  private readonly MAX_RETRIES = 3;
 
-  public async notifyNewSignal(payload: NotificationPayload): Promise<void> {
-    // 1. Strict Final Quality Gate Guard
+  public async notifyNewSignal(payload: NotificationPayload): Promise<boolean> {
+    const notificationKey = `notif::${payload.signal_key}`;
+
+    // 1. Strict Final Quality Gate & Approval Guard
+    // Telegram ONLY accepts FINAL APPROVED SIGNALS
     if (
+      payload.qualityGatePassed !== true ||
+      payload.aiDecision !== 'APPROVED' ||
       payload.status === 'suppressed' ||
       payload.status === 'failed' ||
-      payload.qualityGatePassed !== true ||
-      payload.aiDecision === 'REJECTED' ||
       !payload.entry || payload.entry <= 0 ||
       !payload.sl || payload.sl <= 0 ||
       !payload.tp || payload.tp.length === 0 || payload.tp[0] <= 0
     ) {
-      logger.info(`Telegram notification suppressed for non-approved or invalid setup ${payload.signal_key} (Status: ${payload.status}, AI Decision: ${payload.aiDecision})`);
-      return;
+      logger.info(`Telegram notification suppressed for non-approved or invalid setup ${payload.signal_key} (Status: ${payload.status}, AI Decision: ${payload.aiDecision}, QG: ${payload.qualityGatePassed})`);
+      payload.status = 'suppressed';
+      return false;
     }
 
-    if (this.notifiedSignals.has(payload.signal_key)) {
+    // 2. In-Memory & Key Deduplication
+    if (this.notifiedKeys.has(notificationKey)) {
       payload.status = 'deduped';
-      logger.info(`Telegram notification deduped in memory for signal key: ${payload.signal_key}`);
-      return;
+      logger.info(`[TELEGRAM DEDUP] Notification deduped for notification key: ${notificationKey}`);
+      return false;
     }
 
     const message = this.formatMessage(payload);
 
-    try {
-      // Direct text notification only - no charts, photos, graphs, or placeholders
-      const success = await getTelegramBot().sendNotification(message);
+    // 3. Safe retry with exponential backoff and MAX 3 attempts
+    let attempt = 0;
+    let success = false;
+    let lastError: any = null;
 
-      if (success) {
-        payload.status = 'sent';
-        logger.info(`[TELEGRAM SENT] Telegram message sent for signal ${payload.signal_key}`);
-        this.notifiedSignals.add(payload.signal_key);
-        // Prevent unbounded memory growth
-        if (this.notifiedSignals.size > this.maxHistorySize) {
-          const iterator = this.notifiedSignals.values();
-          const firstValue = iterator.next().value;
-          if (firstValue) {
-            this.notifiedSignals.delete(firstValue);
+    while (attempt < this.MAX_RETRIES && !success) {
+      attempt++;
+      try {
+        success = await getTelegramBot().sendNotification(message);
+        if (success) {
+          payload.status = 'sent';
+          this.notifiedKeys.add(notificationKey);
+          logger.info(`[TELEGRAM SENT] Telegram message successfully delivered for ${notificationKey} on attempt ${attempt}`);
+          
+          // Memory maintenance
+          if (this.notifiedKeys.size > this.maxHistorySize) {
+            const iterator = this.notifiedKeys.values();
+            const firstValue = iterator.next().value;
+            if (firstValue) this.notifiedKeys.delete(firstValue);
           }
+          return true;
+        } else {
+          logger.warn(`[TELEGRAM RETRY] Telegram send returned false (attempt ${attempt}/${this.MAX_RETRIES}) for ${notificationKey}`);
         }
-      } else {
-        payload.status = 'failed';
+      } catch (err: any) {
+        lastError = err;
+        logger.warn(`[TELEGRAM RETRY] Telegram send error (attempt ${attempt}/${this.MAX_RETRIES}) for ${notificationKey}: ${err.message}`);
       }
-    } catch (error) {
-      payload.status = 'failed';
-      logger.error('Error sending Telegram notification', { 
-        signal_key: payload.signal_key,
-        reason: error instanceof Error ? error.message : String(error)
-      });
+
+      if (!success && attempt < this.MAX_RETRIES) {
+        const delayMs = Math.min(2000, 200 * Math.pow(2, attempt));
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
+
+    if (!success) {
+      payload.status = 'failed';
+      logger.error(`[TELEGRAM FAILED] Telegram notification failed after ${this.MAX_RETRIES} attempts for ${notificationKey}`, {
+        error: lastError?.message
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  public reset(): void {
+    this.notifiedKeys.clear();
   }
 
   private translateRuleKey(ruleKey: string): string {

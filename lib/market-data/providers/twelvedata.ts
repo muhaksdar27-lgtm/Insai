@@ -1,16 +1,17 @@
 import { PriceProvider } from '../types';
-import { MarketSnapshot, Candle } from '@/types';
+import { MarketSnapshot, Candle, ProviderStatus } from '@/types';
 import { getProviderRegistry } from '../provider-registry';
 import { logger } from '../../utils/logger';
 import { fetchWithRetry } from '../../utils/fetch-retry';
 import { getQueueManager } from '../../redis/queue';
 import { getEnv } from '../../utils/env';
+import { toCanonicalSymbol, toProviderSymbol } from '../canonical-symbol';
 
 export class TwelveDataProvider implements PriceProvider {
   public name = 'TwelveData';
   private apiKey: string | undefined;
   private ws: any = null;
-  private reconnectAttempts = 0; // using any to avoid type issues with global WebSocket vs ws
+  private reconnectAttempts = 0;
   private latestPrices: Map<string, MarketSnapshot> = new Map();
   private wsStarted: boolean = false;
 
@@ -24,7 +25,7 @@ export class TwelveDataProvider implements PriceProvider {
 
   constructor() {
     this.apiKey = getEnv('TWELVEDATA_API_KEY');
-    logger.info('TwelveData Provider Initialized');
+    logger.info('TwelveData Provider Initialized with Canonical Symbol Mapping');
   }
 
   private reconnectTimeout: NodeJS.Timeout | null = null;
@@ -62,7 +63,7 @@ export class TwelveDataProvider implements PriceProvider {
        return;
     }
 
-    logger.info('TwelveData WS: Initializing connection...');
+    logger.info('TwelveData WS: Initializing real-time stream...');
     try {
       this.ws = new (globalThis as any).WebSocket(`wss://ws.twelvedata.com/v1/quotes/price?apikey=${key}`);
       
@@ -90,28 +91,37 @@ export class TwelveDataProvider implements PriceProvider {
           }
           
           if (msg.event === 'price' && msg.symbol) {
-            const normalizedSymbol = msg.symbol.replace('/', '');
-            const snapshot = {
-              symbol: normalizedSymbol,
+            const canonicalSymbol = toCanonicalSymbol(msg.symbol);
+            const receivedAt = new Date().toISOString();
+            const providerTs = new Date(msg.timestamp * 1000).toISOString();
+            const ageMs = Math.max(0, Date.now() - (msg.timestamp * 1000));
+            const freshness = ageMs > 60000 ? 'stale' as const : 'live' as const;
+
+            const snapshot: MarketSnapshot = {
+              symbol: canonicalSymbol,
               price: parseFloat(msg.price),
-              timestamp: new Date(msg.timestamp * 1000).toISOString(),
+              timestamp: providerTs,
               provider: this.name,
-              freshness: 'live' as const
+              freshness,
+              providerTimestamp: providerTs,
+              receivedAt,
+              ageMs,
+              status: freshness === 'live' ? 'OK' : 'STALE'
             };
-            this.latestPrices.set(normalizedSymbol, snapshot);
+            this.latestPrices.set(canonicalSymbol, snapshot);
             
             // Broadcast market update with deduplication across instances
-            const dedupKey = `tick_${normalizedSymbol}_${msg.timestamp}`;
+            const dedupKey = `tick_${canonicalSymbol}_${msg.timestamp}`;
             getQueueManager().deduplicate(dedupKey, 2).then(isNew => {
-                 if (isNew) {
-                 getQueueManager().streamPublish(`market_stream:${normalizedSymbol}`, {
-                   id: `tick-${Date.now()}`,
-                   type: 'MARKET_TICK',
-                   payload: snapshot,
-                   timestamp: snapshot.timestamp,
-                   retryCount: 0
-                 });
-               }
+              if (isNew) {
+                getQueueManager().streamPublish(`market_stream:${canonicalSymbol}`, {
+                  id: `tick-${Date.now()}`,
+                  type: 'MARKET_TICK',
+                  payload: snapshot,
+                  timestamp: snapshot.timestamp,
+                  retryCount: 0
+                });
+              }
             });
           }
         } catch (e) {
@@ -126,11 +136,11 @@ export class TwelveDataProvider implements PriceProvider {
         } else {
           this.reconnectAttempts++;
           if (this.reconnectAttempts >= 3) {
-            logger.warn('TwelveData WebSocket disconnected consecutively 3 times. Free plan might not support live WebSocket for this asset. Pausing WebSocket reconnection attempts for 30 minutes to conserve resources.');
+            logger.warn('TwelveData WebSocket disconnected consecutively 3 times. Pausing WebSocket reconnection attempts for 30 minutes.');
             this.reconnectTimeout = setTimeout(() => {
               this.reconnectAttempts = 0;
               this.initWebSocket();
-            }, 1800000); // 30 minutes
+            }, 1800000);
           } else {
             const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
             logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
@@ -155,16 +165,9 @@ export class TwelveDataProvider implements PriceProvider {
     return map[tf.toUpperCase()] || '15min';
   }
 
-  private formatSymbol(symbol: string): string {
-    const norm = symbol.toUpperCase().trim();
-    if (norm === 'XAUUSD') return 'XAU/USD';
-    if (norm === 'DXY' || norm === 'US10Y') {
-        throw new Error(`Symbol ${norm} not supported by TwelveData directly (mapping invalid)`);
-    }
-    return norm;
-  }
-
   async getLatestPrice(symbol: string): Promise<MarketSnapshot> {
+    const canonicalSymbol = toCanonicalSymbol(symbol);
+
     if (!this.currentApiKey) {
       throw new Error('TwelveData API key is not configured');
     }
@@ -174,10 +177,10 @@ export class TwelveDataProvider implements PriceProvider {
       this.initWebSocket();
     }
     
-    const formattedSymbol = this.formatSymbol(symbol);
+    const formattedSymbol = toProviderSymbol(canonicalSymbol, this.name);
     
     // Check WS cache first
-    const cached = this.latestPrices.get(symbol);
+    const cached = this.latestPrices.get(canonicalSymbol);
     if (cached) {
       const ageMs = Date.now() - new Date(cached.timestamp).getTime();
       if (ageMs < 15000) {
@@ -185,82 +188,101 @@ export class TwelveDataProvider implements PriceProvider {
       }
     }
 
-    // Fallback to HTTP Polling if WS is stale (>15s) or not connected
+    // Fallback to HTTP Polling
     try {
-      logger.info(`TwelveData REST: Fetching live price (input: ${symbol}, mapped: ${formattedSymbol})`);
+      logger.info(`TwelveData REST: Fetching price (canonical: ${canonicalSymbol}, provider: ${formattedSymbol})`);
       const res = await fetchWithRetry(`https://api.twelvedata.com/price?symbol=${formattedSymbol}&apikey=${this.currentApiKey}`, {
-          timeoutMs: 1500,
+          timeoutMs: 2000,
           retries: 0
       });
-      if (res.status === 429) throw new Error('Rate Limited (429)');
+      if (res.status === 429) throw new Error('TwelveData Rate Limited (429)');
       const data = await res.json();
       
       if (data.code || !data.price) {
-        throw new Error(data.message || 'Failed to fetch price');
+        throw new Error(data.message || 'Failed to fetch price from TwelveData');
+      }
+
+      const receivedAt = new Date().toISOString();
+      const priceVal = parseFloat(data.price);
+      if (isNaN(priceVal) || priceVal <= 0) {
+        throw new Error(`Invalid price value received from TwelveData: ${data.price}`);
       }
 
       getProviderRegistry().reportSuccess(this.name);
       const freshSnapshot: MarketSnapshot = {
-        symbol,
-        price: parseFloat(data.price),
-        timestamp: new Date().toISOString(),
+        symbol: canonicalSymbol,
+        price: priceVal,
+        timestamp: receivedAt,
         provider: this.name,
-        freshness: 'live'
+        freshness: 'live',
+        providerTimestamp: receivedAt,
+        receivedAt,
+        ageMs: 0,
+        status: 'OK'
       };
-      this.latestPrices.set(symbol, freshSnapshot);
+      this.latestPrices.set(canonicalSymbol, freshSnapshot);
       return freshSnapshot;
     } catch (e: any) {
-      if (!e.message?.includes('not supported by TwelveData')) {
+      if (!e.message?.includes('not provide direct index')) {
         getProviderRegistry().reportError(this.name, e.message);
       }
       throw e;
     }
   }
 
-  async getCandles(symbol: string, timeframe: string, limit: number = 100): Promise<Candle[] & import('@/types').ProviderStatus> {
+  async getCandles(symbol: string, timeframe: string, limit: number = 100): Promise<Candle[] & ProviderStatus> {
+    const canonicalSymbol = toCanonicalSymbol(symbol);
     const key = this.currentApiKey;
     if (!key) {
       throw new Error('TwelveData API key is not configured');
     }
     
-    let formattedSymbol: string;
-    try {
-      formattedSymbol = this.formatSymbol(symbol);
-    } catch (e: any) {
-      throw e;
-    }
+    const formattedSymbol = toProviderSymbol(canonicalSymbol, this.name);
     
     try {
       const startTime = Date.now();
       const interval = this.mapTimeframe(timeframe);
       const res = await fetchWithRetry(`https://api.twelvedata.com/time_series?symbol=${formattedSymbol}&interval=${interval}&outputsize=${limit}&apikey=${key}`, {
-          timeoutMs: 1500,
+          timeoutMs: 3000,
           retries: 0
       });
-      if (res.status === 429) throw new Error('Rate Limited (429)');
+      if (res.status === 429) throw new Error('TwelveData Rate Limited (429)');
       const data = await res.json();
       const latency = Date.now() - startTime;
 
-      if (data.code || !data.values) {
-        throw new Error(data.message || 'Failed to fetch candles');
+      if (data.code || !data.values || !Array.isArray(data.values)) {
+        throw new Error(data.message || 'Failed to fetch candles from TwelveData');
       }
 
-      const candles = data.values.map((v: any) => ({
-        timestamp: new Date(v.datetime).toISOString(),
-        open: parseFloat(v.open) || 0,
-        high: parseFloat(v.high) || 0,
-        low: parseFloat(v.low) || 0,
-        close: parseFloat(v.close) || 0,
-        volume: parseFloat(v.volume) || 0,
-        provider: this.name,
-        latency,
-        freshness: 'live' as const,
-        confidence: 1.0
-      }));
+      const now = Date.now();
+      const candles: Candle[] = data.values.map((v: any) => {
+        // TwelveData returns datetime in UTC string like "2025-02-20 15:30:00"
+        const rawDate = v.datetime;
+        const isoDate = new Date(rawDate.includes('Z') || rawDate.includes('+') ? rawDate : rawDate.replace(' ', 'T') + 'Z').toISOString();
+        const candleAgeMs = now - new Date(isoDate).getTime();
+        const freshness = candleAgeMs > 4 * 60 * 60 * 1000 ? 'stale' as const : 'live' as const;
 
-      return candles.reverse();
+        return {
+          timestamp: isoDate,
+          open: parseFloat(v.open) || 0,
+          high: parseFloat(v.high) || 0,
+          low: parseFloat(v.low) || 0,
+          close: parseFloat(v.close) || 0,
+          volume: parseFloat(v.volume) || 0,
+          provider: this.name,
+          latency,
+          freshness,
+          confidence: 1.0
+        };
+      });
+
+      // TwelveData returns newest first -> reverse to ascending chronological order
+      candles.reverse();
+
+      getProviderRegistry().reportSuccess(this.name);
+      return candles as any;
     } catch (e: any) {
-      if (!e.message?.includes('not supported by TwelveData')) {
+      if (!e.message?.includes('not provide direct index')) {
         getProviderRegistry().reportError(this.name, e.message);
       }
       throw e;

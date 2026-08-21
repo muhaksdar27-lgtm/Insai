@@ -1,29 +1,37 @@
 import { Candle } from '@/types';
 import { 
   calculateATR, 
-  calculateSMA, 
-  calculateEMA,
   findPivots, 
   findFVGs, 
   findBOS, 
   detectMSS, 
   findOrderBlocks, 
-  findSweeps,
-  calculateDealingRange,
-  detectDisplacement,
-  detectInducement,
-  findSDZoneStructures,
-  detectSessionPools
+  findSweeps, 
+  calculateDealingRange, 
+  detectDisplacement, 
+  detectInducement, 
+  findSDZoneStructures, 
+  detectSessionPools 
 } from './indicators';
+import { HTFTrendAnalyzer, HTFTrendResult } from './htf-trend-analyzer';
+import { SessionEngine } from '../market-data/session-engine';
+import { toCanonicalSymbol } from '../market-data/canonical-symbol';
 
 export class LocalTAAnalyzer {
   public static analyze(context: any): Record<string, any> {
-    const symbol = context.symbol || 'XAUUSD';
-    const timeframe = context.timeframe || 'M15';
+    const symbol = toCanonicalSymbol(context.symbol || 'XAUUSD');
+    const timeframe = (context.timeframe || 'M15').toUpperCase();
     const candles: Candle[] = context.candles || [];
     const latestPriceSnapshot = context.price;
+    const sessionDetails = SessionEngine.getSessionInfo(context.timestamp || latestPriceSnapshot?.timestamp);
     
     const currentPrice = latestPriceSnapshot?.price || (candles.length > 0 ? candles[candles.length - 1].close : 2700);
+
+    // 1. HTF Trend Analysis (Single source of truth via HTFTrendAnalyzer)
+    const htfTrend: HTFTrendResult = HTFTrendAnalyzer.analyzeTrend(candles, 'H1');
+    const trend_h1 = htfTrend.direction; // 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'INSUFFICIENT_DATA' | 'ANALYSIS_ERROR'
+    const isBullishTrend = trend_h1 === 'BULLISH';
+    const isBearishTrend = trend_h1 === 'BEARISH';
 
     if (!candles || candles.length === 0) {
       return {
@@ -31,9 +39,11 @@ export class LocalTAAnalyzer {
         timeframe,
         current_price: currentPrice,
         entry_price: currentPrice,
-        session: 'London',
-        trend_h1: 'bullish',
-        trend: 'bullish',
+        session: sessionDetails.primarySession,
+        session_details: sessionDetails,
+        trend_h1,
+        trend: trend_h1,
+        htf_trend: htfTrend,
         atr: 4.5,
         spread_acceptable: true,
         dealing_range_zone: 'EQUILIBRIUM',
@@ -44,23 +54,8 @@ export class LocalTAAnalyzer {
       };
     }
 
-    // 1. Calculate ATR (Dynamic Volatility Metric)
+    // 2. Calculate ATR (Dynamic Volatility Metric)
     const atr = calculateATR(candles, 14) || 4.5;
-
-    // 2. Calculate Trend (Multi-Moving Average & HTF Structure Alignment)
-    const ema20 = calculateEMA(candles, Math.min(20, candles.length)) || currentPrice;
-    const ema50 = calculateEMA(candles, Math.min(50, candles.length)) || ema20;
-    const sma50 = calculateSMA(candles, Math.min(50, candles.length)) || ema50;
-    
-    // Check recent swing highs and lows structure (last 20 bars)
-    const recentBars = candles.slice(-20);
-    const recentPivots = findPivots(recentBars, 3, 3);
-    const higherHighs = recentPivots.highs.length >= 2 && recentPivots.highs[recentPivots.highs.length - 1].price > recentPivots.highs[0].price;
-    const higherLows = recentPivots.lows.length >= 2 && recentPivots.lows[recentPivots.lows.length - 1].price > recentPivots.lows[0].price;
-    const structureBullish = higherHighs || higherLows;
-
-    const isBullishTrend = (currentPrice >= ema20 && ema20 >= ema50) || (currentPrice >= sma50) || structureBullish;
-    const trend_h1 = isBullishTrend ? 'bullish' : 'bearish';
 
     // 3. Premium vs Discount Matrix (Dealing Range)
     const dealingRange = calculateDealingRange(candles, currentPrice);
@@ -145,7 +140,6 @@ export class LocalTAAnalyzer {
     // 11. Candlestick Engulfing Trigger (with body expansion check)
     let engulfing_bull = false;
     let engulfing_bear = false;
-    // We should check the last CLOSED candle, not the forming one
     const closedCandles = candles.length > 1 ? candles.slice(0, candles.length - 1) : candles;
     if (closedCandles.length >= 2) {
       const last = closedCandles[closedCandles.length - 1];
@@ -171,23 +165,15 @@ export class LocalTAAnalyzer {
       if (Math.abs(l1 - l2) <= atr * 0.4) double_bottom = true;
     }
 
-    // 13. Session Identification
-    const currentHour = new Date().getUTCHours();
-    let current_session = 'London';
-    if (currentHour >= 7 && currentHour < 13) current_session = 'London';
-    else if (currentHour >= 13 && currentHour < 16) current_session = 'London/NY Overlap';
-    else if (currentHour >= 16 && currentHour < 21) current_session = 'New York';
-    else if (currentHour >= 0 && currentHour < 7) current_session = 'Asia';
-    else current_session = 'Off-Session';
-
-    // 14. Weighted Institutional Directional Scoring
+    // 13. Directional Scoring
     let bullishWeight = 0;
     let bearishWeight = 0;
 
     // HTF POI & Trend (30%)
-    if (isBullishTrend) bullishWeight += 15; else bearishWeight += 15;
-    if (isDiscount) bullishWeight += 15;
-    if (isPremium) bearishWeight += 15;
+    if (isBullishTrend) bullishWeight += 20;
+    else if (isBearishTrend) bearishWeight += 20;
+    if (isDiscount) bullishWeight += 10;
+    if (isPremium) bearishWeight += 10;
 
     // Liquidity Sweeps (25%)
     if (liq_sweep_bull || asianSweepBull) bullishWeight += 25;
@@ -207,7 +193,6 @@ export class LocalTAAnalyzer {
     const maxScore = Math.max(bullishWeight, bearishWeight);
     const confluence_score = Math.min(98, Math.max(65, maxScore));
 
-    // 15. Strategy-Specific Precision Setups & Levels
     // Strategy 1 (SMC London M15) Setup
     const s1_direction: 'buy' | 'sell' = (asianSweepBull || liq_sweep_bull || choch_bull) ? 'buy' : ((asianSweepBear || liq_sweep_bear || choch_bear) ? 'sell' : signal_direction);
     const s1_entry = s1_direction === 'buy'
@@ -233,7 +218,6 @@ export class LocalTAAnalyzer {
       : ((s2_activeSupply?.top || s2_entry + atr) + (atr * 0.5));
     const s2_risk = Math.abs(s2_entry - s2_sl) || (atr * 0.5);
     
-    // Ensure minimum 1:2 RR
     let s2_tp1 = s2_direction === 'buy'
       ? (s2_activeSupply?.bottom && s2_activeSupply.bottom > s2_entry ? s2_activeSupply.bottom : s2_entry + (s2_risk * 2.0))
       : (s2_activeDemand?.top && s2_activeDemand.top < s2_entry ? s2_activeDemand.top : s2_entry - (s2_risk * 2.0));
@@ -246,7 +230,7 @@ export class LocalTAAnalyzer {
     // Strategy 3 (Scalping M1) Setup
     const s3_direction: 'buy' | 'sell' = (double_bottom || liq_sweep_bull) ? 'buy' : ((double_top || liq_sweep_bear) ? 'sell' : signal_direction);
     const s3_entry = currentPrice;
-    const s3_riskDist = Math.max(atr * 0.3, 0.8); // Tight scalp risk
+    const s3_riskDist = Math.max(atr * 0.3, 0.8);
     const s3_sl = s3_direction === 'buy' ? s3_entry - s3_riskDist : s3_entry + s3_riskDist;
     const s3_tp1 = s3_direction === 'buy' ? s3_entry + (s3_riskDist * 1.5) : s3_entry - (s3_riskDist * 1.5);
     const s3_tp2 = s3_direction === 'buy' ? s3_entry + (s3_riskDist * 2.5) : s3_entry - (s3_riskDist * 2.5);
@@ -284,10 +268,12 @@ export class LocalTAAnalyzer {
       tp2_price: signal_direction === 'buy' ? currentPrice + (atr * 1.75) : currentPrice - (atr * 1.75),
       tp_price: signal_direction === 'buy' ? currentPrice + (atr * 1.0) : currentPrice - (atr * 1.0),
       signal_direction,
-      session: current_session,
-      current_session,
+      session: sessionDetails.primarySession,
+      current_session: sessionDetails.primarySession,
+      session_details: sessionDetails,
       trend_h1,
       trend: trend_h1,
+      htf_trend: htfTrend,
       
       // Strategy-specific setup structures
       strategy1: {
@@ -397,4 +383,3 @@ export class LocalTAAnalyzer {
     };
   }
 }
-
