@@ -3,15 +3,12 @@ import { getDatabaseClient } from "../db/client";
 import { getEnv } from "../utils/env";
 import { RuleEvaluationContext } from '@/types';
 import { AIValidationOrchestrator } from './validation-pipeline/ai-orchestrator';
-import { consistencyEngine } from './validation-pipeline/consistency-engine';
-import { qualityGate } from './validation-pipeline/quality-gate';
 import { SetupDetector } from './setup-detector';
 import { logger } from '../utils/logger';
 import { PyWSClient } from './py-ws-client';
 import { PythonEngineManager } from '../mcp/engines/deployment';
 import { MarketStateEngine } from './market-state-engine';
 import { StateMachine } from './state-machine';
-import { SignalBuilder } from './signal-builder';
 import { getMarketDataService } from '../market-data/market-data-service';
 import { MarketCalendar } from '../market-data/market-calendar';
 import { StrategySetup } from './types';
@@ -34,6 +31,10 @@ export class TradingEngine {
 
   public getSetupDetector(): SetupDetector {
     return this.setupDetector;
+  }
+
+  public getAIOrchestrator(): AIValidationOrchestrator {
+    return this.aiOrchestrator;
   }
 
   public async init() {

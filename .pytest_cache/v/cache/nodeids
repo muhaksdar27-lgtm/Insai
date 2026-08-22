@@ -1,0 +1,13 @@
+[
+  "python-engine/test_deterministic_analyzer.py::test_atr_and_insufficient_data",
+  "python-engine/test_deterministic_analyzer.py::test_bos_and_choch",
+  "python-engine/test_deterministic_analyzer.py::test_determinism_identical_runs",
+  "python-engine/test_deterministic_analyzer.py::test_double_top_and_neckline",
+  "python-engine/test_deterministic_analyzer.py::test_error_handling_empty_candles",
+  "python-engine/test_deterministic_analyzer.py::test_error_handling_invalid_type",
+  "python-engine/test_deterministic_analyzer.py::test_fvg",
+  "python-engine/test_deterministic_analyzer.py::test_liquidity_sweep",
+  "python-engine/test_deterministic_analyzer.py::test_ma50_and_ma200",
+  "python-engine/test_deterministic_analyzer.py::test_rsi",
+  "python-engine/test_deterministic_analyzer.py::test_swing_and_trend_structure"
+]

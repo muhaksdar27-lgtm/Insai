@@ -77,8 +77,6 @@ export class SignalCandidateGate {
     checks.strategyValid = true;
 
     // 2. Seluruh Mandatory Setup Lengkap (All steps validated)
-    const requiredStepCount = manifest.setup_sequence.length;
-    const validatedSteps = setup.steps.filter(s => s.state === 'VALIDATED');
     const hasFailedStep = setup.steps.some(s => s.state === 'REJECTED' || s.state === 'INVALIDATED');
 
     if (hasFailedStep) {
@@ -269,32 +267,23 @@ export class SignalCandidateGate {
     checks.candleContextValid = true;
 
     // 10. Signal Belum Pernah Dibuat (Deduplication / Idempotency check)
-    if (this.previouslyCreatedKeys.has(deterministicSignalKey)) {
-      return {
-        isValid: false,
-        rejectReason: `Candidate rejected: Signal key ${deterministicSignalKey} was previously generated and finalized`,
-        checks,
-        metrics
-      };
-    }
+    const isInMemory = this.previouslyCreatedKeys.has(deterministicSignalKey);
+    let isInDb = false;
 
-    // Check DB for existing signal with same key
-    try {
-      const existingSignal = await getDatabaseClient().getSignalByKey(deterministicSignalKey);
-      if (existingSignal && (existingSignal.status === 'SIGNAL_ACTIVE' || existingSignal.status === 'APPROVED' || existingSignal.status === 'COMPLETED')) {
-        this.previouslyCreatedKeys.add(deterministicSignalKey);
-        return {
-          isValid: false,
-          rejectReason: `Candidate rejected: Signal key ${deterministicSignalKey} already exists in database with status ${existingSignal.status}`,
-          checks,
-          metrics
-        };
+    // Check DB for existing signal with same key if not in memory
+    if (!isInMemory) {
+      try {
+        const existingSignal = await getDatabaseClient().getSignalByKey(deterministicSignalKey);
+        if (existingSignal && (existingSignal.status === 'SIGNAL_ACTIVE' || existingSignal.status === 'APPROVED' || existingSignal.status === 'COMPLETED')) {
+          isInDb = true;
+          this.previouslyCreatedKeys.add(deterministicSignalKey);
+        }
+      } catch (e: any) {
+        logger.debug(`Database check notice during candidate gate: ${e.message}`);
       }
-    } catch (e: any) {
-      logger.debug(`Database check notice during candidate gate: ${e.message}`);
     }
 
-    checks.notPreviouslyCreated = true;
+    checks.notPreviouslyCreated = !isInMemory && !isInDb;
 
     return {
       isValid: true,

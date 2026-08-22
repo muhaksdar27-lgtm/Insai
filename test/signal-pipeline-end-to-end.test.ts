@@ -365,13 +365,6 @@ describe('PROMPT 5 — SIGNAL PIPELINE END-TO-END & ANTI-DUPLICATION SUITE', () 
   describe('Test Case 7: Provider retry (Duplicate provider event returns existing signal)', () => {
     it('returns existing signal when market data provider resends identical candle payload', async () => {
       const setup = createValidSetup('strategy-2-snd', 'sell', 'anchor_provider_retry_01');
-      setup.steps = [
-        { step_id: 'HTF_TREND', rule_id: 'rule_h1_trend', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'MA_DYNAMIC_TREND', rule_id: 'rule_ma_trend', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'SUPPLY_ZONE_TOUCH', rule_id: 'rule_sd_zone_touch', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'ENGULFING_TRIGGER', rule_id: 'rule_engulfing_confirm', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'SPREAD_FILTER', rule_id: 'rule_spread_check', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 }
-      ];
       setup.entry_price = 2715.00;
       setup.sl_price = 2725.00;
       setup.tp1_price = 2690.00; // 1:2.5 RR
@@ -409,13 +402,6 @@ describe('PROMPT 5 — SIGNAL PIPELINE END-TO-END & ANTI-DUPLICATION SUITE', () 
     it('ensures duplicate webhook deliveries result in zero duplicated notifications and zero duplicate database entries', async () => {
       const setup = createValidSetup('strategy-3-scalping', 'buy', 'anchor_webhook_01');
       setup.timeframe = 'M1';
-      setup.steps = [
-        { step_id: 'H1_TREND_BIAS', rule_id: 'rule_h1_trend', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'LIQUIDITY_SWEEP', rule_id: 'rule_liquidity_sweep', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'M15_RETRACEMENT', rule_id: 'rule_m15_retracement', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'M1_DOUBLE_PATTERN', rule_id: 'rule_m1_double_top_bottom', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 },
-        { step_id: 'NECKLINE_BREAKOUT', rule_id: 'rule_neckline_break', state: 'VALIDATED', started_at: new Date().toISOString(), updated_at: new Date().toISOString(), retry_count: 0 }
-      ];
       setup.entry_price = 2700.00;
       setup.sl_price = 2697.00; // 30 pips
       setup.tp1_price = 2710.00; // 100 pips (1:3.33 RR)

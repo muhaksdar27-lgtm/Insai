@@ -1,13 +1,40 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
+import uuid
+from datetime import datetime, timezone
 
 class Candle(BaseModel):
     timestamp: str
-    open: Optional[float] = 0.0
-    high: Optional[float] = 0.0
-    low: Optional[float] = 0.0
-    close: Optional[float] = 0.0
+    open: float = 0.0
+    high: float = 0.0
+    low: float = 0.0
+    close: float = 0.0
     volume: Optional[float] = 0.0
+
+class AnalysisRequest(BaseModel):
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    symbol: str = "XAUUSD"
+    timeframe: str = "M15"
+    candles: List[Candle] = Field(default_factory=list)
+    timestamp: Optional[str] = None
+    session: Optional[str] = None
+    strategy_id: Optional[str] = None
+    analysis_type: str = "FULL_ANALYSIS"
+    analysis_parameters: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    market_context: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    # Multi-timeframe support for backward compatibility
+    multi_tf_candles: Optional[Dict[str, List[Candle]]] = None
+
+class AnalysisResponse(BaseModel):
+    request_id: str
+    status: str  # "SUCCESS" | "INSUFFICIENT_DATA" | "ANALYSIS_ERROR" | "TIMEOUT" | "INVALID_INPUT"
+    detected: Optional[bool] = None
+    analysis_type: str
+    values: Dict[str, Any] = Field(default_factory=dict)
+    evidence: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    source: str = "python_engine"
+    error: Optional[str] = None
 
 class ValidationRequest(BaseModel):
     symbol: str
@@ -69,4 +96,5 @@ class ValidationResponse(BaseModel):
     reasons: List[str]
     metrics: ValidationResponseMetrics
     explainability: Optional[Dict[str, Any]] = None
+
 

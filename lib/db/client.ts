@@ -613,6 +613,17 @@ export class DatabaseService {
     }
   }
 
+  public async insertHistory(record: any) {
+    return this.archiveToHistory(
+      record.signal_key,
+      record.status || 'SIGNAL_ACTIVE',
+      record.pips_result || 0,
+      record.outcome || 'PENDING',
+      record.correlation_id,
+      record.rr_realized
+    );
+  }
+
   public async getActiveSignals() {
     if (this.isConnected()) {
       try {
@@ -644,6 +655,35 @@ export class DatabaseService {
 
     const cachedActive = Array.from(this.memorySignalsCache.values()).filter(s => ['SIGNAL_ACTIVE', 'APPROVED', 'ACTIVE', 'TAKE_PARTIAL', 'PENDING'].includes(s.status));
     return cachedActive;
+  }
+
+  public async getSignalByKey(signalKey: string) {
+    if (!signalKey) return null;
+    const cached = this.memorySignalsCache.get(signalKey);
+    if (cached) return cached;
+
+    if (this.isConnected()) {
+      try {
+        const signal = await this.withRetry(async (pool) => {
+          const query = `
+            SELECT * FROM signals
+            WHERE signal_key = $1
+            LIMIT 1;
+          `;
+          const { rows } = await pool.query(query, [signalKey]);
+          return rows && rows.length > 0 ? rows[0] : null;
+        });
+
+        if (signal) {
+          this.memorySignalsCache.set(signalKey, signal);
+          return signal;
+        }
+      } catch (err: any) {
+        logger.warn(`PostgreSQL fetch signal by key warn: ${err.message}`);
+      }
+    }
+
+    return null;
   }
 
   public async getHistoricalSignals() {

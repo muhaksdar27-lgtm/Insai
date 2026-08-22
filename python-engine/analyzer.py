@@ -1,10 +1,12 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import math
 import os
 import json
 import hashlib
 import numpy as np
 from core_engine import CoreEngine
+from deterministic_analyzer import dispatch_analysis, run_full_analysis
+from models.schemas import AnalysisRequest, AnalysisResponse, Candle
 
 # Redis integration
 import redis
@@ -17,7 +19,6 @@ class TechnicalAnalyzer:
             self.redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
             self.redis_client.ping()
         except Exception as e:
-            print(f"Redis not available, falling back to in-memory dict: {e}")
             self.redis_client = None
             
         from collections import OrderedDict
@@ -26,18 +27,46 @@ class TechnicalAnalyzer:
 
     def _generate_payload_hash(self, data: Dict[str, Any]) -> str:
         keys = []
+        if "candles" in data:
+            candles = data.get("candles", [])
+            if candles:
+                last_c = candles[-1]
+                ts = last_c.get("timestamp", getattr(last_c, "timestamp", "")) if isinstance(last_c, dict) else getattr(last_c, "timestamp", "")
+                c = last_c.get("close", getattr(last_c, "close", 0)) if isinstance(last_c, dict) else getattr(last_c, "close", 0)
+                keys.append(f"direct_{len(candles)}_{ts}_{c}_{data.get('analysis_type', 'ALL')}")
         for tf in ["H1", "M15", "M5", "M1"]:
             candles = data.get(tf, {}).get("candles", [])
             if candles:
                 last_c = candles[-1]
-                ts = last_c.get("timestamp", getattr(last_c, "timestamp", ""))
-                c = last_c.get("close", getattr(last_c, "close", 0))
+                ts = last_c.get("timestamp", getattr(last_c, "timestamp", "")) if isinstance(last_c, dict) else getattr(last_c, "timestamp", "")
+                c = last_c.get("close", getattr(last_c, "close", 0)) if isinstance(last_c, dict) else getattr(last_c, "close", 0)
                 keys.append(f"{tf}_{ts}_{c}")
             else:
                 keys.append(f"{tf}_empty")
         return hashlib.md5("_".join(keys).encode()).hexdigest()
 
+    def analyze_deterministic(self, request: AnalysisRequest) -> AnalysisResponse:
+        """Strict deterministic analysis using AnalysisRequest schema."""
+        return dispatch_analysis(request)
+
     def analyze(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Supports both legacy dict payloads and standardized AnalysisRequest payloads."""
+        # If payload is a direct AnalysisRequest structure
+        if "candles" in data and isinstance(data.get("candles"), list) and len(data.get("candles")) > 0:
+            try:
+                # Convert dict to AnalysisRequest if needed
+                req_obj = AnalysisRequest(**data) if not isinstance(data, AnalysisRequest) else data
+                response = dispatch_analysis(req_obj)
+                # If requested as raw dict output with standard structure
+                res_dict = response.model_dump()
+                # Merge values at top-level for backwards compatibility
+                if response.values:
+                    res_dict.update(response.values)
+                return res_dict
+            except Exception as e:
+                # Fallback to standard execution
+                pass
+
         payload_hash = self._generate_payload_hash(data)
         
         # Try Redis Cache First
@@ -60,9 +89,9 @@ class TechnicalAnalyzer:
         h1_c = data.get("H1", {}).get("candles", [])
         if len(h1_c) >= 15:
             try:
-                closes = np.array([float(c.get("close", getattr(c, "close", 0))) for c in h1_c], dtype=np.float64)
-                highs = np.array([float(c.get("high", getattr(c, "high", 0))) for c in h1_c], dtype=np.float64)
-                lows = np.array([float(c.get("low", getattr(c, "low", 0))) for c in h1_c], dtype=np.float64)
+                closes = np.array([float(c.get("close", getattr(c, "close", 0)) if isinstance(c, dict) else getattr(c, "close", 0)) for c in h1_c], dtype=np.float64)
+                highs = np.array([float(c.get("high", getattr(c, "high", 0)) if isinstance(c, dict) else getattr(c, "high", 0)) for c in h1_c], dtype=np.float64)
+                lows = np.array([float(c.get("low", getattr(c, "low", 0)) if isinstance(c, dict) else getattr(c, "low", 0)) for c in h1_c], dtype=np.float64)
                 
                 # Exponential Moving Averages
                 def calc_ema(arr, period):
@@ -96,8 +125,8 @@ class TechnicalAnalyzer:
             except Exception:
                 result["trend_h1"] = "neutral"
         elif len(h1_c) >= 5:
-            c_first = float(h1_c[-5].get("close", getattr(h1_c[-5], "close", 0)))
-            c_last = float(h1_c[-1].get("close", getattr(h1_c[-1], "close", 0)))
+            c_first = float(h1_c[-5].get("close", getattr(h1_c[-5], "close", 0)) if isinstance(h1_c[-5], dict) else getattr(h1_c[-5], "close", 0))
+            c_last = float(h1_c[-1].get("close", getattr(h1_c[-1], "close", 0)) if isinstance(h1_c[-1], dict) else getattr(h1_c[-1], "close", 0))
             result["trend_h1"] = "bullish" if c_last > c_first else ("bearish" if c_last < c_first else "neutral")
         else:
             result["trend_h1"] = "insufficient_data"
@@ -121,9 +150,9 @@ class TechnicalAnalyzer:
             except Exception:
                 pass
         elif len(m15_c) >= 10:
-            closes = np.array([c.get("close", getattr(c, "close", 0)) for c in m15_c[-10:]], dtype=np.float64)
-            highs = np.array([c.get("high", getattr(c, "high", 0)) for c in m15_c[-10:]], dtype=np.float64)
-            lows = np.array([c.get("low", getattr(c, "low", 0)) for c in m15_c[-10:]], dtype=np.float64)
+            closes = np.array([c.get("close", getattr(c, "close", 0)) if isinstance(c, dict) else getattr(c, "close", 0) for c in m15_c[-10:]], dtype=np.float64)
+            highs = np.array([c.get("high", getattr(c, "high", 0)) if isinstance(c, dict) else getattr(c, "high", 0) for c in m15_c[-10:]], dtype=np.float64)
+            lows = np.array([c.get("low", getattr(c, "low", 0)) if isinstance(c, dict) else getattr(c, "low", 0) for c in m15_c[-10:]], dtype=np.float64)
             c_last = float(closes[-1])
             result["bos_bull"] = bool(c_last > np.max(highs[:-1]))
             result["bos_bear"] = bool(c_last < np.min(lows[:-1]))
@@ -148,9 +177,9 @@ class TechnicalAnalyzer:
             except Exception:
                 pass
         elif len(m5_c) >= 5:
-            lows = [float(c.get("low", getattr(c, "low", 0))) for c in m5_c[-5:]]
-            highs = [float(c.get("high", getattr(c, "high", 0))) for c in m5_c[-5:]]
-            closes = [float(c.get("close", getattr(c, "close", 0))) for c in m5_c[-5:]]
+            lows = [float(c.get("low", getattr(c, "low", 0)) if isinstance(c, dict) else getattr(c, "low", 0)) for c in m5_c[-5:]]
+            highs = [float(c.get("high", getattr(c, "high", 0)) if isinstance(c, dict) else getattr(c, "high", 0)) for c in m5_c[-5:]]
+            closes = [float(c.get("close", getattr(c, "close", 0)) if isinstance(c, dict) else getattr(c, "close", 0)) for c in m5_c[-5:]]
             result["liq_sweep_bull"] = lows[-1] < min(lows[:-1]) and closes[-1] > lows[-1] + (highs[-1]-lows[-1])*0.3
             result["liq_sweep_bear"] = highs[-1] > max(highs[:-1]) and closes[-1] < highs[-1] - (highs[-1]-lows[-1])*0.3
         else:
@@ -167,7 +196,7 @@ class TechnicalAnalyzer:
                 result["evening_star"] = analysis_m1.get("evening_star", False)
                 result["double_bottom"] = analysis_m1.get("double_bottom", False)
                 result["double_top"] = analysis_m1.get("double_top", False)
-                result["current_price"] = float(m1_c[-1].get("close", getattr(m1_c[-1], "close", 0)))
+                result["current_price"] = float(m1_c[-1].get("close", getattr(m1_c[-1], "close", 0)) if isinstance(m1_c[-1], dict) else getattr(m1_c[-1], "close", 0))
             except Exception:
                 pass
         elif len(m1_c) >= 3:
@@ -202,3 +231,4 @@ class TechnicalAnalyzer:
             self._cache.popitem(last=False)
             
         return result
+

@@ -65,6 +65,7 @@ export interface StrategySpecification {
     spreadMaxPips: number;
     newsRestriction: string;
     sessionFilter: boolean;
+    cooldownCandles?: number;
   };
   invalidation_rule: {
     conditions: string[];

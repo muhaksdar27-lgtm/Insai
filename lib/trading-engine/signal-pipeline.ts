@@ -117,6 +117,7 @@ export class SignalPipeline {
     }
 
     // Convert setup format if needed
+    const nowIso = (setup as any).timestamp || (setup as any).created_at || new Date().toISOString();
     const strategySetup: StrategySetup = (setup as any).steps ? (setup as StrategySetup) : {
       id: setup.id,
       strategy_id: stratId,
@@ -124,29 +125,39 @@ export class SignalPipeline {
       timeframe,
       direction: direction.toLowerCase() as 'buy' | 'sell',
       state: 'VALIDATED' as any,
-      steps: manifest.setup_sequence.map(seq => ({
+      current_step_id: manifest.setup_sequence[manifest.setup_sequence.length - 1]?.step_id || 'FINAL',
+      current_step_order: manifest.setup_sequence.length,
+      last_evaluated_at: nowIso,
+      expires_at: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
+      steps: manifest.setup_sequence.map((seq, idx) => ({
         step_id: seq.step_id,
+        step_order: idx + 1,
+        strategy_id: stratId,
         rule_id: seq.rule_id,
+        name: seq.name || seq.step_id,
+        description: seq.description || '',
         state: 'VALIDATED' as any,
-        started_at: setup.timestamp || new Date().toISOString(),
-        updated_at: setup.timestamp || new Date().toISOString(),
-        retry_count: 0
+        timestamp: nowIso,
+        evidence: {},
+        reason: 'Rule passed',
+        invalidation: '',
+        last_evaluated_timestamp: nowIso,
       })),
       entry_price: (setup as any).entryPrice ?? (setup as any).entry_price ?? 0,
       sl_price: (setup as any).slPrice ?? (setup as any).sl_price ?? 0,
       tp1_price: (setup as any).tpPrice ?? (setup as any).tp1_price ?? 0,
-      created_at: setup.timestamp || new Date().toISOString(),
-      updated_at: setup.timestamp || new Date().toISOString(),
+      created_at: nowIso,
+      updated_at: nowIso,
       validation_logs: []
     };
 
     // --- STAGE 4: RISK CALCULATION ---
-    const entry = strategySetup.entry_price;
-    const sl = strategySetup.sl_price;
-    const tp1 = strategySetup.tp1_price;
+    const entry = strategySetup.entry_price ?? 0;
+    const sl = strategySetup.sl_price ?? 0;
+    const tp1 = strategySetup.tp1_price ?? 0;
     const riskDist = Math.abs(entry - sl);
     const rewardDist = Math.abs(tp1 - entry);
-    const calculatedRR = riskDist > 0 ? parseFloat((rewardDist / riskDist).toFixed(2)) : 0;
+    const calculatedRR = (riskDist > 0 && entry > 0 && sl > 0 && tp1 > 0) ? parseFloat((rewardDist / riskDist).toFixed(2)) : 0;
     const rrStr = `1:${calculatedRR.toFixed(2)}`;
 
     // --- STAGE 5: SIGNAL CANDIDATE GATE ---

@@ -6,6 +6,7 @@ import { logger } from '../../utils/logger';
 import { getProviderRegistry } from '../../market-data/provider-registry';
 import { getEnv } from '../../utils/env';
 import { getDatabaseClient } from '../../db/client';
+import { PythonAnalyzerBridge } from '../python-analyzer-bridge';
 
 import { getStrategyDefinition } from '../strategy-registry';
 import { ValidatorResult } from './validators';
@@ -249,6 +250,32 @@ export class AIValidationOrchestrator {
         }
     } catch (e: any) {
          logger.warn('Failed to check python engine status', e.message);
+    }
+
+    // STRICT DATA VERIFICATION GUARD:
+    // AI only receives data that has been verified through the pipeline.
+    const setupEvidence = (state as any)?.evidence || marketContext?.evidence || { stateName: state?.stateName };
+    const dataIntegrity = PythonAnalyzerBridge.validateAIDataIntegrity(
+      marketContext?.marketData || {},
+      marketContext?.marketData?.candles || candles,
+      { strategyId, strategyDef },
+      setupEvidence,
+      validatorResults
+    );
+
+    if (!dataIntegrity.isValid) {
+      logger.warn(`[AI VALIDATION REJECTED] Unverified / incomplete data sent to AI: ${dataIntegrity.missingFactors.join(', ')}`);
+      return {
+        strategyName: strategyId,
+        decision: "REJECTED",
+        checklist: validatorResults,
+        reasoning: `Signal validation rejected because input data failed verification: ${dataIntegrity.missingFactors.join(', ')}`,
+        evidence: `Unverified Data: ${dataIntegrity.missingFactors.join(', ')}`,
+        riskNotes: 'INSUFFICIENT_OR_UNVERIFIED_DATA',
+        missingFactors: dataIntegrity.missingFactors,
+        recommendedAction: "block",
+        scores: { confidence: 0 }
+      };
     }
 
     const aiClient = this.getAiClient();
