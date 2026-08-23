@@ -11,8 +11,9 @@ import { getIngestionService } from '@/lib/services/ingestion_service';
 import crypto from 'crypto';
 
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = '0.0.0.0';
-const port = 3000;
+const hostname = process.env.HOST || '0.0.0.0';
+const rawPort = process.env.PORT || '3000';
+const port = parseInt(rawPort, 10) || 3000;
 const turbopack = false;
 
 export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed' | 'shutting_down';
@@ -23,27 +24,34 @@ let isAppPrepared = false;
 let pyProcess: any = null;
 const degradedComponents = new Map<string, string>();
 
+logger.info(`[BOOT] Configuration loaded (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${port}, HOST=${hostname})`);
+
 function registerDegradedComponent(name: string, reason: string) {
   degradedComponents.set(name, reason);
   if (serverStatus === 'ready') {
     serverStatus = 'degraded';
-    logger.warn(`Server lifecycle status changed to DEGRADED [${name}]: ${reason}`);
   }
+  logger.warn(`[BOOT][DEGRADED] Component [${name}]: ${reason}`);
 }
 
-function startPythonEngine() {
-  const externalUrl = process.env.PYTHON_ENGINE_URL;
-  if (!externalUrl) {
-    logger.warn('PYTHON_ENGINE_URL is not set. Engine requires a public external Python Engine URL to function correctly.');
-    return;
-  }
+async function verifyPythonEngine() {
+  const pyUrl = process.env.PYTHON_ENGINE_URL || 'http://127.0.0.1:8181';
+  logger.info(`[BOOT] Python engine initialization started (Target: ${pyUrl})...`);
   
-  if (externalUrl.includes('127.0.0.1') || externalUrl.includes('localhost')) {
-    logger.warn('PYTHON_ENGINE_URL is set to localhost. This might not work in production without a sidecar. Please provide a public external URL.');
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`${pyUrl}/health`, { signal: controller.signal }).catch(() => null);
+    clearTimeout(timer);
+    
+    if (res && res.ok) {
+      logger.info(`[BOOT] Python analytical engine confirmed ONLINE at ${pyUrl}`);
+    } else {
+      registerDegradedComponent('pythonEngine', `Python sidecar unreachable at ${pyUrl}. Node.js deterministic fallback active.`);
+    }
+  } catch (e: any) {
+    registerDegradedComponent('pythonEngine', `Python engine check failed: ${e.message}. Node.js fallback active.`);
   }
-
-  logger.info(`External Python Engine configured (${externalUrl}), skipping local spawn.`);
-  return;
 }
 
 const app = next({ dev, hostname, port, turbopack });
@@ -85,19 +93,30 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         res.setTimeout(0);
       }
 
-      // Health checks endpoints (before Next.js handle)
-      if (pathname === '/health/liveness') {
+      // Universal Health checks endpoints (before Next.js handle)
+      const isLivenessPath = pathname === '/health/liveness' || pathname === '/health' || pathname === '/healthz' || pathname === '/live' || pathname === '/ping';
+      const isReadinessPath = pathname === '/health/readiness' || pathname === '/ready' || pathname === '/healthcheck';
+
+      if (isLivenessPath) {
         if (serverStatus === 'shutting_down') {
           res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'shutting_down', timestamp: new Date().toISOString() }));
+          res.end(JSON.stringify({ status: 'shutting_down', live: false, timestamp: new Date().toISOString() }));
           return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+        res.end(JSON.stringify({
+          status: 'ok',
+          live: true,
+          serverStatus,
+          port,
+          hostname,
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString()
+        }));
         return;
       }
       
-      if (pathname === '/health/readiness') {
+      if (isReadinessPath) {
         if (serverStatus === 'shutting_down') {
           res.writeHead(503, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'not_ready', isShuttingDown: true, timestamp: new Date().toISOString() }));
@@ -114,7 +133,12 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         }
         if (serverStatus === 'starting' || !isAppPrepared) {
           res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'starting', isAppPrepared, timestamp: new Date().toISOString() }));
+          res.end(JSON.stringify({
+            status: 'starting',
+            isAppPrepared,
+            message: 'Server is compiling and preparing resources...',
+            timestamp: new Date().toISOString()
+          }));
           return;
         }
         if (serverStatus === 'degraded') {
@@ -125,6 +149,8 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             status: 'degraded',
+            isAppPrepared,
+            port,
             degradedComponents: degradedDetails,
             timestamp: new Date().toISOString()
           }));
@@ -132,7 +158,14 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ready', timestamp: new Date().toISOString() }));
+        res.end(JSON.stringify({
+          status: 'ready',
+          isAppPrepared,
+          port,
+          hostname,
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString()
+        }));
         return;
       }
 
@@ -232,9 +265,9 @@ process.on('unhandledRejection', (reason: any) => {
 });
 
 server.on('error', (err: NodeJS.ErrnoException) => {
-  logger.error(`Server error: ${err.message}`, { stack: err.stack });
+  logger.error(`[ERROR][BOOT][HTTP] Server error: ${err.message}`, { stack: err.stack });
   if (err.code === 'EADDRINUSE') {
-    logger.error(`Port ${port} is already in use`);
+    logger.error(`[ERROR][BOOT][PORT] Port ${port} is already in use`);
     process.exit(1);
   }
 });
@@ -242,42 +275,62 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 async function initializeBackendServices() {
   if (serverStatus === 'shutting_down') return;
 
-  logger.info('Initializing backend services...');
+  logger.info('[BOOT] Initializing background backend services asynchronously...');
 
   try {
     // 1. Environment validation
     try {
       validateEnvironment();
     } catch (envErr: any) {
-      logger.error(`Environment validation error: ${envErr.message}`);
+      logger.error(`[ERROR][BOOT][ENV] Environment validation error: ${envErr.message}`);
       serverStatus = 'failed';
       initErrorMessage = `Environment validation failed: ${envErr.message}`;
       return;
     }
 
-    // 2. Local Python Engine
+    // 2. Redis initialization check
     try {
-      startPythonEngine();
+      logger.info('[BOOT] Queue & Redis initialization started...');
+      const queueMgr = getQueueManager();
+      if (process.env.REDIS_URL) {
+        await queueMgr.connect();
+        if (queueMgr.isConnected()) {
+          logger.info('[BOOT] Redis connected successfully.');
+        } else {
+          logger.info('[BOOT] Redis not reachable on configured URL. Operating in standalone high-performance local queue mode.');
+        }
+      } else {
+        logger.info('[BOOT] REDIS_URL not configured. Local in-memory queue fallback active.');
+      }
+    } catch (redisErr: any) {
+      logger.info(`[BOOT] Operating in standalone local queue mode (${redisErr.message}).`);
+    }
+
+    // 3. Python Engine verification
+    try {
+      await verifyPythonEngine();
     } catch (pyErr: any) {
-      logger.error(`Failed to start Python Engine: ${pyErr.message}`);
+      logger.warn(`[WARN][BOOT][PYTHON] Python Engine probe error: ${pyErr.message}`);
       registerDegradedComponent('pythonEngine', pyErr.message);
     }
 
-    // 3. Ingestion Service
+    // 4. Market data ingestion service
     try {
+      logger.info('[BOOT] Market data initialization started...');
       await getIngestionService().start('XAUUSD');
-      logger.info('Ingestion Service started successfully.');
+      logger.info('[BOOT] Market data Ingestion Service started successfully.');
     } catch (e: any) {
-      logger.error(`Failed to start Ingestion Service: ${e.message}`);
+      logger.error(`[ERROR][BOOT][TWELVEDATA] Failed to start Ingestion Service: ${e.message}`);
       registerDegradedComponent('ingestionService', e.message);
     }
 
-    // 4. Market Scanner
+    // 5. Market Scanner & Trading Engine
     try {
+      logger.info('[BOOT] Trading engine started (Market Scanner initializing)...');
       await getMarketScanner().start();
-      logger.info('Market Scanner started successfully.');
+      logger.info('[BOOT] Market Scanner & Trading Engine started successfully.');
     } catch (e: any) {
-      logger.error(`Failed to start Market Scanner: ${e.message}`);
+      logger.error(`[ERROR][BOOT][SCANNER] Failed to start Market Scanner: ${e.message}`);
       registerDegradedComponent('marketScanner', e.message);
     }
 
@@ -285,37 +338,44 @@ async function initializeBackendServices() {
 
     if (degradedComponents.size > 0) {
       serverStatus = 'degraded';
-      logger.warn(`Backend services initialized in DEGRADED mode (${degradedComponents.size} component(s) degraded).`);
+      logger.warn(`[BOOT] Backend services initialized in DEGRADED mode (${degradedComponents.size} component(s) degraded).`);
     } else {
       serverStatus = 'ready';
-      logger.info('Backend services initialized successfully. Server is READY.');
+      logger.info('[BOOT] All backend services initialized successfully. Server is READY.');
     }
 
   } catch (initErr: any) {
-    logger.error(`Critical error during backend initialization: ${initErr.message}`, { stack: initErr.stack });
+    logger.error(`[ERROR][BOOT] Critical error during backend initialization: ${initErr.message}`, { stack: initErr.stack });
     serverStatus = 'failed';
     initErrorMessage = initErr.message || 'Unknown backend initialization error';
   }
 }
 
+logger.info(`[BOOT] HTTP server starting on ${hostname}:${port}...`);
 server.listen(port, hostname, () => {
-  logger.info(`> Listening on http://${hostname}:${port} (Next.js preparing...)`);
+  logger.info(`[BOOT] Listening on http://${hostname}:${port}`);
+  logger.info(`[BOOT] Health endpoints ready (/health/liveness, /health/readiness, /health, /healthz, /ping, /ready, /live)`);
+  logger.info(`[BOOT] Next.js preparing...`);
   
   app.prepare()
     .then(() => {
       isAppPrepared = true;
-      logger.info(`> Next.js prepared successfully`);
+      if (serverStatus === 'starting') {
+        serverStatus = 'ready';
+      }
+      logger.info(`[BOOT] Next.js prepared successfully`);
       
+      // Start background services asynchronously (does NOT block HTTP serving or health probes)
       initializeBackendServices().catch((err: any) => {
-        logger.error(`Unhandled error during backend initialization: ${err.message}`, { stack: err.stack });
-        serverStatus = 'failed';
-        initErrorMessage = err.message || 'Unhandled error during backend initialization';
+        logger.error(`[ERROR][BOOT] Unhandled error during background initialization: ${err.message}`, { stack: err.stack });
+        registerDegradedComponent('backendInit', err.message);
       });
     })
     .catch((err: any) => {
-      logger.error(`Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
+      logger.error(`[ERROR][BOOT][NEXT] Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
       serverStatus = 'failed';
       initErrorMessage = `Next.js preparation failed: ${err.message}`;
       process.exit(1);
     });
 });
+

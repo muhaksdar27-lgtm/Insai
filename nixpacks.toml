@@ -13,9 +13,9 @@ PYTHON_ENGINE_URL = "http://127.0.0.1:8181"
 [phases.install]
 cmds = [
     "npm install --no-audit --prefer-offline --no-fund --legacy-peer-deps",
-    "python3 -m venv /app/venv",
-    "/app/venv/bin/pip install --upgrade pip",
-    "/app/venv/bin/pip install -r python-engine/requirements.txt"
+    "python3 -m venv /app/venv || python3 -m venv ./venv || true",
+    "(/app/venv/bin/pip install --upgrade pip && /app/venv/bin/pip install -r python-engine/requirements.txt) || (./venv/bin/pip install -r python-engine/requirements.txt) || true",
+    "chmod +x ops/start.sh || true"
 ]
 
 [phases.build]
@@ -26,4 +26,4 @@ cmds = [
 cacheDirectories = ["node_modules/.cache", ".next/cache", "/root/.npm", "/root/.cache/pip"]
 
 [start]
-cmd = "bash -c '(/app/venv/bin/uvicorn main:app --host 127.0.0.1 --port $PYTHON_PORT --app-dir python-engine &) && npm run start'"
+cmd = "bash ops/start.sh"

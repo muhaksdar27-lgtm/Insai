@@ -2,10 +2,14 @@ import { PriceProvider } from '../types';
 import { MarketSnapshot, Candle, ProviderStatus } from '@/types';
 import { getProviderRegistry } from '../provider-registry';
 import { fetchWithRetry } from '../../utils/fetch-retry';
-import { toCanonicalSymbol, toProviderSymbol } from '../canonical-symbol';
+import { toCanonicalSymbol, toProviderSymbol, isSymbolSupportedByProvider } from '../canonical-symbol';
 
 export class BinanceProvider implements PriceProvider {
   public name = 'Binance';
+
+  public supportsSymbol(symbol: string): boolean {
+    return isSymbolSupportedByProvider(symbol, this.name);
+  }
 
   private mapTimeframe(tf: string): string {
     const map: Record<string, string> = {

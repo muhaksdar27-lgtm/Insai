@@ -3,7 +3,7 @@ import { MarketSnapshot, Candle, ProviderStatus } from '@/types';
 import { getProviderRegistry } from '../provider-registry';
 import { logger } from '../../utils/logger';
 import { fetchWithRetry } from '../../utils/fetch-retry';
-import { toCanonicalSymbol, toProviderSymbol } from '../canonical-symbol';
+import { toCanonicalSymbol, toProviderSymbol, isSymbolSupportedByProvider } from '../canonical-symbol';
 
 const YAHOO_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -13,6 +13,10 @@ const YAHOO_HEADERS = {
 
 export class YahooFinanceProvider implements PriceProvider {
   public name = 'YahooFinance';
+
+  public supportsSymbol(symbol: string): boolean {
+    return isSymbolSupportedByProvider(symbol, this.name);
+  }
 
   private mapTimeframe(tf: string): string {
     const map: Record<string, string> = {

@@ -5,7 +5,7 @@ import { logger } from '../../utils/logger';
 import { fetchWithRetry } from '../../utils/fetch-retry';
 import { getQueueManager } from '../../redis/queue';
 import { getEnv } from '../../utils/env';
-import { toCanonicalSymbol, toProviderSymbol } from '../canonical-symbol';
+import { toCanonicalSymbol, toProviderSymbol, isSymbolSupportedByProvider } from '../canonical-symbol';
 
 export class TwelveDataProvider implements PriceProvider {
   public name = 'TwelveData';
@@ -14,6 +14,11 @@ export class TwelveDataProvider implements PriceProvider {
   private reconnectAttempts = 0;
   private latestPrices: Map<string, MarketSnapshot> = new Map();
   private wsStarted: boolean = false;
+  private wsDisabled: boolean = false;
+
+  public supportsSymbol(symbol: string): boolean {
+    return isSymbolSupportedByProvider(symbol, this.name);
+  }
 
   private get currentApiKey(): string | undefined {
     const key = getEnv('TWELVEDATA_API_KEY') || this.apiKey;
@@ -40,15 +45,21 @@ export class TwelveDataProvider implements PriceProvider {
       this.ws.onerror = null;
       this.ws.onmessage = null;
       this.ws.onopen = null;
-      if (this.ws.readyState === 1 || this.ws.readyState === 0) {
-        this.ws.close();
-      }
+      try {
+        if (this.ws.readyState === 1 || this.ws.readyState === 0) {
+          this.ws.close();
+        }
+      } catch (e) {}
       this.ws = null;
     }
   }
 
   private initWebSocket() {
     this.cleanupWebSocket();
+
+    if (this.wsDisabled) {
+      return;
+    }
 
     const key = this.currentApiKey;
     if (!key || key === 'undefined') {
@@ -82,7 +93,7 @@ export class TwelveDataProvider implements PriceProvider {
         try {
           const msg = JSON.parse(event.data.toString());
           if (msg.status === 'error') {
-            logger.error(`TwelveData WS Error: ${msg.message}`);
+            logger.warn(`TwelveData WS Message: ${msg.message}`);
             if (msg.message && msg.message.toLowerCase().includes('api key')) {
                 getProviderRegistry().reportError(this.name, msg.message);
                 this.apiKey = undefined;
@@ -135,25 +146,23 @@ export class TwelveDataProvider implements PriceProvider {
           this.reconnectTimeout = setTimeout(() => this.initWebSocket(), 60000);
         } else {
           this.reconnectAttempts++;
-          if (this.reconnectAttempts >= 3) {
-            logger.warn('TwelveData WebSocket disconnected consecutively 3 times. Pausing WebSocket reconnection attempts for 30 minutes.');
-            this.reconnectTimeout = setTimeout(() => {
-              this.reconnectAttempts = 0;
-              this.initWebSocket();
-            }, 1800000);
+          if (this.reconnectAttempts >= 2) {
+            this.wsDisabled = true;
+            logger.info('TwelveData WebSocket unavailable (requires WebSocket-enabled Pro plan). Switching seamlessly to REST polling.');
           } else {
-            const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 30000);
-            logger.warn(`TwelveData WebSocket disconnected. Reconnecting in ${backoff}ms...`);
+            const backoff = Math.min(Math.pow(2, this.reconnectAttempts) * 1000, 10000);
+            logger.warn(`TwelveData WebSocket closed. Retrying in ${backoff}ms...`);
             this.reconnectTimeout = setTimeout(() => this.initWebSocket(), backoff);
           }
         }
       });
       
       this.ws.addEventListener('error', (event: any) => {
-        logger.error(`TwelveData WS Error: ${event.message || 'Unknown error'}`);
+        logger.warn(`TwelveData WebSocket connection notification: ${event?.message || 'WebSocket handshake not accepted or network unavailable'}`);
       });
     } catch (err: any) {
-      logger.error(`TwelveData WS Init Error: ${err.message}`);
+      logger.warn(`TwelveData WS Init Info: ${err.message}. Falling back to REST.`);
+      this.wsDisabled = true;
     }
   }
 

@@ -78,6 +78,16 @@ export class ProviderRegistry {
         return;
       }
 
+      const isNotSupported = errLower.includes('not supported') ||
+                             errLower.includes('does not support') ||
+                             errLower.includes('does not provide direct index') ||
+                             errLower.includes('unsupported symbol');
+
+      if (isNotSupported) {
+        // Querying a symbol not supported by this provider is a routing decision, not an infrastructure health failure
+        return;
+      }
+
       const isDepletedOrQuota = errLower.includes('credits depleted') ||
                                errLower.includes('quota') ||
                                errLower.includes('exhausted');

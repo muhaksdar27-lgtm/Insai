@@ -78,6 +78,32 @@ export function toCanonicalSymbol(input: string): string {
 /**
  * Maps a canonical symbol to the exact format required by a specific provider.
  */
+export function isSymbolSupportedByProvider(canonicalSymbol: string, providerName: string): boolean {
+  const norm = toCanonicalSymbol(canonicalSymbol);
+  const provider = (providerName || '').toLowerCase().trim();
+
+  if (provider.includes('twelvedata') || provider.includes('twelve_data')) {
+    return norm !== 'DXY' && norm !== 'US10Y';
+  }
+
+  if (provider.includes('binance')) {
+    return norm === 'XAUUSD' || norm === 'BTCUSD' || norm === 'ETHUSD';
+  }
+
+  if (provider.includes('yahoo')) {
+    return true;
+  }
+
+  if (provider.includes('polygon')) {
+    return norm === 'XAUUSD' || norm === 'EURUSD' || norm === 'GBPUSD' || norm === 'USDJPY';
+  }
+
+  return true;
+}
+
+/**
+ * Maps a canonical symbol to the exact format required by a specific provider.
+ */
 export function toProviderSymbol(canonicalSymbol: string, providerName: string): string {
   const norm = toCanonicalSymbol(canonicalSymbol);
   const provider = (providerName || '').toLowerCase().trim();
@@ -90,7 +116,7 @@ export function toProviderSymbol(canonicalSymbol: string, providerName: string):
     if (norm === 'GBPUSD') return 'GBP/USD';
     if (norm === 'USDJPY') return 'USD/JPY';
     if (norm === 'DXY' || norm === 'US10Y') {
-      throw new Error(`TwelveData does not provide direct index ticks for ${norm}`);
+      throw new Error(`Symbol ${norm} is not supported by TwelveData`);
     }
     return norm;
   }
@@ -111,8 +137,8 @@ export function toProviderSymbol(canonicalSymbol: string, providerName: string):
     if (norm === 'XAUUSD') return 'PAXGUSDT'; // High-liquidity Spot Gold proxy
     if (norm === 'BTCUSD') return 'BTCUSDT';
     if (norm === 'ETHUSD') return 'ETHUSDT';
-    if (norm === 'DXY' || norm === 'US10Y') {
-      throw new Error(`Binance does not support macro index ${norm}`);
+    if (norm === 'DXY' || norm === 'US10Y' || norm === 'EURUSD' || norm === 'GBPUSD' || norm === 'USDJPY') {
+      throw new Error(`Symbol ${norm} is not supported by Binance`);
     }
     return `${norm}T`;
   }

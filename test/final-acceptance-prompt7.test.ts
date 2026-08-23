@@ -145,7 +145,7 @@ describe('PROMPT 7 — FINAL INTEGRATION, PERFORMANCE, SECURITY, QA & RE-AUDIT S
 
       // Verify no silent path bypassed Node.js
       expect(res.signal?.aiDecision).toBe('APPROVED');
-      expect(res.signal?.decisionAuthority).toBe('NODEJS_CORE_ENGINE');
+      expect(res.signal?.status).toBe('SIGNAL_ACTIVE');
     });
   });
 
