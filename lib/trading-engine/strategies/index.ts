@@ -1,4 +1,5 @@
 export * from './types';
+export * from './definitions';
 export * from './registry';
 export { detectStrategy1SMC } from './strategy-1-smc';
 export { detectStrategy2SND } from './strategy-2-snd';

@@ -57,11 +57,11 @@ export function detectStrategy4News(context: RuleEvaluationContext, pyData: any 
 
   const confirmationStatus = ((bosBull || bosBear) && (sweepBull || sweepBear)) ? 'Post-News Reversal Confirmed' : 'Post-News Reversal Monitored';
 
-  const atr = pyData.atr || 4.5;
+  const atr = pyData.atr || 0;
   const entryPriceVal = s4.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
-  const slVal = s4.sl || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - (atr * 0.6) : entryPriceVal + (atr * 0.6)) : undefined);
-  const tp1Val = s4.tp1 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.5) : entryPriceVal - (atr * 1.5)) : undefined);
-  const tp2Val = s4.tp2 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 2.4) : entryPriceVal - (atr * 2.4)) : undefined);
+  const slVal = s4.sl || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal - (atr * 0.6)).toFixed(2) : +(entryPriceVal + (atr * 0.6)).toFixed(2)) : undefined);
+  const tp1Val = s4.tp1 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.5)).toFixed(2) : +(entryPriceVal - (atr * 1.5)).toFixed(2)) : undefined);
+  const tp2Val = s4.tp2 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 2.4)).toFixed(2) : +(entryPriceVal - (atr * 2.4)).toFixed(2)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'News Window';
 

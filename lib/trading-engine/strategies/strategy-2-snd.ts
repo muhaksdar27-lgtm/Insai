@@ -57,11 +57,11 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
 
   const confirmationStatus = sdActive && (engulfBull || engulfBear) ? 'S&D + Engulfing Confirmed' : 'S&D / Engulfing Monitored';
 
-  const atr = pyData.atr || 4.5;
+  const atr = pyData.atr || 0;
   const entryPriceVal = s2.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
-  const slVal = s2.sl || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - (atr * 0.5) : entryPriceVal + (atr * 0.5)) : undefined);
-  const tp1Val = s2.tp1 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.0) : entryPriceVal - (atr * 1.0)) : undefined);
-  const tp2Val = s2.tp2 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.75) : entryPriceVal - (atr * 1.75)) : undefined);
+  const slVal = s2.sl || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal - (atr * 0.5)).toFixed(2) : +(entryPriceVal + (atr * 0.5)).toFixed(2)) : undefined);
+  const tp1Val = s2.tp1 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.0)).toFixed(2) : +(entryPriceVal - (atr * 1.0)).toFixed(2)) : undefined);
+  const tp2Val = s2.tp2 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.75)).toFixed(2) : +(entryPriceVal - (atr * 1.75)).toFixed(2)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'Any';
 

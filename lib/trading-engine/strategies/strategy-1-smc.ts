@@ -52,11 +52,11 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
     ? 'Asia Sweep & M15 CHoCH Confirmed'
     : 'Asia Liquidity Sweep / CHoCH Monitored';
 
-  const atr = pyData.atr || 4.5;
+  const atr = pyData.atr || 0;
   const entryPriceVal = s1.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
-  const slVal = s1.sl || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - (atr * 0.5) : entryPriceVal + (atr * 0.5)) : undefined);
-  const tp1Val = s1.tp1 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.0) : entryPriceVal - (atr * 1.0)) : undefined);
-  const tp2Val = s1.tp2 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.75) : entryPriceVal - (atr * 1.75)) : undefined);
+  const slVal = s1.sl || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal - (atr * 0.5)).toFixed(2) : +(entryPriceVal + (atr * 0.5)).toFixed(2)) : undefined);
+  const tp1Val = s1.tp1 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.0)).toFixed(2) : +(entryPriceVal - (atr * 1.0)).toFixed(2)) : undefined);
+  const tp2Val = s1.tp2 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.75)).toFixed(2) : +(entryPriceVal - (atr * 1.75)).toFixed(2)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'London';
 

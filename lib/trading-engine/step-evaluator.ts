@@ -1,22 +1,14 @@
+import { SetupStepRecord, StepState } from './types';
 import { RuleEvaluationContext } from '@/types';
-import { SetupStepRecord, StepEvidence, StepState } from './types';
 import { SessionEngine } from '../market-data/session-engine';
 import { HTFTrendAnalyzer } from './htf-trend-analyzer';
 
 export interface StepEvaluationOutput {
   status: StepState;
-  evidence: StepEvidence;
   reason: string;
-  invalidationReason?: string;
-  source_candle?: {
-    timestamp: string;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume?: number;
-  };
   direction?: 'buy' | 'sell';
+  evidence?: Record<string, any>;
+  invalidationReason?: string;
   calculatedLevels?: {
     entryPrice?: number;
     slPrice?: number;
@@ -24,6 +16,14 @@ export interface StepEvaluationOutput {
     tp2Price?: number;
     tp3Price?: number;
     riskReward?: number;
+  };
+  source_candle?: {
+    timestamp: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
   };
 }
 
@@ -37,9 +37,9 @@ export class StepEvaluator {
   ): StepEvaluationOutput {
     const candles = context.candles || [];
     const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
-    const currentPrice = analysisData.current_price || (latestCandle ? latestCandle.close : 2700);
+    const currentPrice = analysisData.current_price || (latestCandle ? latestCandle.close : 0);
     const timestamp = context.timestamp || latestCandle?.timestamp || new Date().toISOString();
-    const atr = analysisData.atr || 4.5;
+    const atr = analysisData.atr || 0;
     
     const source_candle = latestCandle ? {
       timestamp: latestCandle.timestamp,
@@ -90,8 +90,17 @@ export class StepEvaluator {
       case 'HTF_MA_TREND':
       case 'MA_TREND':
       case 'H1_M15_STRUCTURE': {
+        if (!candles || candles.length === 0) {
+          return {
+            status: 'AWAITING',
+            reason: 'Insufficient candle data to analyze H1 trend structure',
+            evidence: { timeframe: 'H1', currentPrice },
+            source_candle
+          };
+        }
         const htf = HTFTrendAnalyzer.analyzeTrend(candles, 'H1');
-        const trendDir = (analysisData.trend_h1 || analysisData.trend || htf.direction || 'BULLISH').toUpperCase();
+        const rawTrend = analysisData.trend_h1 || analysisData.trend || htf.direction;
+        const trendDir = rawTrend ? rawTrend.toUpperCase() : 'NEUTRAL';
         
         if (trendDir === 'BULLISH' || trendDir === 'BEARISH') {
           const dir: 'buy' | 'sell' = trendDir === 'BULLISH' ? 'buy' : 'sell';
@@ -128,11 +137,9 @@ export class StepEvaluator {
       // ASIA LIQUIDITY IDENTIFICATION (Strategy 1)
       // ----------------------------------------------------------------------
       case 'ASIA_LIQUIDITY': {
-        const asianHigh = analysisData.asian_high || +(currentPrice + 4.5).toFixed(2);
-        const asianLow = analysisData.asian_low || +(currentPrice - 4.5).toFixed(2);
-        const hasRange = asianHigh > asianLow;
-
-        if (hasRange) {
+        if (analysisData.asian_high && analysisData.asian_low && analysisData.asian_high > analysisData.asian_low) {
+          const asianHigh = analysisData.asian_high;
+          const asianLow = analysisData.asian_low;
           return {
             status: 'VALIDATED',
             reason: `Asian session liquidity range defined: High ${asianHigh.toFixed(2)}, Low ${asianLow.toFixed(2)}`,
@@ -167,12 +174,12 @@ export class StepEvaluator {
       case 'CONFLUENCE_SWEEP': {
         const sweepBull = !!analysisData.asian_sweep_bull || !!analysisData.liq_sweep_bull || !!analysisData.sweepAsianLow || !!analysisData.micro_sweep_bull;
         const sweepBear = !!analysisData.asian_sweep_bear || !!analysisData.liq_sweep_bear || !!analysisData.sweepAsianHigh || !!analysisData.micro_sweep_bear;
-        const sweepLevel = analysisData.sweep_level || (sweepBull ? currentPrice - 2.5 : currentPrice + 2.5);
-
+        
         // Check against required direction if already determined
         const matchesDirection = currentDirection === 'buy' ? sweepBull : (currentDirection === 'sell' ? sweepBear : (sweepBull || sweepBear));
 
-        if (matchesDirection) {
+        if (matchesDirection && currentPrice > 0) {
+          const sweepLevel = analysisData.sweep_level || (sweepBull ? currentPrice - 2.5 : currentPrice + 2.5);
           const dir: 'buy' | 'sell' = sweepBull ? 'buy' : 'sell';
           return {
             status: 'VALIDATED',
@@ -210,7 +217,7 @@ export class StepEvaluator {
       // ----------------------------------------------------------------------
       case 'FAKEOUT_REJECTION':
       case 'WICK_REJECTION': {
-        const wickRatio = analysisData.wick_ratio || (analysisData.has_displacement ? 0.65 : (analysisData.wick_rejection_bull || analysisData.wick_rejection_bear ? 0.70 : 0.60));
+        const wickRatio = analysisData.wick_ratio || (analysisData.wick_rejection_bull || analysisData.wick_rejection_bear ? 0.70 : 0);
         const hasRejection = wickRatio >= 0.50 || !!analysisData.wick_rejection_bull || !!analysisData.wick_rejection_bear;
 
         if (hasRejection) {
@@ -247,7 +254,7 @@ export class StepEvaluator {
 
         const matchesDir = currentDirection === 'buy' ? chochBull : (currentDirection === 'sell' ? chochBear : (chochBull || chochBear));
 
-        if (matchesDir) {
+        if (matchesDir && currentPrice > 0) {
           const breakPrice = analysisData.structure_break_level || currentPrice;
           return {
             status: 'VALIDATED',
@@ -285,9 +292,9 @@ export class StepEvaluator {
       case 'SD_ZONE':
       case 'AREA_TOUCH':
       case 'SD_FIB_OVERLAP': {
-        const sdActive = !!analysisData.sd_zone_active || !!analysisData.ob_fvg_bull || !!analysisData.ob_fvg_bear || !!analysisData.is_discount || !!analysisData.is_premium || !!analysisData.area_touch;
+        const sdActive = !!analysisData.sd_zone_active || !!analysisData.ob_fvg_bull || !!analysisData.ob_fvg_bear || !!analysisData.area_touch;
         
-        if (sdActive) {
+        if (sdActive && currentPrice > 0) {
           const zoneUpper = analysisData.zone_upper || +(currentPrice + 3.0).toFixed(2);
           const zoneLower = analysisData.zone_lower || +(currentPrice - 3.0).toFixed(2);
           const pattern = analysisData.sd_pattern || (currentDirection === 'buy' ? 'DEMAND_DBR' : 'SUPPLY_RBD');
@@ -333,7 +340,7 @@ export class StepEvaluator {
 
         const matchesDir = currentDirection === 'buy' ? engulfBull : (currentDirection === 'sell' ? engulfBear : (engulfBull || engulfBear));
 
-        if (matchesDir) {
+        if (matchesDir && currentPrice > 0) {
           return {
             status: 'VALIDATED',
             reason: `Trigger candlestick pattern confirmed with strong body ratio and rejection wick`,
@@ -365,13 +372,13 @@ export class StepEvaluator {
       // STRATEGY 3: RETRACEMENT M15
       // ----------------------------------------------------------------------
       case 'M15_RETRACEMENT': {
-        const retracementValid = analysisData.m15_retracement !== false;
-        if (retracementValid) {
+        const retracementValid = analysisData.m15_retracement === true || analysisData.is_discount === true || analysisData.is_premium === true;
+        if (retracementValid && currentPrice > 0) {
           return {
             status: 'VALIDATED',
-            reason: 'M15 corrective wave retraced into favorable discount/premium discount zone',
+            reason: 'M15 corrective wave retraced into favorable discount/premium zone',
             evidence: {
-              retracementDepth: '50% Equilibrium',
+              retracementDepth: analysisData.dealing_range_zone || 'Discount/Premium',
               timeframe: 'M15',
               currentPrice
             },
@@ -380,7 +387,7 @@ export class StepEvaluator {
         }
         return {
           status: 'AWAITING',
-          reason: 'Awaiting M15 counter-trend pullback wave',
+          reason: 'Awaiting M15 counter-trend pullback wave into premium/discount zone',
           evidence: { timeframe: 'M15', currentPrice },
           source_candle
         };
@@ -412,7 +419,7 @@ export class StepEvaluator {
         const doubleBottom = !!analysisData.double_bottom;
         const matchesDir = currentDirection === 'buy' ? doubleBottom : (currentDirection === 'sell' ? doubleTop : (doubleTop || doubleBottom));
 
-        if (matchesDir) {
+        if (matchesDir && currentPrice > 0) {
           const patternType = doubleBottom ? 'Double Bottom' : 'Double Top';
           const peak1 = analysisData.peak1_price || currentPrice;
           const peak2 = analysisData.peak2_price || currentPrice;
@@ -452,7 +459,7 @@ export class StepEvaluator {
       // ----------------------------------------------------------------------
       case 'NECKLINE_BREAK': {
         const necklineBroken = !!analysisData.neckline_break || !!analysisData.bos_bull || !!analysisData.bos_bear || !!analysisData.has_displacement;
-        if (necklineBroken) {
+        if (necklineBroken && currentPrice > 0) {
           return {
             status: 'VALIDATED',
             reason: 'M1 Neckline broken decisively with displacement candle',
@@ -506,7 +513,8 @@ export class StepEvaluator {
       case 'SPREAD_NORMAL': {
         // Rule: Do NOT entry on first news candle & ensure spread normalized
         const isFirstCandle = analysisData.first_news_candle === true || analysisData.candle_index === 0;
-        const spreadOk = analysisData.spread_acceptable !== false && (analysisData.spreadPips || 1.8) <= 3.0;
+        const spreadPips = analysisData.spreadPips ?? analysisData.spread_pips ?? null;
+        const spreadOk = analysisData.spread_acceptable === true || (spreadPips !== null && spreadPips <= 3.0);
 
         if (isFirstCandle) {
           return {
@@ -514,7 +522,7 @@ export class StepEvaluator {
             reason: 'First news candle active: Entry strictly prohibited during initial spike. Awaiting spread normalization.',
             evidence: {
               firstNewsCandle: true,
-              spreadPips: analysisData.spreadPips || 4.5,
+              spreadPips: spreadPips ?? 4.5,
               timeframe: 'M5',
               currentPrice
             },
@@ -527,7 +535,7 @@ export class StepEvaluator {
             status: 'VALIDATED',
             reason: 'No-trade window elapsed & broker spread normalized within standard limits (< 3.0 pips)',
             evidence: {
-              spreadPips: analysisData.spreadPips || 1.8,
+              spreadPips: spreadPips ?? 1.8,
               firstNewsCandlePassed: true,
               timeframe: 'M5',
               currentPrice
@@ -540,7 +548,7 @@ export class StepEvaluator {
           status: 'AWAITING',
           reason: 'Spread is currently widened post-news release. Awaiting spread normalization',
           evidence: {
-            spreadPips: analysisData.spreadPips || 5.5,
+            spreadPips: spreadPips ?? 5.5,
             spreadAcceptable: false
           },
           source_candle
@@ -548,17 +556,26 @@ export class StepEvaluator {
       }
 
       case 'M15_LIQUIDITY': {
-        const preNewsHigh = analysisData.pre_news_high || +(currentPrice + 5.0).toFixed(2);
-        const preNewsLow = analysisData.pre_news_low || +(currentPrice - 5.0).toFixed(2);
+        if (analysisData.pre_news_high && analysisData.pre_news_low) {
+          const preNewsHigh = analysisData.pre_news_high;
+          const preNewsLow = analysisData.pre_news_low;
+          return {
+            status: 'VALIDATED',
+            reason: `Pre-news M15 liquidity pool established: High ${preNewsHigh}, Low ${preNewsLow}`,
+            evidence: {
+              preNewsHigh,
+              preNewsLow,
+              timeframe: 'M15',
+              currentPrice
+            },
+            source_candle
+          };
+        }
+
         return {
-          status: 'VALIDATED',
-          reason: `Pre-news M15 liquidity pool established: High ${preNewsHigh}, Low ${preNewsLow}`,
-          evidence: {
-            preNewsHigh,
-            preNewsLow,
-            timeframe: 'M15',
-            currentPrice
-          },
+          status: 'AWAITING',
+          reason: 'Pre-news high/low liquidity range not yet established',
+          evidence: { timeframe: 'M15', currentPrice },
           source_candle
         };
       }
@@ -571,7 +588,17 @@ export class StepEvaluator {
       case 'SCALP_ENTRY_RISK':
       case 'NEWS_ENTRY_RISK':
       case 'RISK_PARAMS':
+      case 'RISK_NEWS_FILTER':
       case 'MIN_RR_CALC': {
+        if (!currentPrice || currentPrice <= 0 || !atr || atr <= 0) {
+          return {
+            status: 'AWAITING',
+            reason: 'Awaiting valid market price and ATR volatility metric to calculate risk boundaries',
+            evidence: { currentPrice, atr },
+            source_candle
+          };
+        }
+
         const direction = currentDirection || (analysisData.trend_h1 === 'BEARISH' ? 'sell' : 'buy');
         const entryPrice = analysisData.entry_price || currentPrice;
         
@@ -596,7 +623,7 @@ export class StepEvaluator {
             tp3Price,
             riskReward: `1:${minRR.toFixed(1)}`,
             atr14: atr,
-            spreadPips: analysisData.spreadPips || 1.8,
+            spreadPips: analysisData.spreadPips ?? analysisData.spread_pips ?? 0,
             currentPrice
           },
           calculatedLevels: {
@@ -615,7 +642,7 @@ export class StepEvaluator {
       // AI CONFLUENCE GATE (All Strategies)
       // ----------------------------------------------------------------------
       case 'AI_GATE': {
-        const aiDecision = analysisData.aiDecision || 'APPROVED';
+        const aiDecision = analysisData.aiDecision;
         if (aiDecision === 'APPROVED') {
           return {
             status: 'VALIDATED',
@@ -653,8 +680,8 @@ export class StepEvaluator {
 
       default: {
         return {
-          status: 'VALIDATED',
-          reason: `Step ${step.step_id} validated by rule engine specification`,
+          status: 'AWAITING',
+          reason: `Step ${step.step_id} condition awaiting prerequisite market data`,
           evidence: { currentPrice },
           source_candle
         };

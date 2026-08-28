@@ -1,5 +1,7 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
+import fs from 'fs';
+import path from 'path';
 import next from 'next';
 
 
@@ -10,7 +12,8 @@ import { validateEnvironment } from '@/lib/security/env-validator';
 import { getIngestionService } from '@/lib/services/ingestion_service';
 import crypto from 'crypto';
 
-const dev = process.env.NODE_ENV !== 'production';
+const hasBuiltApp = fs.existsSync(path.join(process.cwd(), '.next', 'prerender-manifest.json'));
+const dev = process.env.NODE_ENV !== 'production' || !hasBuiltApp;
 const hostname = process.env.HOST || '0.0.0.0';
 const rawPort = process.env.PORT || '3000';
 const port = parseInt(rawPort, 10) || 3000;

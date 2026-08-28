@@ -13,3 +13,21 @@ export interface BaseValidator {
   isCritical: boolean;
   validate(ruleResults: Record<string, RuleResult>, marketContext: any): ValidatorResult;
 }
+
+export function isRulePass(rule?: RuleResult): boolean {
+  if (!rule) return false;
+  const s = String(rule.status).toUpperCase();
+  return s === 'PASS' || s === 'VALID' || s === 'TRUE' || rule.status === true;
+}
+
+export function isRuleFail(rule?: RuleResult): boolean {
+  if (!rule) return false;
+  const s = String(rule.status).toUpperCase();
+  return s === 'FAIL' || s === 'INVALID' || s === 'FALSE' || rule.status === false;
+}
+
+export function isRuleWait(rule?: RuleResult): boolean {
+  if (!rule) return true;
+  const s = String(rule.status).toUpperCase();
+  return s === 'WAIT' || s === 'VALID_WAIT' || s === 'PENDING' || s === 'AWAITING';
+}

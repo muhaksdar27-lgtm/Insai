@@ -57,11 +57,11 @@ export function detectStrategy5Confluence(context: RuleEvaluationContext, pyData
 
   const confirmationStatus = ((bosBull || bosBear) && sdActive) ? 'SMC-SD Confluence Confirmed' : 'SMC-SD Confluence Monitored';
 
-  const atr = pyData.atr || 4.5;
+  const atr = pyData.atr || 0;
   const entryPriceVal = s5.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
-  const slVal = s5.sl || (entryPriceVal ? (direction === 'buy' ? entryPriceVal - (atr * 0.5) : entryPriceVal + (atr * 0.5)) : undefined);
-  const tp1Val = s5.tp1 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 1.25) : entryPriceVal - (atr * 1.25)) : undefined);
-  const tp2Val = s5.tp2 || (entryPriceVal ? (direction === 'buy' ? entryPriceVal + (atr * 2.0) : entryPriceVal - (atr * 2.0)) : undefined);
+  const slVal = s5.sl || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal - (atr * 0.5)).toFixed(2) : +(entryPriceVal + (atr * 0.5)).toFixed(2)) : undefined);
+  const tp1Val = s5.tp1 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.25)).toFixed(2) : +(entryPriceVal - (atr * 1.25)).toFixed(2)) : undefined);
+  const tp2Val = s5.tp2 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 2.0)).toFixed(2) : +(entryPriceVal - (atr * 2.0)).toFixed(2)) : undefined);
   
   const currentSession = pyData.current_session || pyData.session || 'Any';
 

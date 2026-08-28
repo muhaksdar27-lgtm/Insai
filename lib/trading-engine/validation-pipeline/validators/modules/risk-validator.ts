@@ -1,19 +1,23 @@
-import { BaseValidator, ValidatorResult } from '../base-validator';
+import { BaseValidator, ValidatorResult, isRulePass, isRuleFail } from '../base-validator';
 import { RuleResult } from '@/types';
 
 export class RiskValidator implements BaseValidator {
   name = 'Risk Validator';
   isCritical = true;
-  private ruleKeys = ['rule_risk'];
+  private ruleKeys = ['rule_risk_reward', 'rule_atr_sl_buffer', 'rule_spread_check', 'rule_risk_params', 'rule_min_rr_calc', 'RISK_PARAMS'];
 
   validate(ruleResults: Record<string, RuleResult>, _marketContext?: any): ValidatorResult {
     for (const key of this.ruleKeys) {
       const rule = ruleResults[key];
       if (rule) {
-        if (rule.status === 'valid') return { rule: this.name, status: 'PASS', reason: `${key} passed`, evidence: JSON.stringify(rule.evidence || {}), isCritical: this.isCritical };
-        if (rule.status === 'invalid') return { rule: this.name, status: 'FAIL', reason: `${key} failed`, evidence: JSON.stringify(rule.invalidations || []), isCritical: this.isCritical };
+        if (isRulePass(rule)) {
+          return { rule: this.name, status: 'PASS', reason: `${key} passed: ${rule.description || 'Risk parameters valid'}`, evidence: JSON.stringify(rule.evidence || {}), isCritical: this.isCritical };
+        }
+        if (isRuleFail(rule)) {
+          return { rule: this.name, status: 'FAIL', reason: `${key} failed: ${rule.failureDetails?.reason || rule.invalidations?.[0] || 'Risk check failed'}`, evidence: JSON.stringify(rule.invalidations || []), isCritical: this.isCritical };
+        }
       }
     }
-    return { rule: this.name, status: 'WAIT', reason: 'Awaiting rule evaluation', evidence: `Keys: ${this.ruleKeys.join(',')}`, isCritical: this.isCritical };
+    return { rule: this.name, status: 'WAIT', reason: 'Awaiting risk evaluation', evidence: `Keys: ${this.ruleKeys.join(',')}`, isCritical: this.isCritical };
   }
 }

@@ -25,7 +25,7 @@ export class LocalTAAnalyzer {
     const latestPriceSnapshot = context.price;
     const sessionDetails = SessionEngine.getSessionInfo(context.timestamp || latestPriceSnapshot?.timestamp);
     
-    const currentPrice = latestPriceSnapshot?.price || (candles.length > 0 ? candles[candles.length - 1].close : 2700);
+    const currentPrice = latestPriceSnapshot?.price || (candles.length > 0 ? candles[candles.length - 1].close : 0);
 
     // 1. HTF Trend Analysis (Single source of truth via HTFTrendAnalyzer)
     const htfTrend: HTFTrendResult = HTFTrendAnalyzer.analyzeTrend(candles, 'H1');
@@ -41,21 +41,21 @@ export class LocalTAAnalyzer {
         entry_price: currentPrice,
         session: sessionDetails.primarySession,
         session_details: sessionDetails,
-        trend_h1,
-        trend: trend_h1,
+        trend_h1: 'INSUFFICIENT_DATA',
+        trend: 'INSUFFICIENT_DATA',
         htf_trend: htfTrend,
-        atr: 4.5,
-        spread_acceptable: true,
-        dealing_range_zone: 'EQUILIBRIUM',
-        is_discount: true,
-        is_premium: true,
+        atr: 0,
+        spread_acceptable: false,
+        dealing_range_zone: 'UNDEFINED',
+        is_discount: false,
+        is_premium: false,
         has_displacement: false,
         idm_taken: false
       };
     }
 
     // 2. Calculate ATR (Dynamic Volatility Metric)
-    const atr = calculateATR(candles, 14) || 4.5;
+    const atr = calculateATR(candles, 14) || 0;
 
     // 3. Premium vs Discount Matrix (Dealing Range)
     const dealingRange = calculateDealingRange(candles, currentPrice);
