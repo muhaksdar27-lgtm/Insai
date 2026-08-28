@@ -1,5 +1,3 @@
-import { StateName } from '@/types';
-
 export type CanonicalStrategyId = 
   | 'strategy-1-smc'
   | 'strategy-2-snd'
