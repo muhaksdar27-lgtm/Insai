@@ -2,7 +2,6 @@ import { SetupStepRecord } from './types';
 import { 
   CANONICAL_STRATEGY_DEFINITIONS, 
   CanonicalStepDefinition,
-  CanonicalStrategyId,
   getCanonicalStrategy 
 } from './strategies/definitions';
 

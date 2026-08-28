@@ -282,6 +282,12 @@ export interface RuleResult {
   evidence: Record<string, string | number | boolean>;
   invalidations: string[];
   timestamp: string;
+  description?: string;
+  failureDetails?: {
+    reason?: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
 }
 
 export interface ApiResponse<T> {
