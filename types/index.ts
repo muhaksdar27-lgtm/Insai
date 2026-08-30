@@ -274,7 +274,7 @@ export interface Setup {
 
 export type StateName = string;
 
-export type RuleStatus = 'valid' | 'invalid' | 'suppressed' | 'unknown' | 'pending' | ValidationStatus;
+export type RuleStatus = 'valid' | 'invalid' | 'suppressed' | 'unknown' | 'pending' | 'PASS' | 'FAIL' | 'WAIT' | 'ERROR' | ValidationStatus;
 
 export interface RuleResult {
   ruleId: string;
@@ -418,4 +418,8 @@ export interface RuleEvaluationContext {
   indicators?: any;
   context?: any;
   correlationId?: string;
+  strategyMarketContext?: import('./strategy-market-context').StrategyMarketContext;
 }
+
+export * from './strategy-market-context';
+

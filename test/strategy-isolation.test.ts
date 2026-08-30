@@ -71,14 +71,12 @@ describe('STRATEGY ENGINE & ISOLATION TESTS (PROMPT 4)', () => {
       const stepIds = s1.setup_sequence.map((s) => s.step_id);
 
       expect(stepIds).toEqual([
-        'H1_TREND',
         'LONDON_FILTER',
-        'ASIA_LIQUIDITY',
-        'LIQUIDITY_SWEEP',
-        'FAKEOUT_REJECTION',
+        'H1_TREND',
+        'ASIA_SWEEP',
         'M15_CHOCH',
-        'OB_FVG_ALIGNMENT',
-        'ENTRY_RISK_EXECUTION',
+        'OB_FVG',
+        'RISK_PARAMS',
         'AI_GATE'
       ]);
       expect(s1.session_requirement.allowedSessions).toContain('London');
@@ -92,19 +90,17 @@ describe('STRATEGY ENGINE & ISOLATION TESTS (PROMPT 4)', () => {
       const stepIds = s2.setup_sequence.map((s) => s.step_id);
 
       expect(stepIds).toEqual([
-        'HTF_MA_TREND',
-        'SD_ZONE_IMBALANCE',
-        'BOS_CONFIRMATION',
-        'AREA_TOUCH',
-        'LTF_ENGULFING',
-        'ENTRY_RISK_SD',
+        'MA_TREND',
+        'SD_ZONE',
+        'ENGULFING_TRIGGER',
+        'RISK_PARAMS',
         'AI_GATE'
       ]);
 
       // Verify Step 1 MA trend evaluation
       const res = StepEvaluator.evaluateStep(
         {
-          step_id: 'HTF_MA_TREND',
+          step_id: 'MA_TREND',
           step_order: 1,
           strategy_id: 'strategy-2-snd',
           rule_id: 'rule_htf_ma_trend',

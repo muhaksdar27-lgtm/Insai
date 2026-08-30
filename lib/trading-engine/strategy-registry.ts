@@ -167,7 +167,15 @@ export const StrategyRegistry: Record<string, StrategyDefinition> = {
     }
 };
 
-export function getStrategyDefinition(id: string): StrategyDefinition | undefined {
+export function getStrategyDefinition(id: string): StrategyDefinition {
+    const def = StrategyRegistry[id];
+    if (!def) {
+        throw new Error(`[CANONICAL_ERROR] Unknown strategy ID: "${id}". Fallback to Strategy 1 is strictly forbidden.`);
+    }
+    return def;
+}
+
+export function tryGetStrategyDefinition(id: string): StrategyDefinition | undefined {
     return StrategyRegistry[id];
 }
 

@@ -14,6 +14,7 @@ export type OfficialSetupState =
 
 export type StepState =
   | 'AWAITING'
+  | 'DETECTED'
   | 'ACTIVE'
   | 'VALIDATED'
   | 'REJECTED'
@@ -35,6 +36,8 @@ export type DetectionSourceEvent =
 
 export interface StepEvidence {
   // Common Price & Structure
+  source?: string;
+  timestamp?: string;
   currentPrice?: number;
   entryPrice?: number;
   slPrice?: number;
@@ -55,6 +58,8 @@ export interface StepEvidence {
   slope?: number;
   higherHighsCount?: number;
   higherLowsCount?: number;
+  structure?: string;
+  candleCount?: number;
 
   // Liquidity Sweeps
   level?: number;
@@ -72,12 +77,13 @@ export interface StepEvidence {
   swingLow?: number;
   displacementRatio?: number;
   hasDisplacement?: boolean;
+  displacementDirection?: string;
   idmTaken?: boolean;
 
   // S&D Zones & Order Blocks & FVGs
   zoneUpper?: number;
   zoneLower?: number;
-  zoneType?: 'DEMAND_DBR' | 'DEMAND_RBR' | 'SUPPLY_RBD' | 'SUPPLY_DBD' | 'ORDER_BLOCK' | 'FVG' | string;
+  zoneType?: 'DEMAND_DBR' | 'DEMAND_RBR' | 'SUPPLY_RBD' | 'SUPPLY_DBD' | 'ORDER_BLOCK' | 'FVG' | 'DEMAND_ZONE' | 'SUPPLY_ZONE' | string;
   zoneFreshness?: 'FRESH' | 'TESTED' | 'MITIGATED' | string;
   fibLevel?: number;
   overlapCount?: number;
@@ -87,18 +93,28 @@ export interface StepEvidence {
   engulfingType?: 'bullish_engulfing' | 'bearish_engulfing' | 'wick_rejection' | string;
   bodyRatio?: number;
   priorCandleRange?: number;
+  wickRatio?: number;
 
   // Double Top / Bottom
+  patternType?: string;
   peak1Price?: number;
   peak2Price?: number;
   necklinePrice?: number;
+  necklineBreakPrice?: number;
   divergenceTolerance?: number;
+  sweepValidated?: boolean;
+  sweepConfirmedBeforePattern?: boolean;
 
   // News Event
   newsTitle?: string;
   newsImpact?: string;
   newsTime?: string;
   minutesPostNews?: number;
+  preNewsHigh?: number;
+  preNewsLow?: number;
+  firstNewsCandle?: boolean;
+  firstNewsCandlePassed?: boolean;
+  spreadAcceptable?: boolean;
 
   // AI & Quality
   aiConfidence?: number;
@@ -106,6 +122,16 @@ export interface StepEvidence {
   aiDecision?: string;
 
   [key: string]: any;
+}
+
+export interface StepTransitionRecord {
+  from_state: StepState;
+  to_state: StepState;
+  timestamp: string;
+  reason: string;
+  evidence?: StepEvidence;
+  source_event?: DetectionSourceEvent | string;
+  details?: Record<string, any>;
 }
 
 export interface SetupStepRecord {
@@ -117,6 +143,11 @@ export interface SetupStepRecord {
   description: string;
   state: StepState;
   timestamp: string;
+  first_detected_at: string;
+  last_evaluated_at: string;
+  last_evaluated_timestamp: string;
+  timeframe?: string;
+  data_source?: string;
   source_candle?: {
     timestamp: string;
     open: number;
@@ -128,8 +159,10 @@ export interface SetupStepRecord {
   evidence: StepEvidence;
   reason: string;
   invalidation: string;
+  invalidation_condition: string;
   expiry?: string;
-  last_evaluated_timestamp: string;
+  expires_at?: string;
+  transition_history: StepTransitionRecord[];
 }
 
 export interface SetupTransitionAudit {
@@ -154,6 +187,7 @@ export interface StrategySetup {
   steps: SetupStepRecord[];
   created_at: string;
   updated_at: string;
+  first_detected_at?: string;
   last_evaluated_at: string;
   expires_at: string;
   entry_price?: number;

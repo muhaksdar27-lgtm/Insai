@@ -1022,10 +1022,10 @@ def run_full_analysis(request: AnalysisRequest) -> AnalysisResponse:
         
         composite_values = {
             "current_price": current_price,
-            "atr": atr_data.get("values", {}).get("atr", 4.5),
-            "rsi": rsi_data.get("values", {}).get("rsi", 50.0),
-            "ma50": ma50_data.get("values", {}).get("ma50", current_price),
-            "ma200": ma200_data.get("values", {}).get("ma200", current_price),
+            "atr": atr_data.get("values", {}).get("atr", 0.0),
+            "rsi": rsi_data.get("values", {}).get("rsi", 0.0),
+            "ma50": ma50_data.get("values", {}).get("ma50", 0.0),
+            "ma200": ma200_data.get("values", {}).get("ma200", 0.0),
             "trend_h1": trend_data.get("values", {}).get("trend", "NEUTRAL").lower(),
             "trend": trend_data.get("values", {}).get("trend", "NEUTRAL"),
             "bos_bull": bos_data.get("values", {}).get("bos_bull", False),
@@ -1051,8 +1051,8 @@ def run_full_analysis(request: AnalysisRequest) -> AnalysisResponse:
             "double_bottom": db_data.get("values", {}).get("double_bottom", False),
             "neckline": neck_data.get("values", {}).get("neckline", 0.0),
             "neckline_break": neck_break_data.get("values", {}).get("neckline_break", False),
-            "spread_acceptable": request.market_context.get("spread_acceptable", True) if request.market_context else True,
-            "news_high_impact_active": request.market_context.get("news_high_impact_active", False) if request.market_context else False
+            "spread_acceptable": bool(request.market_context.get("spread_acceptable", False)) if request.market_context else False,
+            "news_high_impact_active": bool(request.market_context.get("news_high_impact_active", False)) if request.market_context else False
         }
         
         composite_evidence = {

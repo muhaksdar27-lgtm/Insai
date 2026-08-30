@@ -33,7 +33,7 @@ export class CandidateEvaluator {
     for (const [ruleKey, res] of Object.entries(ruleResults)) {
       totalCount++;
 
-      if (res.status === 'PASS' || res.status === 'valid' || res.status === 'valid_wait') {
+      if (res.status === 'PASS' || res.status === 'valid') {
         passCount++;
       } else if (res.status === 'WAIT') {
         if (res.mandatory) {
@@ -44,7 +44,13 @@ export class CandidateEvaluator {
         }
       } else if (res.status === 'FAIL' || res.status === 'ERROR' || res.status === 'invalid') {
         if (res.failureDetails) {
-          failedRules.push(res.failureDetails);
+          failedRules.push({
+            ruleName: res.failureDetails.ruleName || res.ruleName || ruleKey,
+            reason: res.failureDetails.reason || `Rule ${ruleKey} failed`,
+            actualValue: res.failureDetails.actualValue ?? null,
+            expectedValue: res.failureDetails.expectedValue ?? null,
+            timestamp: res.failureDetails.timestamp || res.timestamp || new Date().toISOString()
+          });
         }
         if (res.mandatory) {
           mandatoryFailCount++;

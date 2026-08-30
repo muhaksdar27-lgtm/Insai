@@ -14,6 +14,7 @@ export interface StrategyExecutionResult {
 export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any = {}): StrategyExecutionResult {
   const symbol = context.symbol || 'XAUUSD';
   
+  // Evaluate strategy rules
   const candidateRules = RuleEngine.evaluateStrategyRules('strategy-2-snd', context, pyData);
   
   let validCount = 0;
@@ -51,19 +52,19 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
   const doubleTop = !!pyData.double_top;
   const doubleBottom = !!pyData.double_bottom;
 
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
+  const h1Trend = (pyData.trend_h1 || pyData.trend || 'NEUTRAL').toLowerCase();
   
   const direction: 'buy' | 'sell' = s2.direction || ((chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy')));
 
   const confirmationStatus = sdActive && (engulfBull || engulfBear) ? 'S&D + Engulfing Confirmed' : 'S&D / Engulfing Monitored';
 
-  const atr = pyData.atr || 0;
+  const atr = typeof pyData.atr === 'number' && pyData.atr > 0 ? pyData.atr : 0;
   const entryPriceVal = s2.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
   const slVal = s2.sl || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal - (atr * 0.5)).toFixed(2) : +(entryPriceVal + (atr * 0.5)).toFixed(2)) : undefined);
   const tp1Val = s2.tp1 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.0)).toFixed(2) : +(entryPriceVal - (atr * 1.0)).toFixed(2)) : undefined);
   const tp2Val = s2.tp2 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.75)).toFixed(2) : +(entryPriceVal - (atr * 1.75)).toFixed(2)) : undefined);
   
-  const currentSession = pyData.current_session || pyData.session || 'Any';
+  const currentSession = pyData.current_session || pyData.session || 'UNDEFINED';
 
   const setupSnapshot = {
     strategyId: 'strategy-2-snd',
@@ -71,25 +72,25 @@ export function detectStrategy2SND(context: RuleEvaluationContext, pyData: any =
     symbol,
     timeframe: 'M15',
     session: currentSession,
-    h1Trend,
+    h1Trend: h1Trend.toUpperCase(),
     bias: h1Trend.toUpperCase(),
     marketBias: h1Trend.toUpperCase(),
     direction,
-    entry: entryPriceVal,
-    entryPrice: entryPriceVal,
-    sl: slVal,
-    slPrice: slVal,
-    tp1: tp1Val,
-    tp1Price: tp1Val,
-    tp2: tp2Val,
-    tp2Price: tp2Val,
-    rr: s2.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
-    sdPattern: pyData.sd_pattern || 'DBR',
-    zoneFreshness: pyData.zone_freshness || 'FRESH',
-    sdZoneStatus: s2.sdZoneStatus || (sdActive ? `${pyData.sd_pattern || 'S&D'} (${pyData.zone_freshness || 'FRESH'}) Active` : 'S&D Zone Monitored'),
-    engulfingStatus: s2.engulfingStatus || ((engulfBull || engulfBear || pyData.has_displacement) ? 'Engulfing / Momentum Confirmed' : 'Engulfing Monitored'),
-    atr14: atr,
-    atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,
+    entry: entryPriceVal || '--',
+    entryPrice: entryPriceVal || '--',
+    sl: slVal || '--',
+    slPrice: slVal || '--',
+    tp1: tp1Val || '--',
+    tp1Price: tp1Val || '--',
+    tp2: tp2Val || '--',
+    tp2Price: tp2Val || '--',
+    rr: s2.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '--',
+    sdPattern: pyData.sd_pattern || null,
+    zoneFreshness: pyData.zone_freshness || null,
+    sdZoneStatus: s2.sdZoneStatus || (sdActive && pyData.sd_pattern ? `${pyData.sd_pattern} (${pyData.zone_freshness || 'TESTED'}) Active` : 'S&D Zone Monitored'),
+    engulfingStatus: s2.engulfingStatus || ((engulfBull || engulfBear) ? 'Genuine Engulfing Confirmed' : 'Engulfing Monitored'),
+    atr14: atr > 0 ? atr : '--',
+    atrBuffer50Pct: atr > 0 ? `${((atr * 0.5) * 10).toFixed(1)} pips` : '--',
     confluenceScore,
     confirmationStatus,
     aiDecision: pyData.aiDecision || 'PENDING'

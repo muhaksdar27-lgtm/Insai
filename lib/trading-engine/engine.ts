@@ -1,19 +1,17 @@
-import { LocalTAAnalyzer } from './local-ta-analyzer';
 import { getDatabaseClient } from "../db/client";
-import { getEnv } from "../utils/env";
 import { RuleEvaluationContext } from '@/types';
 import { AIValidationOrchestrator } from './validation-pipeline/ai-orchestrator';
 import { SetupDetector } from './setup-detector';
 import { logger } from '../utils/logger';
-import { PyWSClient } from './py-ws-client';
-import { PythonEngineManager } from '../mcp/engines/deployment';
 import { MarketStateEngine } from './market-state-engine';
 import { StateMachine } from './state-machine';
-import { getMarketDataService } from '../market-data/market-data-service';
 import { MarketCalendar } from '../market-data/market-calendar';
 import { StrategySetup } from './types';
 import { signalPipeline } from './signal-pipeline';
 import crypto from 'crypto';
+
+import { StrategyMarketContext } from '@/types/strategy-market-context';
+import { StrategyContextBuilder } from './strategy-context-builder';
 
 export class TradingEngine {
   private setupDetector: SetupDetector;
@@ -103,7 +101,7 @@ export class TradingEngine {
       if (risk > 0) rr = `1:${(reward / risk).toFixed(2)}`;
     }
 
-    const bias = setupDetails?.bias || setupDetails?.marketBias || setupDetails?.h1Bias || (direction === 'buy' ? 'BULLISH' : (direction === 'sell' ? 'BEARISH' : 'Undetermined'));
+    const bias = setupDetails?.bias || setupDetails?.marketBias || setupDetails?.h1Bias || (direction === 'buy' ? 'BULLISH' : (direction === 'sell' ? 'BEARISH' : 'NEUTRAL'));
 
     return {
       ...setupDetails,
@@ -122,7 +120,7 @@ export class TradingEngine {
       direction,
       rr: rr || '1:2.0',
       timeframe: setup?.timeframe || setupDetails?.timeframe || context.timeframe || 'M15',
-      session: setupDetails?.session || 'London',
+      session: setupDetails?.session || 'UNDEFINED',
       marketBias: bias,
       bias,
       h1Bias: bias,
@@ -132,8 +130,8 @@ export class TradingEngine {
       sweepStatus: setupDetails?.sweepStatus || (setup?.steps.find(s => s.step_id.includes('SWEEP'))?.state === 'VALIDATED' ? 'Confirmed' : 'Monitored'),
       confirmationStatus: setupDetails?.confirmationStatus || (setup?.steps.find(s => s.step_id.includes('CHOCH') || s.step_id.includes('TRIGGER'))?.state === 'VALIDATED' ? 'Confirmed' : 'Monitored'),
       sdZoneStatus: setupDetails?.sdZoneStatus,
-      atr14: setupDetails?.atr14 || 4.5,
-      atrBuffer50Pct: setupDetails?.atrBuffer50Pct || '22.5 pips',
+      atr14: setupDetails?.atr14 ?? 0,
+      atrBuffer50Pct: setupDetails?.atrBuffer50Pct || `${((setupDetails?.atr14 || 0) * 0.5 * 10).toFixed(1)} pips`,
       ruleResults: ruleResults || {},
       aiDecision: setup?.ai_decision || setupDetails?.aiDecision || 'PENDING',
       setupObject: setup
@@ -165,6 +163,33 @@ export class TradingEngine {
     }
   }
 
+  public async processStrategyMarketContext(symbol: string, marketContext: StrategyMarketContext, activeStrategyIds: string[] = []) {
+    const currentPrice = marketContext.currentPrice || 0;
+    const timestamp = marketContext.currentTimestamp || new Date().toISOString();
+    const dataKey = `${symbol}_MULTI_TF`;
+
+    const lastState = this.lastProcessedState[dataKey] || { timestamp: '', price: 0 };
+    if (lastState.timestamp === timestamp && Math.abs(lastState.price - currentPrice) < 0.1) {
+      return;
+    }
+    this.lastProcessedState[dataKey] = { timestamp, price: currentPrice };
+
+    logger.info(`Running multi-timeframe isolated setup detection for ${symbol} at ${timestamp} (Price: ${currentPrice})`);
+
+    const primaryCandles = marketContext.M15?.candles || marketContext.H1?.candles || [];
+    const context: RuleEvaluationContext = {
+      symbol,
+      timeframe: 'M15',
+      timestamp,
+      marketData: marketContext,
+      candles: primaryCandles,
+      correlationId: marketContext.correlationId || crypto.randomUUID(),
+      strategyMarketContext: marketContext
+    };
+
+    await this.runDetectionCycle(context, activeStrategyIds, marketContext);
+  }
+
   public async processMarketData(symbol: string, timeframe: string, contextData: any, activeStrategyIds: string[] = []) {
     const candles = contextData.candles || [];
     if (!candles || candles.length === 0) return;
@@ -193,7 +218,7 @@ export class TradingEngine {
     await this.runDetectionCycle(context, activeStrategyIds);
   }
 
-  private async runDetectionCycle(context: RuleEvaluationContext, activeStrategyIds: string[]) {
+  private async runDetectionCycle(context: RuleEvaluationContext, activeStrategyIds: string[], marketContext?: StrategyMarketContext) {
     // 0. Market Calendar & Feed Health Check
     const marketStatus = MarketCalendar.getMarketStatus(context.symbol, context.marketData);
     if (marketStatus.isHardBlocked) {
@@ -225,47 +250,65 @@ export class TradingEngine {
       strategiesToProcess = allStrategies;
     }
 
-    // 3. Technical analysis data (Native TS LocalTAAnalyzer single source of truth)
-    let commonPyData: any = {};
-    try {
-      const pyUrl = getEnv("PYTHON_ENGINE_URL");
-      if (pyUrl) {
-        const pyHealth = await PythonEngineManager.evaluate();
-        if (pyHealth.status === 'active') {
-          const mds = getMarketDataService();
-          const [h1, m15, m5, m1] = await Promise.all([
-            context.timeframe === 'H1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'H1', 100),
-            context.timeframe === 'M15' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M15', 100),
-            context.timeframe === 'M5' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M5', 100),
-            context.timeframe === 'M1' && context.candles ? Promise.resolve(context.candles) : mds.getCandles(context.symbol, 'M1', 100)
-          ]);
-          const payload = { H1: { candles: h1 }, M15: { candles: m15, atr: 4.5 }, M5: { candles: m5 }, M1: { candles: m1 } };
-          const wsClient = PyWSClient.getInstance(pyUrl);
-          commonPyData = await wsClient.analyze(payload);
-        }
-      }
-    } catch (e: any) {
-      logger.debug(`Python engine notice: ${e.message}`);
+    // If global marketContext is not passed, build one on the fly
+    let globalMarketContext = marketContext;
+    if (!globalMarketContext) {
+      globalMarketContext = await StrategyContextBuilder.buildGlobalMarketContext(context.symbol);
     }
 
-    if (!commonPyData || !commonPyData.trend_h1 || !commonPyData.current_price) {
-      commonPyData = { ...commonPyData, ...LocalTAAnalyzer.analyze(context) };
-    }
-
-    // 4. Process all active strategies independently (Strict Strategy Isolation)
+    // 4. Process all active strategies independently with TRUE TIMEFRAME ISOLATION
     await Promise.allSettled(strategiesToProcess.map(async (strategyId) => {
       const sm = new StateMachine(strategyId, 'AWAITING');
 
       try {
+        // Build strategy-isolated context strictly containing authorized timeframes
+        const isolatedContext = StrategyContextBuilder.buildStrategyIsolatedContext(strategyId, globalMarketContext!);
+        
+        // Construct strategy-specific RuleEvaluationContext
+        const strategyEvalContext: RuleEvaluationContext = {
+          symbol: context.symbol,
+          timeframe: isolatedContext.primaryTimeframe,
+          timestamp: context.timestamp,
+          candles: isolatedContext.primaryCandles,
+          correlationId: context.correlationId,
+          strategyMarketContext: isolatedContext.marketContext
+        };
+
+        // Assert required timeframe completeness
+        if (!isolatedContext.hasAllRequiredTimeframes) {
+          const missingMsg = `Awaiting required timeframe streams: ${isolatedContext.missingTimeframes.join(', ')}`;
+          logger.info(`[TIMEFRAME_ISOLATION_WAIT] Strategy ${strategyId} holds: ${missingMsg}`);
+          
+          const setup = this.setupDetector.startScanning(strategyId, context.symbol, isolatedContext.primaryTimeframe, context.timestamp);
+          const currentAwaitingStep = setup.steps.find(s => s.step_order === setup.current_step_order);
+          if (currentAwaitingStep) {
+            currentAwaitingStep.state = 'AWAITING';
+            currentAwaitingStep.reason = missingMsg;
+          }
+          
+          const payload = this.buildSetupSnapshot(strategyEvalContext, {
+            setup,
+            marketStates,
+            ruleResults: {},
+            setupDetails: { ...setup, timeframe: isolatedContext.primaryTimeframe },
+            validationSummary: missingMsg
+          });
+
+          await this.syncState(strategyId, 'AWAITING', 'active', missingMsg, setup.id, payload);
+          return;
+        }
+
+        const strategyAnalysisData = isolatedContext.strategyAnalysis;
+
         const evalResult = this.setupDetector.evaluateSetup(
           strategyId,
-          context,
-          commonPyData,
+          strategyEvalContext,
+          strategyAnalysisData,
           'candle_update'
         );
 
         const setup = evalResult.setup;
-        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, commonPyData, context);
+        const translatedSnapshot = this.setupDetector.translateMarketDataToSnapshot(strategyId, strategyAnalysisData, strategyEvalContext);
 
         // Map step rule results for UI
         const ruleResults: Record<string, any> = {};
@@ -328,21 +371,41 @@ export class TradingEngine {
           const pipelineResult = await signalPipeline.executePipeline(setup, context, ruleResults);
 
           if (!pipelineResult.success || pipelineResult.status !== 'APPROVED') {
+            const isHardRejected = pipelineResult.status === 'REJECTED' || pipelineResult.status === 'VALIDATION_ERROR';
             const failMsg = pipelineResult.rejectionReason || `Signal pipeline held at stage ${pipelineResult.stageReached} (Status: ${pipelineResult.status})`;
-            logger.warn(`[PIPELINE REJECTED] Strategy ${strategyId} ${failMsg}`);
-            this.setupDetector.recordTransition(setup, 'REJECTED', failMsg, 'invalidation');
-            sm.transition('REJECTED', failMsg);
 
-            const payload = this.buildSetupSnapshot(context, {
-              setup,
-              marketStates,
-              ruleResults,
-              setupDetails: { ...translatedSnapshot, ...setup, aiDecision: pipelineResult.status },
-              validationSummary: failMsg
-            });
+            if (isHardRejected) {
+              logger.warn(`[PIPELINE REJECTED] Strategy ${strategyId} ${failMsg}`);
+              this.setupDetector.recordTransition(setup, 'REJECTED', failMsg, 'invalidation');
+              sm.transition('REJECTED', failMsg);
 
-            await this.syncState(strategyId, 'REJECTED', 'rejected', failMsg, setup.id, payload);
-            return;
+              const payload = this.buildSetupSnapshot(context, {
+                setup,
+                marketStates,
+                ruleResults,
+                setupDetails: { ...translatedSnapshot, ...setup, aiDecision: 'REJECTED' },
+                validationSummary: failMsg
+              });
+
+              await this.syncState(strategyId, 'REJECTED', 'rejected', failMsg, setup.id, payload);
+              return;
+            } else {
+              // Status is AI_UNAVAILABLE, SUPPRESSED, or IN_FLIGHT_LOCKED -> Hold in AI_PENDING without auto-approving
+              logger.info(`[PIPELINE HELD] Strategy ${strategyId} ${failMsg}`);
+              this.setupDetector.recordTransition(setup, 'AI_PENDING', failMsg, 'candle_update');
+              sm.transition('AI_PENDING', failMsg);
+
+              const payload = this.buildSetupSnapshot(context, {
+                setup,
+                marketStates,
+                ruleResults,
+                setupDetails: { ...translatedSnapshot, ...setup, aiDecision: pipelineResult.status === 'AI_UNAVAILABLE' ? 'UNAVAILABLE' : 'PENDING' },
+                validationSummary: failMsg
+              });
+
+              await this.syncState(strategyId, 'AI_PENDING', 'pending', failMsg, setup.id, payload);
+              return;
+            }
           }
 
           // Step Approved & Dispatched

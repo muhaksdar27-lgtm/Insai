@@ -76,6 +76,39 @@ export class SignalCandidateGate {
     }
     checks.strategyValid = true;
 
+    // 2. Setup Steps & Evidence Validation (Fail-closed)
+    if (!setup.steps || !Array.isArray(setup.steps) || setup.steps.length === 0) {
+      return {
+        isValid: false,
+        rejectReason: 'Candidate rejected: Setup steps missing or empty',
+        checks,
+        metrics
+      };
+    }
+
+    if (setup.steps.length !== manifest.setup_sequence.length) {
+      return {
+        isValid: false,
+        rejectReason: `Candidate rejected: Step count mismatch (expected ${manifest.setup_sequence.length}, received ${setup.steps.length})`,
+        checks,
+        metrics
+      };
+    }
+
+    // Check step order and IDs
+    for (let i = 0; i < manifest.setup_sequence.length; i++) {
+      const canonical = manifest.setup_sequence[i];
+      const actual = setup.steps[i];
+      if (!actual || actual.step_id !== canonical.step_id) {
+        return {
+          isValid: false,
+          rejectReason: `Candidate rejected: Step mismatch at position ${i + 1} (expected ${canonical.step_id}, got ${actual?.step_id})`,
+          checks,
+          metrics
+        };
+      }
+    }
+
     // 2. Seluruh Mandatory Setup Lengkap (All steps validated)
     const hasFailedStep = setup.steps.some(s => s.state === 'REJECTED' || s.state === 'INVALIDATED');
 
@@ -102,7 +135,22 @@ export class SignalCandidateGate {
         metrics
       };
     }
+
+    // Validate evidence on all validated steps
+    for (const step of validatedStructuralSteps) {
+      const evidence = step.evidence;
+      if (!evidence || typeof evidence !== 'object' || Object.keys(evidence).length === 0) {
+        return {
+          isValid: false,
+          rejectReason: `Candidate rejected: Step ${step.step_id} is marked VALIDATED but evidence is missing or empty`,
+          checks,
+          metrics
+        };
+      }
+    }
+
     checks.mandatoryStepsComplete = true;
+
 
     // 3. Entry Valid
     const entry = setup.entry_price;
@@ -213,7 +261,7 @@ export class SignalCandidateGate {
       };
     }
 
-    const currentSession = marketData?.session || marketData?.current_session || 'London';
+    const currentSession = marketData?.session || marketData?.current_session || 'UNDEFINED';
     const allowedSessions = manifest.session_requirement.allowedSessions;
     if (allowedSessions && allowedSessions.length > 0 && !allowedSessions.includes('Any')) {
       if (!allowedSessions.includes(currentSession)) {
@@ -266,24 +314,43 @@ export class SignalCandidateGate {
     }
     checks.candleContextValid = true;
 
-    // 10. Signal Belum Pernah Dibuat (Deduplication / Idempotency check)
+    // 10. Signal Belum Pernah Dibuat (Deduplication / Idempotency check - HARD GATE)
     const isInMemory = this.previouslyCreatedKeys.has(deterministicSignalKey);
     let isInDb = false;
 
     // Check DB for existing signal with same key if not in memory
     if (!isInMemory) {
       try {
-        const existingSignal = await getDatabaseClient().getSignalByKey(deterministicSignalKey);
-        if (existingSignal && (existingSignal.status === 'SIGNAL_ACTIVE' || existingSignal.status === 'APPROVED' || existingSignal.status === 'COMPLETED')) {
-          isInDb = true;
-          this.previouslyCreatedKeys.add(deterministicSignalKey);
+        const dbClient = getDatabaseClient();
+        if (dbClient.isConnected()) {
+          const existingSignal = await dbClient.getSignalByKey(deterministicSignalKey);
+          if (existingSignal && (existingSignal.status === 'SIGNAL_ACTIVE' || existingSignal.status === 'APPROVED' || existingSignal.status === 'COMPLETED' || existingSignal.status === 'ACTIVE' || existingSignal.status === 'TAKE_PARTIAL')) {
+            isInDb = true;
+            this.previouslyCreatedKeys.add(deterministicSignalKey);
+          }
         }
       } catch (e: any) {
-        logger.debug(`Database check notice during candidate gate: ${e.message}`);
+        // FAIL-CLOSED: If database is unavailable or errors during duplicate verification, block signal
+        logger.warn(`Database duplicate verification error: ${e.message}. Blocking candidate (fail-closed).`);
+        return {
+          isValid: false,
+          rejectReason: `Candidate blocked: Database unavailable during duplicate verification (fail-closed): ${e.message}`,
+          checks: { ...checks, notPreviouslyCreated: false },
+          metrics
+        };
       }
     }
 
-    checks.notPreviouslyCreated = !isInMemory && !isInDb;
+    if (isInMemory || isInDb) {
+      return {
+        isValid: false,
+        rejectReason: `Candidate rejected: Signal key already exists (${deterministicSignalKey}) - duplicate signal prevented`,
+        checks: { ...checks, notPreviouslyCreated: false },
+        metrics
+      };
+    }
+
+    checks.notPreviouslyCreated = true;
 
     return {
       isValid: true,

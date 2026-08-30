@@ -4,13 +4,11 @@ import { useEffect, useState, useMemo } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { 
   Activity, Clock, Timer, History, 
-  TrendingUp, TrendingDown, Target, Shield,
   CheckCircle2, XCircle, Loader2, RotateCw, AlertTriangle,
-  Zap, Search, ChevronDown, ChevronUp, Layers, Check,
-  Cpu
+  Zap, Search, Layers, Cpu
 } from "lucide-react";
 import { StrategyResponse, StrategyStep } from "@/types";
-import { getAllStrategiesWithFallback, normalizeStrategy, buildTimeline, buildSetup, buildRules } from "@/lib/strategyViewModel";
+import { getAllStrategiesWithFallback, normalizeStrategy, buildTimeline } from "@/lib/strategyViewModel";
 
 const CANONICAL_ORDER = [
   'strategy-1-smc',
@@ -26,23 +24,6 @@ const STRATEGY_LABELS: Record<string, { shortName: string; tf: string; session: 
   'strategy-3-scalping': { shortName: 'Scalping SMC + M1 Sweep', tf: 'H1 Trend / M1 Entry', session: 'Any Session' },
   'strategy-4-news': { shortName: 'News Sweep Reversal', tf: 'M15 Context / M1 Entry', session: 'News Window' },
   'strategy-5-smc-sd-confluence': { shortName: 'SMC-SD Confluence', tf: 'H1/M15 Structure / M5 Entry', session: 'Any Session' }
-};
-
-const RULE_NAME_LABELS: Record<string, string> = {
-  rule_pair_restriction: 'Pair Restriction (XAUUSD)',
-  rule_session_restriction: 'Session Window Restriction',
-  rule_h1_trend: 'H1 Higher Timeframe Trend Alignment',
-  rule_liquidity_sweep: 'Liquidity Sweep Confirmation',
-  rule_choch_confirmation: 'M15 CHoCH Structural Break',
-  rule_ob_fvg_entry: 'OB / FVG Point of Interest Entry',
-  rule_spread_check: 'Spread Tolerance Check',
-  rule_atr_sl_buffer: 'ATR Stop Loss Buffer Protection',
-  rule_risk_reward: 'Minimum 1:2 Risk / Reward Check',
-  rule_sd_zone: 'Supply & Demand Zone Alignment',
-  rule_engulfing_trigger: 'Candlestick Engulfing Trigger',
-  rule_scalp_pattern: 'M1 Double Top / Bottom Pattern',
-  rule_news_reversal: 'Post-News Spike Reversal Check',
-  rule_confluence_overlap: 'Multi-Level Confluence Overlap'
 };
 
 function formatTime(dateString?: string | Date | null) {
@@ -175,96 +156,10 @@ function SequentialStepTimeline({ steps }: { steps: StrategyStep[] }) {
               {icon}
               <div className="flex flex-col min-w-0">
                 <span className="text-[11px] font-bold tracking-wide truncate">{step.name}</span>
-                <span className="text-[9px] text-zinc-500 font-mono">Step {idx + 1} of 9</span>
+                <span className="text-[9px] text-zinc-500 font-mono">Step {idx + 1} of {steps.length}</span>
               </div>
             </div>
             <StepBadge status={s} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SetupParametersGrid({ setup }: { setup: any }) {
-  const isBuy = setup.direction === 'BUY' || setup.direction === 'LONG';
-  const isSell = setup.direction === 'SELL' || setup.direction === 'SHORT';
-
-  return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div className="bg-zinc-950/80 p-2.5 rounded border border-zinc-800/80 flex flex-col items-center justify-center text-center">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Arah Trade</span>
-          <span className={`text-[12px] font-black uppercase tracking-wider flex items-center gap-1 ${isBuy ? 'text-emerald-400' : isSell ? 'text-rose-400' : 'text-zinc-400'}`}>
-             {isBuy && <TrendingUp className="w-3.5 h-3.5" />}
-             {isSell && <TrendingDown className="w-3.5 h-3.5" />}
-             {setup.direction || '--'}
-          </span>
-        </div>
-        <div className="bg-zinc-950/80 p-2.5 rounded border border-zinc-800/80 flex flex-col items-center justify-center text-center">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Entry Price</span>
-          <span className="text-[12px] font-mono font-bold text-zinc-100">{setup.entry && setup.entry !== '--' ? setup.entry : '--'}</span>
-        </div>
-        <div className="bg-zinc-950/80 p-2.5 rounded border border-zinc-800/80 flex flex-col items-center justify-center text-center">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1 flex items-center gap-1">
-            <Shield className="w-3 h-3 text-rose-500"/> Stop Loss
-          </span>
-          <span className="text-[12px] font-mono font-bold text-rose-400">{setup.sl && setup.sl !== '--' ? setup.sl : '--'}</span>
-        </div>
-        <div className="bg-zinc-950/80 p-2.5 rounded border border-zinc-800/80 flex flex-col items-center justify-center text-center">
-          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1 flex items-center gap-1">
-            <Target className="w-3 h-3 text-emerald-500"/> Take Profit
-          </span>
-          <span className="text-[12px] font-mono font-bold text-emerald-400">{setup.tp && setup.tp !== '--' ? setup.tp : '--'}</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-        <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800/60 flex items-center justify-between">
-          <span className="text-zinc-500 font-bold uppercase tracking-wider">Risk : Reward</span>
-          <span className="font-mono font-bold text-zinc-200">{setup.rr || '--'}</span>
-        </div>
-        <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800/60 flex items-center justify-between">
-          <span className="text-zinc-500 font-bold uppercase tracking-wider">Bias H1</span>
-          <span className="font-bold text-zinc-200 uppercase">{setup.bias || setup.marketBias || '--'}</span>
-        </div>
-        <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800/60 flex items-center justify-between">
-          <span className="text-zinc-500 font-bold uppercase tracking-wider">Sweep Status</span>
-          <span className="font-bold text-zinc-300 truncate ml-1">{setup.sweepStatus || '--'}</span>
-        </div>
-        <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800/60 flex items-center justify-between">
-          <span className="text-zinc-500 font-bold uppercase tracking-wider">Trigger Confirm</span>
-          <span className="font-bold text-zinc-300 truncate ml-1">{setup.confirmationStatus || '--'}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RulesValidationChecklist({ rules }: { rules: any[] }) {
-  if (!rules || rules.length === 0) {
-    return <div className="text-[10px] text-zinc-500 italic p-3 text-center border border-dashed border-zinc-800 rounded">Tidak ada aturan validasi terdaftar</div>;
-  }
-
-  return (
-    <div className="space-y-1.5">
-      {rules.map((rule: any, idx: number) => {
-        const isPass = rule.passed || rule.status === 'valid' || rule.status === 'validated';
-        const isFail = rule.status === 'invalid' || rule.status === 'failed' || rule.status === 'rejected';
-
-        let badge = <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-zinc-900 text-zinc-500 border border-zinc-800 uppercase">AWAITING</span>;
-        if (isPass) {
-          badge = <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase flex items-center gap-1"><Check className="w-2.5 h-2.5" /> PASS</span>;
-        } else if (isFail) {
-          badge = <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/30 uppercase flex items-center gap-1"><XCircle className="w-2.5 h-2.5" /> FAIL</span>;
-        }
-
-        const label = RULE_NAME_LABELS[rule.ruleId] || rule.ruleId || rule.name || `Aturan ${idx + 1}`;
-
-        return (
-          <div key={rule.ruleId || idx} className="flex items-center justify-between p-2 rounded bg-zinc-950/60 border border-zinc-800/80 text-[11px]">
-            <span className="font-mono text-zinc-300 font-medium truncate pr-2">{label}</span>
-            {badge}
           </div>
         );
       })}
@@ -276,8 +171,7 @@ export default function MonitoringPage() {
   const { data: rawStrategies, loading, error, refetch } = useFetch<StrategyResponse[]>("/api/strategies", []);
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>("ALL");
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [expandedRules, setExpandedRules] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState<string>("" );
 
   useEffect(() => {
     let timeout: NodeJS.Timeout;
@@ -307,10 +201,6 @@ export default function MonitoringPage() {
     } finally {
       setIsScanning(false);
     }
-  };
-
-  const toggleRules = (id: string) => {
-    setExpandedRules(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const strategies = useMemo(() => {
@@ -471,10 +361,7 @@ export default function MonitoringPage() {
       <div className="flex flex-col gap-5">
         {filteredStrategies.map((strat, idx) => {
           const steps = buildTimeline(strat);
-          const setup = buildSetup(strat);
-          const rules = buildRules(strat);
           const labelInfo = STRATEGY_LABELS[strat.id] || { shortName: strat.name, tf: '--', session: '--' };
-          const isRulesExpanded = expandedRules[strat.id] ?? true;
 
           return (
             <div key={strat.id} className="bg-zinc-950 border border-zinc-800/90 rounded-lg overflow-hidden flex flex-col shadow-2xl">
@@ -506,98 +393,16 @@ export default function MonitoringPage() {
                   </div>
                </div>
 
-               {/* Card Body - Multi Column Layout */}
-               <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-5">
-                  
-                  {/* Column 1: Setup Sequence Workflow (Steps 1 to 9) */}
-                  <div className="lg:col-span-5 flex flex-col gap-2 border-r-0 lg:border-r border-zinc-800/60 lg:pr-5">
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5 mb-1">
-                      <h3 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-                        <Layers className="w-3.5 h-3.5 text-blue-400" />
-                        Urutan Setup Sekuensial (Step 1 - 9)
-                      </h3>
-                      <span className="text-[9px] text-zinc-500 font-mono font-bold">Tanpa Lompat Step</span>
-                    </div>
-                    <SequentialStepTimeline steps={steps} />
+               {/* Card Body - Setup Sequence Workflow (Steps 1 to 9) */}
+               <div className="p-4 flex flex-col gap-2">
+                  <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5 mb-1">
+                    <h3 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 font-mono">
+                      <Layers className="w-3.5 h-3.5 text-blue-400" />
+                      Urutan Setup Sekuensial (Step 1 - 9)
+                    </h3>
+                    <span className="text-[9px] text-zinc-500 font-mono font-bold">Tanpa Lompat Step</span>
                   </div>
-
-                  {/* Column 2: Parameters & Validation Rules & AI Decision */}
-                  <div className="lg:col-span-7 flex flex-col gap-4">
-                     
-                     {/* Section: Setup Parameters */}
-                     <div>
-                       <h3 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest mb-2 border-b border-zinc-800 pb-1.5 flex items-center gap-1.5 font-mono">
-                         <Target className="w-3.5 h-3.5 text-emerald-400" />
-                         Parameter Deteksi Setup
-                       </h3>
-                       <SetupParametersGrid setup={setup} />
-                     </div>
-
-                     {/* Section: Rules Engine Checklist */}
-                     <div>
-                       <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5 mb-2">
-                         <h3 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-                           <Shield className="w-3.5 h-3.5 text-amber-400" />
-                           Aturan Validasi
-                         </h3>
-                         <button 
-                           onClick={() => toggleRules(strat.id)}
-                           className="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 font-mono font-bold"
-                         >
-                           {isRulesExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                           {isRulesExpanded ? 'Sembunyikan' : 'Tampilkan'}
-                         </button>
-                       </div>
-                       
-                       {isRulesExpanded && (
-                         <RulesValidationChecklist rules={rules} />
-                       )}
-                     </div>
-
-                     {/* Section: AI Confluence Gate */}
-                     <div className="mt-auto pt-2 border-t border-zinc-800/80">
-                       <h3 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest mb-2 flex items-center gap-1.5 font-mono">
-                         <Cpu className="w-3.5 h-3.5 text-blue-400" />
-                         AI Confluence Validation Gate
-                       </h3>
-                       
-                       {(strat.aiDecision || setup.aiDecision) ? (
-                         <div className={`p-3 rounded border flex flex-col gap-2 ${
-                            (strat.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'bg-emerald-950/20 border-emerald-500/30' : 
-                            (strat.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'bg-rose-950/20 border-rose-500/30' : 
-                            'bg-blue-950/20 border-blue-500/30'
-                         }`}>
-                            <div className="flex items-center justify-between">
-                              <span className={`text-[11px] font-black uppercase tracking-widest ${
-                                 (strat.aiDecision || setup.aiDecision)?.toLowerCase() === 'approved' ? 'text-emerald-400' : 
-                                 (strat.aiDecision || setup.aiDecision)?.toLowerCase() === 'rejected' ? 'text-rose-400' : 
-                                 'text-blue-400'
-                              }`}>
-                                Keputusan AI: {strat.aiDecision || setup.aiDecision}
-                              </span>
-                              {(setup.confidence || setup.aiConfidence) && (
-                                <span className="text-[10px] font-mono font-bold text-amber-300 border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 rounded">
-                                  Confidence: {setup.confidence || setup.aiConfidence}%
-                                </span>
-                              )}
-                            </div>
-                            {setup.aiReasoning && (
-                               <p className="text-[10px] text-zinc-300 italic opacity-90 border-l-2 border-zinc-600 pl-2 leading-relaxed">
-                                 &quot;{setup.aiReasoning}&quot;
-                               </p>
-                            )}
-                         </div>
-                       ) : (
-                         <div className="bg-zinc-950 border border-dashed border-zinc-800 rounded p-3 text-center">
-                           <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider flex items-center justify-center gap-2 font-mono">
-                             <Clock className="w-3.5 h-3.5 text-zinc-600" />
-                             Menunggu Evaluasi AI Confluence Gate
-                           </span>
-                         </div>
-                       )}
-                     </div>
-
-                  </div>
+                  <SequentialStepTimeline steps={steps} />
                </div>
 
             </div>

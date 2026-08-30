@@ -39,15 +39,15 @@ export function deriveSetupSnapshot(payload: any, state: any): SetupSnapshot {
     if (entry && sl && tp1) {
       const risk = Math.abs(entry - sl);
       const reward = Math.abs(tp1 - entry);
-      snap.rr = src.rr || (risk > 0 ? `1:${(reward / risk).toFixed(1)}` : '1:2.0');
+      snap.rr = src.rr || (risk > 0 ? `1:${(reward / risk).toFixed(1)}` : '--');
     } else {
-      snap.rr = src.rr || '1:2.0';
+      snap.rr = src.rr || '--';
     }
 
     snap.pair = src.pair || src.symbol || state?.symbol || 'XAUUSD';
     snap.timeframe = src.timeframe || state?.timeframe || 'M15';
-    snap.session = src.session || 'London';
-    const biasVal = src.bias || src.marketBias || src.h1Bias || src.trend_h1 || src.trend || 'BULLISH';
+    snap.session = src.session || '--';
+    const biasVal = src.bias || src.marketBias || src.h1Bias || src.trend_h1 || src.trend || 'NEUTRAL';
     snap.bias = String(biasVal).toUpperCase();
     snap.marketBias = snap.bias;
     snap.h1Bias = snap.bias;
@@ -57,8 +57,8 @@ export function deriveSetupSnapshot(payload: any, state: any): SetupSnapshot {
     snap.sweepStatus = src.sweepStatus || src.liq_sweep_status || 'Monitored';
     snap.confirmationStatus = src.confirmationStatus || src.confirmation_status || src.chochStatus || 'Monitored';
     snap.sdZoneStatus = src.sdZoneStatus || src.sd_zone_status || src.zone_status || 'Monitored';
-    snap.atr14 = src.atr14 || src.atr || 4.5;
-    if (snap.atr14) {
+    snap.atr14 = src.atr14 || src.atr || '--';
+    if (snap.atr14 && snap.atr14 !== '--') {
       snap.atrBuffer50Pct = src.atrBuffer50Pct || `${(Number(snap.atr14) * 0.5 * 10).toFixed(1)} pips`;
     }
     snap.validationLogSummary = src.validationLogSummary || src.validationSummary || state?.reason;

@@ -507,7 +507,7 @@ export interface DealingRangeResult {
   equilibrium: number;
   rangeSize: number;
   fibLevel: number; // 0 (Low) to 1 (High)
-  zone: 'DEEP_DISCOUNT' | 'DISCOUNT' | 'EQUILIBRIUM' | 'PREMIUM' | 'DEEP_PREMIUM';
+  zone: 'DEEP_DISCOUNT' | 'DISCOUNT' | 'EQUILIBRIUM' | 'PREMIUM' | 'DEEP_PREMIUM' | 'UNDEFINED';
   isDiscountForBuy: boolean; // True if price < 0.50 (favorable for BUY)
   isPremiumForSell: boolean; // True if price > 0.50 (favorable for SELL)
   oteZone: boolean; // Optimal Trade Entry zone (0.618 - 0.786)
@@ -515,17 +515,17 @@ export interface DealingRangeResult {
 
 export function calculateDealingRange(candles: Candle[], currentPrice?: number): DealingRangeResult {
   return getCached(candles, `dealing_range_${currentPrice || 0}`, () => {
-    if (candles.length < 20) {
-      const price = currentPrice || (candles.length > 0 ? candles[candles.length - 1].close : 2700);
+    if (!candles || candles.length < 20) {
+      const price = currentPrice || (candles && candles.length > 0 ? candles[candles.length - 1].close : 0);
       return {
-        swingHigh: price + 10,
-        swingLow: price - 10,
+        swingHigh: price,
+        swingLow: price,
         equilibrium: price,
-        rangeSize: 20,
+        rangeSize: 0,
         fibLevel: 0.5,
-        zone: 'EQUILIBRIUM',
-        isDiscountForBuy: true,
-        isPremiumForSell: true,
+        zone: 'UNDEFINED',
+        isDiscountForBuy: false,
+        isPremiumForSell: false,
         oteZone: false
       };
     }
@@ -700,7 +700,8 @@ export function findSDZoneStructures(candles: Candle[]): SDZoneStructure[] {
     if (candles.length < 15) return [];
 
     const zones: SDZoneStructure[] = [];
-    const atr = calculateATR(candles, 14) || 2.0;
+    const atr = calculateATR(candles, 14);
+    if (!atr || atr <= 0) return [];
 
     // Scan for Base structures (1 to 3 base candles followed by explosive departure)
     for (let i = 5; i < candles.length - 3; i++) {

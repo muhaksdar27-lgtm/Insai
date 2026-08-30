@@ -83,6 +83,7 @@ export interface StrategySpecification {
 
 export interface SignalIdentityComponents {
   strategy_id: string;
+  version?: string;
   symbol: string;
   direction: 'BUY' | 'SELL';
   setup_instance: string;
@@ -94,13 +95,16 @@ export function buildSignalKey(
   symbol?: string,
   direction?: 'BUY' | 'SELL' | 'buy' | 'sell',
   setup_instance?: string,
-  event_context?: string
+  event_context?: string,
+  version?: string
 ): string {
   if (typeof componentsOrStrategyId === 'object') {
-    const { strategy_id, symbol: sym, direction: dir, setup_instance: inst, event_context: ctx } = componentsOrStrategyId;
-    return `sig::${strategy_id}::${sym}::${(dir || 'BUY').toUpperCase()}::${inst}::${ctx || 'candle_closed'}`;
+    const { strategy_id, version: ver, symbol: sym, direction: dir, setup_instance: inst, event_context: ctx } = componentsOrStrategyId;
+    const v = ver || 'v2.0.0';
+    return `sig::${strategy_id}::${v}::${sym}::${(dir || 'BUY').toUpperCase()}::${inst}::${ctx || 'candle_closed'}`;
   }
-  return `sig::${componentsOrStrategyId}::${symbol}::${(direction || 'BUY').toUpperCase()}::${setup_instance}::${event_context || 'candle_closed'}`;
+  const v = version || 'v2.0.0';
+  return `sig::${componentsOrStrategyId}::${v}::${symbol}::${(direction || 'BUY').toUpperCase()}::${setup_instance}::${event_context || 'candle_closed'}`;
 }
 
 export function parseSignalKey(key: string): SignalIdentityComponents | null {
@@ -108,14 +112,26 @@ export function parseSignalKey(key: string): SignalIdentityComponents | null {
 
   if (key.includes('::')) {
     const parts = key.replace(/^sig::/, '').split('::');
-    if (parts.length < 5) return null;
-    return {
-      strategy_id: parts[0],
-      symbol: parts[1],
-      direction: parts[2] as 'BUY' | 'SELL',
-      setup_instance: parts[3],
-      event_context: parts[4]
-    };
+    if (parts.length >= 6) {
+      return {
+        strategy_id: parts[0],
+        version: parts[1],
+        symbol: parts[2],
+        direction: parts[3] as 'BUY' | 'SELL',
+        setup_instance: parts[4],
+        event_context: parts[5]
+      };
+    } else if (parts.length === 5) {
+      return {
+        strategy_id: parts[0],
+        version: 'v2.0.0',
+        symbol: parts[1],
+        direction: parts[2] as 'BUY' | 'SELL',
+        setup_instance: parts[3],
+        event_context: parts[4]
+      };
+    }
+    return null;
   }
 
   // Fallback for underscore format
@@ -124,6 +140,7 @@ export function parseSignalKey(key: string): SignalIdentityComponents | null {
   if (parts.length < 5) return null;
   return {
     strategy_id: parts[0],
+    version: 'v2.0.0',
     symbol: parts[1],
     direction: parts[2] as 'BUY' | 'SELL',
     setup_instance: parts[3],

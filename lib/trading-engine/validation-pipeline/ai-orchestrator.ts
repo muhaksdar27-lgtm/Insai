@@ -7,9 +7,10 @@ import { getProviderRegistry } from '../../market-data/provider-registry';
 import { getEnv } from '../../utils/env';
 import { getDatabaseClient } from '../../db/client';
 import { PythonAnalyzerBridge } from '../python-analyzer-bridge';
-
 import { getStrategyDefinition } from '../strategy-registry';
+import { tryGetStrategyManifest } from '../strategies';
 import { ValidatorResult } from './validators';
+import crypto from 'crypto';
 
 export interface AIValidationDecision {
   decision: AIDecision;
@@ -49,11 +50,11 @@ export interface ValidationPipelineResult {
   scores?: any;
 }
 
-
 export class AIValidationOrchestrator {
   private ai: GoogleGenAI | null = null;
   private cache = new Map<string, ValidationPipelineResult>();
   private readonly CACHE_TTL = 5 * 60 * 1000;
+  private readonly MIN_CONFIDENCE_THRESHOLD = 70;
 
   private get isConfigured(): boolean {
     return !!getEnv('GEMINI_API_KEY');
@@ -76,184 +77,240 @@ export class AIValidationOrchestrator {
     return null;
   }
 
+  /**
+   * Generates a deterministic, setup-scoped cache key containing:
+   * strategy_id, setup_id, event/candle timestamp, strategy version, evidence hash.
+   */
+  public generateCacheKey(
+    strategyId: string,
+    setupId: string,
+    candleTimestamp: string,
+    strategyVersion: string,
+    canonicalEvidence: Record<string, any>
+  ): string {
+    const evidenceHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(canonicalEvidence))
+      .digest('hex')
+      .slice(0, 16);
+
+    return `ai_val_${strategyId}_${setupId}_${candleTimestamp}_v${strategyVersion}_${evidenceHash}`;
+  }
+
   public async runPipeline(
     strategyId: string,
     state: StrategyState,
     ruleResults: Record<string, RuleResult>,
     marketContext: any
   ): Promise<ValidationPipelineResult> {
-    
     const startTime = performance.now();
-    
-    // 1. Kumpulkan hasil semua validator independen dan prioritaskan rule kritikal
+
+    // 1. Gather strategy definition & active mandatory rules
     const strategyDef = getStrategyDefinition(strategyId);
-    const activeValidators = [...(strategyDef?.validationRules || ['Trend Validator', 'Risk Validator'])];
-    const activeRulesCount = activeValidators.length;
-    
-    // We already have ruleResults evaluated from engine (candidateRules).
+    const manifest = tryGetStrategyManifest(strategyId);
+    const strategyVersion = (manifest as any)?.version || (strategyDef as any)?.version || '1.0.0';
+    const activeValidators = [...(strategyDef?.validationRules || ['rule_risk_reward'])];
+
     const validatorResults: ValidatorResult[] = [];
     let criticalFail = false;
-    let failedRules: string[] = [];
-    
+    const failedRules: string[] = [];
+    const waitingRules: string[] = [];
+
     for (const vName of activeValidators) {
       const ruleData = ruleResults[vName];
       if (ruleData) {
-         const rawStatus: any = ruleData.status;
-         const isPass = rawStatus === 'PASS' || rawStatus === 'valid' || rawStatus === true;
-         const isFail = rawStatus === 'FAIL' || rawStatus === 'invalid' || rawStatus === false;
-         const status = isPass ? 'PASS' : (isFail ? 'FAIL' : 'WAIT');
-         const isMandatory = (ruleData as any).mandatory !== false;
-         
-         const res: ValidatorResult = {
-             rule: vName,
-             status: status,
-             reason: status === 'PASS' ? 'Rule met' : ((ruleData as any).description || 'Rule not met'),
-             evidence: JSON.stringify(ruleData.evidence || {}),
-             isCritical: isMandatory
-         };
-         validatorResults.push(res);
-         if (res.status === 'FAIL') {
-             failedRules.push(res.rule);
-             if (isMandatory) {
-                 criticalFail = true;
-             }
-         }
+        const rawStatus: any = ruleData.status;
+        const isPass = rawStatus === 'PASS' || rawStatus === 'valid' || rawStatus === true;
+        const isFail = rawStatus === 'FAIL' || rawStatus === 'invalid' || rawStatus === false;
+        const status = isPass ? 'PASS' : (isFail ? 'FAIL' : 'WAIT');
+        const isMandatory = (ruleData as any).mandatory !== false;
+
+        const res: ValidatorResult = {
+          rule: vName,
+          status: status,
+          reason: status === 'PASS' ? 'Rule passed' : (status === 'WAIT' ? 'Awaiting rule conditions' : ((ruleData as any).description || (ruleData as any).reason || 'Rule failed')),
+          evidence: JSON.stringify(ruleData.evidence || {}),
+          isCritical: isMandatory
+        };
+        validatorResults.push(res);
+        if (res.status === 'FAIL') {
+          failedRules.push(res.rule);
+          if (isMandatory) {
+            criticalFail = true;
+          }
+        } else if (res.status === 'WAIT') {
+          if (isMandatory) {
+            waitingRules.push(res.rule);
+          }
+        }
       } else {
-         validatorResults.push({ rule: vName, status: 'WAIT', reason: 'Rule result missing', evidence: '', isCritical: false });
+        validatorResults.push({
+          rule: vName,
+          status: 'WAIT',
+          reason: 'Rule result missing',
+          evidence: '',
+          isCritical: true
+        });
+        waitingRules.push(vName);
       }
     }
 
-    // 2. Menghentikan validasi lebih awal jika rule kritikal gagal (early exit)
+    // 2. Early exit: Hard fail if any mandatory technical rule failed (fail-closed)
     if (criticalFail) {
       const endTime = performance.now();
-      logger.warn(`Early exit triggered for ${strategyId}: ${failedRules.join(', ')} failed. Evaluated in ${(endTime - startTime).toFixed(2)}ms`);
+      logger.warn(`[AI ORCHESTRATOR] Early exit triggered for ${strategyId}: mandatory rule(s) failed (${failedRules.join(', ')}). Evaluated in ${(endTime - startTime).toFixed(2)}ms`);
       return {
         strategyName: strategyId,
         decision: 'REJECTED',
-        reasoning: `Early exit: critical rules failed (${failedRules.join(', ')}).`,
-        evidence: 'Critical failure detected in rule engine.',
+        reasoning: `Early exit: mandatory technical rules failed (${failedRules.join(', ')}).`,
+        evidence: 'Mandatory technical rule failure detected in rule engine.',
         checklist: validatorResults,
         riskNotes: 'Rule Engine invalidated the setup early.',
-        missingFactors: [],
-        recommendedAction: 'wait'
+        missingFactors: failedRules,
+        recommendedAction: 'block',
+        scores: { confidence: 0 }
       };
     }
 
-    // 3. Deteksi Konflik (AI akan membantu memvalidasi rule engine hasil ini)
+    // 3. Early hold: AI cannot validate or approve if mandatory technical rules are incomplete (WAIT)
+    // AI CANNOT turn WAIT into APPROVED!
+    if (waitingRules.length > 0) {
+      const endTime = performance.now();
+      logger.info(`[AI ORCHESTRATOR] AI validation held for ${strategyId}: mandatory technical rules still in WAIT state (${waitingRules.join(', ')}). Evaluated in ${(endTime - startTime).toFixed(2)}ms`);
+      return {
+        strategyName: strategyId,
+        decision: 'WAIT',
+        reasoning: `Prerequisite mandatory technical rules are still awaiting completion: ${waitingRules.join(', ')}. AI validation held.`,
+        evidence: `Waiting on mandatory rules: ${waitingRules.join(', ')}`,
+        checklist: validatorResults,
+        riskNotes: 'TECHNICAL_RULES_AWAITING',
+        missingFactors: waitingRules,
+        recommendedAction: 'wait',
+        scores: { confidence: 0 }
+      };
+    }
+
+    // 4. Build canonical evidence strictly scoped to the evaluated strategy
     const candles = marketContext?.candles || marketContext?.marketData?.candles || [];
     const latestCandle = candles[candles.length - 1];
-    const timestamp = latestCandle?.timestamp || 'unknown';
-    const cacheKey = `${strategyId}-${timestamp}-${state.stateName}`;
-    
+    const candleTimestamp = latestCandle?.timestamp || marketContext?.timestamp || new Date().toISOString();
+    const setupId = (state as any)?.setupId || (state as any)?.id || (state as any)?.payload?.id || marketContext?.setupId || marketContext?.setup?.id || `setup_${strategyId}`;
+
+    const simplifiedResults = validatorResults.map(r => ({
+      rule: r.rule,
+      status: r.status,
+      reason: r.reason,
+      isCritical: r.isCritical
+    }));
+
+    const canonicalEvidence = {
+      strategyId,
+      strategyVersion,
+      symbol: marketContext?.marketData?.symbol || marketContext?.symbol || 'XAUUSD',
+      timeframe: marketContext?.timeframe || 'M15',
+      direction: (state as any)?.payload?.direction || (state as any)?.context?.direction || 'buy',
+      candle: {
+        timestamp: candleTimestamp,
+        open: latestCandle?.open,
+        high: latestCandle?.high,
+        low: latestCandle?.low,
+        close: latestCandle?.close,
+        volume: latestCandle?.volume
+      },
+      technicalRules: simplifiedResults,
+      marketMetrics: {
+        atr: marketContext?.atr || marketContext?.marketData?.atr || 0,
+        spread: marketContext?.spread || marketContext?.marketData?.spread || 0
+      }
+    };
+
+    // 5. Query deterministic cache
+    const cacheKey = this.generateCacheKey(
+      strategyId,
+      setupId,
+      candleTimestamp,
+      strategyVersion,
+      canonicalEvidence
+    );
+
     const cached = this.cache.get(cacheKey);
     if (cached) {
+      logger.info(`[AI ORCHESTRATOR] Cache hit for ${cacheKey} (Decision: ${cached.decision})`);
       return cached;
     }
 
-    const passedCount = validatorResults.filter(v => v.status === 'PASS').length;
-    const totalCount = activeRulesCount;
-    const realScore = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-    const {} = { totalScore: realScore };
-
-    // Check Python Engine Health First
+    // 6. Python Engine Quantitative Verification (if available)
     try {
-        
-        const pyHealth = await PythonEngineManager.evaluate();
-        const statusUpper = (pyHealth.status || '').toUpperCase();
-        if (statusUpper !== 'ACTIVE') {
-             if (statusUpper === 'NOT CONFIGURED' || statusUpper === 'DISABLED_BY_DESIGN' || statusUpper === 'UNREACHABLE' || statusUpper === 'RUNTIME_ERROR') {
-                 logger.debug(`Python engine status is ${pyHealth.status}, proceeding with Native TS & AI Orchestration.`);
-             } else {
-                 const waits = validatorResults.filter(v => v.status === 'WAIT').map(v => v.rule);
-                 return {
-                    strategyName: strategyId,
-                    decision: 'WAIT',
-                    checklist: validatorResults,
-                    reasoning: `Python Engine OFFLINE: ${pyHealth.message}. Waiting for Python Engine.`,
-                    evidence: 'System degraded. AI request blocked.',
-                    riskNotes: 'Python Engine Offline',
-                    missingFactors: ['Python Engine', ...waits],
-                    recommendedAction: 'wait',
-                    scores: {}
-                 };
-             }
-        } else {
-             // Python Engine is online, perform quantitative validation
-             const pyUrl = getEnv("PYTHON_ENGINE_URL");
-             if (!pyUrl) {
-                 throw new Error("PYTHON_ENGINE_URL is not set");
-             }
-             
-             // Build request payload
-             const entryPrice = ruleResults['Entry Validator']?.evidence?.price || (candles && candles[candles.length-1]?.close) || 0;
-             const slPrice = ruleResults['Risk Validator']?.evidence?.sl || 0;
-             const tpPrice = ruleResults['Risk Validator']?.evidence?.tp1 || 0;
-             const direction = (state as any).payload?.direction === 'sell' || state.stateName.includes('SHORT') ? 'SHORT' : 'LONG';
+      const pyHealth = await PythonEngineManager.evaluate();
+      const statusUpper = (pyHealth.status || '').toUpperCase();
+      if (statusUpper === 'ACTIVE') {
+        const pyUrl = getEnv("PYTHON_ENGINE_URL");
+        if (pyUrl && candles && candles.length >= 30) {
+          const entryPrice = ruleResults['rule_risk_reward']?.evidence?.entry || (candles && candles[candles.length - 1]?.close) || 0;
+          const slPrice = ruleResults['rule_risk_reward']?.evidence?.sl || 0;
+          const tpPrice = ruleResults['rule_risk_reward']?.evidence?.tp1 || 0;
+          const direction = (state as any).payload?.direction === 'sell' || state.stateName.includes('SHORT') ? 'SHORT' : 'LONG';
 
-             if (candles && candles.length >= 30) {
-                 const reqPayload = {
-                     symbol: 'XAUUSD',
-                     timeframe: marketContext.timeframe || 'M15',
-                     direction: direction,
-                     entry_price: entryPrice,
-                     sl_price: slPrice,
-                     tp_price: tpPrice,
-                     candles: candles,
-                     strategy_id: strategyId
-                 };
+          const reqPayload = {
+            symbol: 'XAUUSD',
+            timeframe: marketContext.timeframe || 'M15',
+            direction: direction,
+            entry_price: entryPrice,
+            sl_price: slPrice,
+            tp_price: tpPrice,
+            candles: candles,
+            strategy_id: strategyId
+          };
 
-                 try {
-                     const controller = new AbortController();
-                     const timeout = setTimeout(() => controller.abort(), 5000);
-                     const pyRes = await fetch(`${pyUrl}/validate`, {
-                         method: 'POST',
-                         headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify(reqPayload),
-                         signal: controller.signal
-                     });
-                     clearTimeout(timeout);
-                     if (pyRes.ok) {
-                         const pyData = await pyRes.json();
-                         
-                         validatorResults.push({
-                             rule: 'Python Quant Engine',
-                             status: pyData.decision === 'APPROVED' ? 'PASS' : (pyData.decision === 'WAIT' ? 'WAIT' : 'FAIL'),
-                             reason: (pyData.reasons || []).join(', '),
-                             evidence: JSON.stringify(pyData.metrics || {}),
-                             isCritical: true
-                         });
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const pyRes = await fetch(`${pyUrl}/validate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(reqPayload),
+              signal: controller.signal
+            });
+            clearTimeout(timeout);
 
-                         if (pyData.decision === 'REJECTED') {
-                             logger.warn(`[PYTHON ENGINE REJECTED] Strategy ${strategyId} rejected by Python Quant Engine: ${(pyData.reasons || []).join(', ')}`);
-                             return {
-                                strategyName: strategyId,
-                                decision: 'REJECTED',
-                                checklist: validatorResults,
-                                reasoning: `Python Quant Engine REJECTED setup: ${(pyData.reasons || []).join(', ')}`,
-                                evidence: JSON.stringify(pyData.metrics || {}),
-                                riskNotes: 'Rejected by Python Quant Scorer',
-                                missingFactors: [],
-                                recommendedAction: 'block',
-                                scores: { score: pyData.quant_score || pyData.score || 0 }
-                             };
-                         }
-                     } else {
-                         const errData = await pyRes.text();
-                         logger.warn(`Python Engine /validate returned ${pyRes.status}: ${errData}`);
-                     }
-                 } catch (e: any) {
-                     logger.warn(`Python Engine /validate failed: ${e.message}`);
-                 }
-             } else {
-                 logger.warn('Insufficient candles for python validation (< 30)');
-             }
+            if (pyRes.ok) {
+              const pyData = await pyRes.json();
+              validatorResults.push({
+                rule: 'Python Quant Engine',
+                status: pyData.decision === 'APPROVED' ? 'PASS' : (pyData.decision === 'WAIT' ? 'WAIT' : 'FAIL'),
+                reason: (pyData.reasons || []).join(', '),
+                evidence: JSON.stringify(pyData.metrics || {}),
+                isCritical: true
+              });
+
+              if (pyData.decision === 'REJECTED') {
+                logger.warn(`[PYTHON ENGINE REJECTED] Strategy ${strategyId} rejected by Python Quant Engine: ${(pyData.reasons || []).join(', ')}`);
+                const pyRejectResult: ValidationPipelineResult = {
+                  strategyName: strategyId,
+                  decision: 'REJECTED',
+                  checklist: validatorResults,
+                  reasoning: `Python Quant Engine REJECTED setup: ${(pyData.reasons || []).join(', ')}`,
+                  evidence: JSON.stringify(pyData.metrics || {}),
+                  riskNotes: 'Rejected by Python Quant Scorer',
+                  missingFactors: [],
+                  recommendedAction: 'block',
+                  scores: { score: pyData.quant_score || pyData.score || 0 }
+                };
+                this.cache.set(cacheKey, pyRejectResult);
+                setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+                return pyRejectResult;
+              }
+            }
+          } catch (e: any) {
+            logger.warn(`Python Engine /validate request failed: ${e.message}`);
+          }
         }
+      }
     } catch (e: any) {
-         logger.warn('Failed to check python engine status', e.message);
+      logger.warn(`Failed to check python engine status: ${e.message}`);
     }
 
-    // STRICT DATA VERIFICATION GUARD:
-    // AI only receives data that has been verified through the pipeline.
+    // 7. Strict Data Verification Guard
     const setupEvidence = (state as any)?.evidence || marketContext?.evidence || { stateName: state?.stateName };
     const dataIntegrity = PythonAnalyzerBridge.validateAIDataIntegrity(
       marketContext?.marketData || {},
@@ -265,7 +322,7 @@ export class AIValidationOrchestrator {
 
     if (!dataIntegrity.isValid) {
       logger.warn(`[AI VALIDATION REJECTED] Unverified / incomplete data sent to AI: ${dataIntegrity.missingFactors.join(', ')}`);
-      return {
+      const unverifiedResult: ValidationPipelineResult = {
         strategyName: strategyId,
         decision: "REJECTED",
         checklist: validatorResults,
@@ -276,78 +333,80 @@ export class AIValidationOrchestrator {
         recommendedAction: "block",
         scores: { confidence: 0 }
       };
+      this.cache.set(cacheKey, unverifiedResult);
+      setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+      return unverifiedResult;
+    }
+
+    // 8. Circuit Breaker & Provider Health Checks
+    const aiHealth = getProviderRegistry().getProviderHealth("GeminiAI");
+    if (aiHealth && aiHealth.circuitBreakerStatus === "open") {
+      logger.warn(`AI Service circuit breaker is open (${aiHealth.healthStatus}). Returning AI_UNAVAILABLE without auto-approving.`);
+      const breakerResult: ValidationPipelineResult = {
+        strategyName: strategyId,
+        decision: "AI_UNAVAILABLE",
+        checklist: validatorResults,
+        reasoning: "AI Validation circuit breaker is OPEN. Signal cannot be approved without AI validation layer.",
+        evidence: "Circuit breaker open.",
+        riskNotes: "AI_UNAVAILABLE - Circuit Breaker Open",
+        missingFactors: ["AI Validation Layer"],
+        recommendedAction: "wait",
+        scores: { confidence: 0 }
+      };
+      this.cache.set(cacheKey, breakerResult);
+      setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+      return breakerResult;
     }
 
     const aiClient = this.getAiClient();
-    
-    const aiHealth = getProviderRegistry().getProviderHealth("GeminiAI");
-    if (aiHealth && aiHealth.circuitBreakerStatus === "open") {
-        logger.warn(`AI Service circuit breaker is open (${aiHealth.healthStatus}). Setting decision to AI_UNAVAILABLE without auto-approving.`);
-        return {
-           strategyName: strategyId,
-           decision: "AI_UNAVAILABLE",
-           checklist: validatorResults,
-           reasoning: "AI Validation circuit breaker is OPEN. Signal cannot be approved without AI validation layer.",
-           evidence: "Circuit breaker open.",
-           riskNotes: "AI_UNAVAILABLE - Circuit Breaker Open",
-           missingFactors: ["AI Validation"],
-           recommendedAction: "wait",
-           scores: {}
-        };
-    }
-    
     if (!this.isConfigured || !aiClient) {
-       logger.info('AI Service is not configured (Missing GEMINI_API_KEY). Returning AI_UNAVAILABLE without auto-approving.');
-       return {
-          strategyName: strategyId,
-          decision: "AI_UNAVAILABLE",
-          checklist: validatorResults,
-          reasoning: "AI Service is not configured (Missing GEMINI_API_KEY). Signal held in AI_UNAVAILABLE state.",
-          evidence: "AI Service Not Configured",
-          riskNotes: 'AI_UNAVAILABLE',
-          missingFactors: ['AI Validation Layer'],
-          recommendedAction: "wait",
-          scores: { confidence: 0 }
-       };
+      logger.info('AI Service is not configured (Missing GEMINI_API_KEY). Returning AI_UNAVAILABLE without auto-approving.');
+      const unconfigResult: ValidationPipelineResult = {
+        strategyName: strategyId,
+        decision: "AI_UNAVAILABLE",
+        checklist: validatorResults,
+        reasoning: "AI Service is not configured (Missing GEMINI_API_KEY). Signal held in AI_UNAVAILABLE state.",
+        evidence: "AI Service Not Configured",
+        riskNotes: 'AI_UNAVAILABLE',
+        missingFactors: ['AI Validation Layer'],
+        recommendedAction: "wait",
+        scores: { confidence: 0 }
+      };
+      this.cache.set(cacheKey, unconfigResult);
+      setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
+      return unconfigResult;
     }
 
+    // 9. Execute AI Validation with Gemini
     try {
-      // 4. AI Validates the Rule Engine outputs
-      // Optimize prompt size by excluding raw evidence JSON which can be large
-      const simplifiedResults = validatorResults.map(r => ({ rule: r.rule, status: r.status, reason: r.reason, isCritical: r.isCritical }));
-      
-      
-      // --- RAG IMPLEMENTATION ---
+      // Historical RAG lookup for canonical strategy context
       let similarHistoryText = "No historical context available.";
       try {
-          const stateSummary = `Strategy: ${strategyId}, Timeframe: ${marketContext?.marketData?.timeframe || 'Unknown'}, Symbol: ${marketContext?.marketData?.symbol || 'Unknown'}, Rules: ${simplifiedResults.map(r => r.rule + "=" + r.status).join(',')}`;
-          
-          const embedRes = await aiClient.models.embedContent({
-              model: 'gemini-embedding-2-preview',
-              contents: stateSummary
-          });
-          
-          const embedding = embedRes.embeddings?.[0]?.values;
-          
-          if (embedding && embedding.length > 0) {
-              const db = getDatabaseClient();
-              const similarSignals = await db.findSimilarHistory(embedding, 0.7, 5);
-              if (similarSignals && similarSignals.length > 0) {
-                  const winCount = similarSignals.filter((s: any) => s.outcome === 'WIN').length;
-                  const lossCount = similarSignals.filter((s: any) => s.outcome === 'LOSS').length;
-                  similarHistoryText = `Found ${similarSignals.length} similar historical signals (Win: ${winCount}, Loss: ${lossCount}). ` +
-                     similarSignals.map((s: any) => `[${s.outcome}] Pips: ${s.pips_result || 0} | Strategy: ${s.strategy_id} | Similarity: ${(s.similarity * 100).toFixed(1)}%`).join('\n');
-              }
+        const stateSummary = `Strategy: ${strategyId}, Timeframe: ${marketContext?.marketData?.timeframe || 'Unknown'}, Symbol: ${marketContext?.marketData?.symbol || 'Unknown'}, Rules: ${simplifiedResults.map(r => r.rule + "=" + r.status).join(',')}`;
+        const embedRes = await aiClient.models.embedContent({
+          model: 'gemini-embedding-2-preview',
+          contents: stateSummary
+        });
+        const embedding = embedRes.embeddings?.[0]?.values;
+        if (embedding && embedding.length > 0) {
+          const db = getDatabaseClient();
+          const similarSignals = await db.findSimilarHistory(embedding, 0.7, 5);
+          if (similarSignals && similarSignals.length > 0) {
+            const winCount = similarSignals.filter((s: any) => s.outcome === 'WIN').length;
+            const lossCount = similarSignals.filter((s: any) => s.outcome === 'LOSS').length;
+            similarHistoryText = `Found ${similarSignals.length} similar historical signals (Win: ${winCount}, Loss: ${lossCount}). ` +
+              similarSignals.map((s: any) => `[${s.outcome}] Pips: ${s.pips_result || 0} | Strategy: ${s.strategy_id} | Similarity: ${(s.similarity * 100).toFixed(1)}%`).join('\n');
           }
+        }
       } catch (e: any) {
-          logger.warn('Failed to retrieve RAG context', { error: e.message });
+        logger.debug('Historical RAG context lookup skipped', { error: e.message });
       }
-      // --------------------------
 
-      let prompt = `INSAI Analyst. Strategi: ${strategyId} | State: ${state.stateName}.
+      const prompt = `INSAI Analyst. Strategi: ${strategyId} | State: ${state.stateName}.
 TUGAS: Anda adalah Validator AI yang bertugas MEMVALIDASI setup trading berdasarkan STRATEGI SPESIFIK pengguna. Gemini HANYA bertindak sebagai VALIDATOR. Gemini TIDAK PERNAH membuat signal sendiri.
 
-STRATEGY CONTEXT:
+STRATEGY CANONICAL CONTEXT:
+- Strategy ID: ${strategyId} (v${strategyVersion})
 - Name: ${strategyDef?.name || strategyId}
 - Description: ${strategyDef?.description || 'No specific description'}
 - Required Rules: ${strategyDef?.validationRules?.join(', ') || 'Standard rules'}
@@ -360,6 +419,9 @@ MARKET CONTEXT (Korelasi & Makro):
 - Historical Similarity (RAG):
 ${similarHistoryText}
 
+CANONICAL EVIDENCE:
+${JSON.stringify(canonicalEvidence, null, 2)}
+
 Analisis bukti dari Scoring Engine dan konteks makro di atas SESUAI DENGAN ATURAN STRATEGI INI. Berikan probabilitas (0-100) untuk:
 - Institution Accumulation Probability (institutionalAccumulation)
 - Institution Distribution Probability (institutionalDistribution)
@@ -370,13 +432,13 @@ Analisis bukti dari Scoring Engine dan konteks makro di atas SESUAI DENGAN ATURA
 - False Breakout Probability (falseBreakout)
 - News Probability (newsIntervention)
 Dan berikan:
-- Confidence Score keseluruhan (0-100)
+- Confidence Score keseluruhan (0-100) (Threshold persetujuan: ${this.MIN_CONFIDENCE_THRESHOLD}%)
 - Market Confidence (0-100)
 - Data Quality Score (0-100)
 - Signal Quality Score (0-100)
 
 Sertakan alasan (reasoning) kuat berbasis data (evidence) untuk keputusan Anda.
-Jika data tidak cukup atau ambigu (misalnya rule bernilai WAIT/ASUMSI), Anda HARUS mereturn decision REJECTED/WAIT, jangan memaksakan APPROVED.
+Jika data tidak cukup atau ambigu (misalnya rule bernilai WAIT/ASUMSI), Anda HARUS mereturn decision REJECTED, jangan memaksakan APPROVED.
 VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
 
       const responseSchema: Schema = {
@@ -410,53 +472,40 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         required: ['decision', 'evidence', 'reasoning', 'rulesChecked', 'rulesPassed', 'rulesFailed', 'probabilities', 'confidenceScore', 'marketConfidence', 'dataQualityScore', 'signalQualityScore']
       };
 
-      const geminiHealth = getProviderRegistry().getProviderHealth('GeminiAI');
-      if (geminiHealth?.circuitBreakerStatus === 'open') {
-        logger.warn(`GeminiAI circuit breaker is open. Hard blocking AI validation for ${strategyId}.`);
-        const fallbackResult: ValidationPipelineResult = {
-          strategyName: strategyId,
-          decision: 'REJECTED',
-          checklist: validatorResults,
-          reasoning: "AI Validation circuit breaker is open. Signal dispatch suppressed.",
-          evidence: "Circuit breaker open.",
-          riskNotes: 'AI UNAVAILABLE - Circuit Breaker Open',
-          missingFactors: ['AI Validation'],
-          recommendedAction: 'block',
-          scores: {}
-        };
-        this.cache.set(cacheKey, fallbackResult);
-        setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
-        return fallbackResult;
+      const response = await this.callGeminiWithTimeoutAndRetry(aiClient, prompt, responseSchema, 8000, 1);
+      const text = response.text;
+      if (!text) throw new Error('Empty response payload from Gemini API');
+
+      const parsed = JSON.parse(text) as AIValidationDecision;
+      let finalDecision: AIDecision = parsed.decision;
+      const confidenceScore = typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : 0;
+
+      // STRICT AI QUALITY GATE:
+      // If AI returned APPROVED but confidence score is below the threshold, strictly reject
+      if (finalDecision === 'APPROVED' && confidenceScore < this.MIN_CONFIDENCE_THRESHOLD) {
+        logger.warn(`[AI QUALITY GATE] AI returned APPROVED for ${strategyId} but confidence score (${confidenceScore}%) is below minimum threshold (${this.MIN_CONFIDENCE_THRESHOLD}%). Rejecting.`);
+        finalDecision = 'REJECTED';
+        parsed.reasoning = `Confidence score (${confidenceScore}%) below mandatory ${this.MIN_CONFIDENCE_THRESHOLD}% threshold. ` + (parsed.reasoning || '');
       }
 
-      const response = await this.callGeminiWithTimeoutAndRetry(aiClient, prompt, responseSchema, 8000, 1);
-
-      const text = response.text;
-      if (!text) throw new Error('No response from Gemini API');
-      
-      const parsed = JSON.parse(text) as AIValidationDecision;
-      const aiDecision = parsed.decision;
-      
       // Report successful Gemini API invocation to ProviderRegistry
       getProviderRegistry().reportSuccess('GeminiAI');
-      
-      const finalChecklist = validatorResults;
-      
+
       const result: ValidationPipelineResult = {
         strategyName: strategyId,
-        decision: aiDecision,
-        checklist: finalChecklist,
+        decision: finalDecision,
+        checklist: validatorResults,
         reasoning: parsed.reasoning + (parsed.conflicts ? ` [Conflicts: ${parsed.conflicts}]` : ''),
         evidence: parsed.evidence,
-        riskNotes: finalChecklist.find(c => c.rule === 'Risk Validator')?.reason || 'OK',
-        missingFactors: finalChecklist.filter(c => c.status === 'WAIT').map(c => c.rule),
-        recommendedAction: aiDecision === 'APPROVED' ? 'allow_signal' : 'wait',
-        aiReview: { ...parsed, scoringEngineData: {} },
-        scores: {}
+        riskNotes: validatorResults.find(c => c.rule === 'rule_risk_reward')?.reason || 'OK',
+        missingFactors: validatorResults.filter(c => c.status === 'WAIT').map(c => c.rule),
+        recommendedAction: finalDecision === 'APPROVED' ? 'allow_signal' : 'block',
+        aiReview: { ...parsed, confidenceScore, scoringEngineData: {} },
+        scores: { confidence: confidenceScore }
       };
 
       const endTime = performance.now();
-      logger.info(`AI Validation Orchestrator completed for ${strategyId} in ${(endTime - startTime).toFixed(2)}ms`);
+      logger.info(`[AI ORCHESTRATOR] AI Validation completed for ${strategyId} in ${(endTime - startTime).toFixed(2)}ms (Decision: ${finalDecision}, Confidence: ${confidenceScore}%)`);
 
       this.cache.set(cacheKey, result);
       setTimeout(() => this.cache.delete(cacheKey), this.CACHE_TTL);
@@ -467,24 +516,25 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       const isQuotaExceeded = rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('429') || rawMsg.toLowerCase().includes('quota');
       const isTimeout = rawMsg.toLowerCase().includes('timed out');
 
-      const cleanMsg = isQuotaExceeded 
-        ? 'Gemini API quota exceeded (429 Rate Limit)' 
+      const cleanMsg = isQuotaExceeded
+        ? 'Gemini API quota exceeded (429 Rate Limit)'
         : (isTimeout ? 'Gemini API call timed out' : 'Gemini AI service error');
 
-      logger.warn(`AI Validation notice for ${strategyId}: ${cleanMsg}`);
+      logger.warn(`[AI ORCHESTRATOR] AI Validation notice for ${strategyId}: ${cleanMsg}`);
       getProviderRegistry().reportError('GeminiAI', cleanMsg);
 
+      // Distinguish provider availability vs validation syntax/runtime error
       const fallbackDecision: AIDecision = (isQuotaExceeded || isTimeout) ? 'AI_UNAVAILABLE' : 'VALIDATION_ERROR';
       const fallbackRes: ValidationPipelineResult = {
-         strategyName: strategyId,
-         decision: fallbackDecision,
-         checklist: validatorResults,
-         reasoning: `AI Validation error (${cleanMsg}). Signal held without automatic approval per strict validation policy.`,
-         evidence: "AI Validation Error / Offline.",
-         riskNotes: isQuotaExceeded ? 'AI_UNAVAILABLE - Quota Exceeded' : (isTimeout ? 'AI_UNAVAILABLE - Request Timeout' : 'VALIDATION_ERROR - Service Error'),
-         missingFactors: ['AI Validation Layer'],
-         recommendedAction: 'wait',
-         scores: { confidence: 0 }
+        strategyName: strategyId,
+        decision: fallbackDecision,
+        checklist: validatorResults,
+        reasoning: `AI Validation service notice (${cleanMsg}). Signal held without automatic approval per strict validation policy.`,
+        evidence: "AI Validation Service Notice.",
+        riskNotes: isQuotaExceeded ? 'AI_UNAVAILABLE - Quota Exceeded' : (isTimeout ? 'AI_UNAVAILABLE - Request Timeout' : 'VALIDATION_ERROR - Service Error'),
+        missingFactors: ['AI Validation Layer'],
+        recommendedAction: 'wait',
+        scores: { confidence: 0 }
       };
 
       this.cache.set(cacheKey, fallbackRes);
@@ -506,7 +556,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       const startTime = Date.now();
       try {
         const generatePromise = aiClient.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model: 'gemini-2.5-flash',
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
@@ -520,7 +570,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         });
 
         const response = await Promise.race([generatePromise, timeoutPromise]);
-        
+
         // Record latency successfully
         const { metricsEngine } = await import('../../observability/metrics-engine');
         metricsEngine.recordAiValidationLatency(Date.now() - startTime);
@@ -530,7 +580,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         attempt++;
         const { metricsEngine } = await import('../../observability/metrics-engine');
         metricsEngine.recordAiValidationLatency(Date.now() - startTime);
-        
+
         const isQuotaOrAuth = err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429') || err.message?.includes('401') || err.message?.includes('403') || err.message?.toLowerCase().includes('quota');
         if (attempt > maxRetries || isQuotaOrAuth) {
           throw err;
@@ -541,3 +591,4 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
     }
   }
 }
+

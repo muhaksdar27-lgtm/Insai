@@ -44,7 +44,7 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
   const chochBear = !!pyData.choch_bear;
   const obFvgBull = !!pyData.ob_fvg_bull;
   const obFvgBear = !!pyData.ob_fvg_bear;
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
+  const h1Trend = (pyData.trend_h1 || pyData.trend || 'NEUTRAL').toLowerCase();
   
   const direction: 'buy' | 'sell' = s1.direction || ((chochBull || sweepBull) ? 'buy' : ((chochBear || sweepBear) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy')));
 
@@ -52,13 +52,13 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
     ? 'Asia Sweep & M15 CHoCH Confirmed'
     : 'Asia Liquidity Sweep / CHoCH Monitored';
 
-  const atr = pyData.atr || 0;
+  const atr = typeof pyData.atr === 'number' && pyData.atr > 0 ? pyData.atr : 0;
   const entryPriceVal = s1.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
   const slVal = s1.sl || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal - (atr * 0.5)).toFixed(2) : +(entryPriceVal + (atr * 0.5)).toFixed(2)) : undefined);
   const tp1Val = s1.tp1 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.0)).toFixed(2) : +(entryPriceVal - (atr * 1.0)).toFixed(2)) : undefined);
   const tp2Val = s1.tp2 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 1.75)).toFixed(2) : +(entryPriceVal - (atr * 1.75)).toFixed(2)) : undefined);
   
-  const currentSession = pyData.current_session || pyData.session || 'London';
+  const currentSession = pyData.current_session || pyData.session || 'UNDEFINED';
 
   const setupSnapshot = {
     strategyId: 'strategy-1-smc',
@@ -66,28 +66,28 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
     symbol,
     timeframe: 'M15',
     session: currentSession,
-    h1Trend,
+    h1Trend: h1Trend.toUpperCase(),
     bias: h1Trend.toUpperCase(),
     marketBias: h1Trend.toUpperCase(),
     direction,
-    entry: entryPriceVal,
-    entryPrice: entryPriceVal,
-    sl: slVal,
-    slPrice: slVal,
-    tp1: tp1Val,
-    tp1Price: tp1Val,
-    tp2: tp2Val,
-    tp2Price: tp2Val,
-    rr: s1.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '1:2.0',
-    dealingRangeZone: pyData.dealing_range_zone || 'EQUILIBRIUM',
-    fibLevel: pyData.fib_level ?? 0.5,
+    entry: entryPriceVal || '--',
+    entryPrice: entryPriceVal || '--',
+    sl: slVal || '--',
+    slPrice: slVal || '--',
+    tp1: tp1Val || '--',
+    tp1Price: tp1Val || '--',
+    tp2: tp2Val || '--',
+    tp2Price: tp2Val || '--',
+    rr: s1.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '--',
+    dealingRangeZone: pyData.dealing_range_zone || 'UNDEFINED',
+    fibLevel: pyData.fib_level ?? null,
     sweepStatus: s1.sweepStatus || ((sweepBull || sweepBear) ? 'Asia Sweep Confirmed' : 'Asia Sweep Monitored'),
     chochStatus: s1.chochStatus || ((chochBull || chochBear) ? 'M15 CHoCH Confirmed' : 'M15 CHoCH Monitored'),
     obFvgStatus: s1.obFvgStatus || ((obFvgBull || obFvgBear) ? 'OB/FVG Aligned' : 'OB/FVG Monitored'),
     hasDisplacement: !!pyData.has_displacement,
     idmTaken: !!pyData.idm_taken,
-    atr14: atr,
-    atrBuffer50Pct: `${((atr * 0.5) * 10).toFixed(1)} pips`,
+    atr14: atr > 0 ? atr : '--',
+    atrBuffer50Pct: atr > 0 ? `${((atr * 0.5) * 10).toFixed(1)} pips` : '--',
     confluenceScore,
     confirmationStatus,
     aiDecision: pyData.aiDecision || 'PENDING'

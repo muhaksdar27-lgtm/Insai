@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { RuleEvaluationContext, SetupStatus } from '@/types';
 import { 
   OfficialSetupState, 
+  StepState,
   SetupStepRecord, 
   StrategySetup, 
   SetupTransitionAudit, 
@@ -205,6 +206,18 @@ export class SetupDetector {
       return { setup, newlyValidatedSteps, isStateChanged: true };
     }
 
+    // Step 0: Premise Invalidation Check on previously validated foundational conditions
+    const premiseCheck = this.checkPremiseInvalidation(setup, context, analysisData);
+    if (premiseCheck.invalidated) {
+      const currentStep = setup.steps.find(s => s.step_order === setup.current_step_order);
+      if (currentStep) {
+        this.recordStepTransition(currentStep, 'INVALIDATED', premiseCheck.reason, sourceEvent);
+      }
+      this.recordTransition(setup, 'INVALIDATED', premiseCheck.reason, sourceEvent, currentStep?.step_id);
+      this.clearStrategySetup(strategyId, symbol);
+      return { setup, newlyValidatedSteps, isStateChanged: true };
+    }
+
     // Step-by-step sequential evaluation loop
     let keepEvaluating = true;
     while (keepEvaluating && setup.current_step_order <= setup.steps.length) {
@@ -212,7 +225,7 @@ export class SetupDetector {
       if (!currentStep) break;
 
       const priorSteps = setup.steps.filter(s => s.step_order < setup.current_step_order);
-      
+
       const evalResult: StepEvaluationOutput = StepEvaluator.evaluateStep(
         currentStep,
         context,
@@ -221,6 +234,7 @@ export class SetupDetector {
         setup.direction
       );
 
+      currentStep.last_evaluated_at = timestamp;
       currentStep.last_evaluated_timestamp = timestamp;
       currentStep.evidence = { ...currentStep.evidence, ...evalResult.evidence };
 
@@ -240,8 +254,7 @@ export class SetupDetector {
       }
 
       if (evalResult.status === 'VALIDATED') {
-        currentStep.state = 'VALIDATED';
-        currentStep.reason = evalResult.reason;
+        this.recordStepTransition(currentStep, 'VALIDATED', evalResult.reason, sourceEvent, evalResult.evidence);
         newlyValidatedSteps.push({ ...currentStep });
         isStateChanged = true;
 
@@ -253,7 +266,6 @@ export class SetupDetector {
         if (setup.current_step_order <= setup.steps.length) {
           const nextStep = setup.steps.find(s => s.step_order === setup.current_step_order)!;
           setup.current_step_id = nextStep.step_id;
-          nextStep.state = 'ACTIVE';
 
           // Update overall setup state sequentially
           if (setup.state === 'AWAITING' && setup.current_step_order >= 2) {
@@ -261,25 +273,29 @@ export class SetupDetector {
           } else if (setup.state === 'DETECTED' && setup.current_step_order >= 4) {
             this.recordTransition(setup, 'ACTIVE', `Core structural conditions confirmed through Step ${currentStep.step_order - 1}`, sourceEvent, currentStep.step_id);
           }
-          // Continue loop to evaluate next newly active step immediately!
+          // Continue loop to evaluate next newly active step against available context!
         } else {
           // All technical steps validated -> Move to VALIDATED / AI_PENDING
           this.recordTransition(setup, 'VALIDATED', 'All sequential strategy rules validated', sourceEvent, currentStep.step_id);
           keepEvaluating = false;
         }
+      } else if (evalResult.status === 'DETECTED') {
+        this.recordStepTransition(currentStep, 'DETECTED', evalResult.reason, sourceEvent, evalResult.evidence);
+        if (setup.state === 'AWAITING') {
+          this.recordTransition(setup, 'DETECTED', `Early signal condition detected on Step ${currentStep.step_order}`, sourceEvent, currentStep.step_id);
+        }
+        keepEvaluating = false;
       } else if (evalResult.status === 'AWAITING') {
-        currentStep.state = 'AWAITING';
-        currentStep.reason = evalResult.reason;
+        this.recordStepTransition(currentStep, 'AWAITING', evalResult.reason, sourceEvent, evalResult.evidence);
         
         // AWAITING preserves the setup and continues scanning on future ticks!
         logger.debug(`[STEP AWAITING] Strategy ${strategyId} Step ${currentStep.step_order} (${currentStep.step_id}) is awaiting: ${evalResult.reason}`);
         keepEvaluating = false;
       } else if (evalResult.status === 'INVALIDATED' || evalResult.status === 'REJECTED') {
-        currentStep.state = evalResult.status;
-        currentStep.reason = evalResult.reason;
+        const targetState = evalResult.status === 'INVALIDATED' ? 'INVALIDATED' : 'REJECTED';
+        this.recordStepTransition(currentStep, targetState, evalResult.reason, sourceEvent, evalResult.evidence);
         isStateChanged = true;
 
-        const targetState = evalResult.status === 'INVALIDATED' ? 'INVALIDATED' : 'REJECTED';
         this.recordTransition(setup, targetState, evalResult.reason, sourceEvent, currentStep.step_id);
         this.clearStrategySetup(strategyId, symbol);
         keepEvaluating = false;
@@ -287,6 +303,109 @@ export class SetupDetector {
     }
 
     return { setup, newlyValidatedSteps, isStateChanged };
+  }
+
+  /**
+   * Checks if underlying foundational premises for previously validated steps have become invalid.
+   */
+  public checkPremiseInvalidation(
+    setup: StrategySetup,
+    context: RuleEvaluationContext,
+    analysisData: Record<string, any>
+  ): { invalidated: boolean; reason: string } {
+    // 0. Pattern Premise Invalidation (Strategy 3 Double Top/Bottom before sweep)
+    if (setup.strategy_id === 'strategy-3-scalping' && analysisData.double_pattern_before_sweep === true) {
+      return {
+        invalidated: true,
+        reason: 'Double Top/Bottom formed BEFORE liquidity sweep. Strategy 3 rule mandates pattern strictly after sweep.'
+      };
+    }
+
+    // Only check further if setup has already progressed past step 1
+    if (setup.current_step_order <= 1) {
+      return { invalidated: false, reason: '' };
+    }
+
+    const currentPrice = typeof analysisData.current_price === 'number' && analysisData.current_price > 0
+      ? analysisData.current_price
+      : (context.candles && context.candles.length > 0 ? context.candles[context.candles.length - 1].close : 0);
+
+    // 1. Directional Premise Invalidation:
+    // If direction was locked as BUY, but current H1 trend has flipped to BEARISH
+    if (setup.direction === 'buy') {
+      const h1Trend = (analysisData.trend_h1 || analysisData.trend || '').toUpperCase();
+      if (h1Trend === 'BEARISH' || h1Trend === 'STRONG_BEARISH') {
+        return {
+          invalidated: true,
+          reason: 'H1 HTF Trend flipped to BEARISH breaking bullish market structure premise'
+        };
+      }
+    } else if (setup.direction === 'sell') {
+      const h1Trend = (analysisData.trend_h1 || analysisData.trend || '').toUpperCase();
+      if (h1Trend === 'BULLISH' || h1Trend === 'STRONG_BULLISH') {
+        return {
+          invalidated: true,
+          reason: 'H1 HTF Trend flipped to BULLISH breaking bearish market structure premise'
+        };
+      }
+    }
+
+    // 2. Zone Invalidation (if an SD zone or OB was already validated)
+    const zoneStep = setup.steps.find(s => (s.step_id === 'SD_ZONE' || s.step_id === 'OB_FVG' || s.step_id === 'SD_FIB_OVERLAP') && s.state === 'VALIDATED');
+    if (zoneStep && currentPrice > 0) {
+      const zoneUpper = zoneStep.evidence?.zoneUpper;
+      const zoneLower = zoneStep.evidence?.zoneLower;
+      if (typeof zoneUpper === 'number' && typeof zoneLower === 'number') {
+        if (setup.direction === 'buy' && currentPrice < zoneLower - 3.0) {
+          return {
+            invalidated: true,
+            reason: `Demand zone [${zoneLower} - ${zoneUpper}] decisively violated at ${currentPrice}`
+          };
+        }
+        if (setup.direction === 'sell' && currentPrice > zoneUpper + 3.0) {
+          return {
+            invalidated: true,
+            reason: `Supply zone [${zoneLower} - ${zoneUpper}] decisively violated at ${currentPrice}`
+          };
+        }
+      }
+    }
+
+    return { invalidated: false, reason: '' };
+  }
+
+  /**
+   * Records a transition on an individual step with full history audit.
+   */
+  public recordStepTransition(
+    step: SetupStepRecord,
+    toState: StepState,
+    reason: string,
+    sourceEvent: DetectionSourceEvent | string = 'candle_update',
+    evidence?: Record<string, any>
+  ) {
+    const fromState = step.state;
+    step.state = toState;
+    step.reason = reason;
+    step.last_evaluated_at = new Date().toISOString();
+    step.last_evaluated_timestamp = step.last_evaluated_at;
+
+    if (evidence) {
+      step.evidence = { ...step.evidence, ...evidence };
+    }
+
+    if (!step.transition_history) {
+      step.transition_history = [];
+    }
+
+    step.transition_history.push({
+      from_state: fromState,
+      to_state: toState,
+      timestamp: step.last_evaluated_at,
+      reason,
+      evidence: step.evidence,
+      source_event: sourceEvent
+    });
   }
 
   /**
@@ -301,6 +420,18 @@ export class SetupDetector {
     details?: Record<string, any>
   ): SetupTransitionAudit {
     const fromState = setup.state;
+
+    // Strict Enforcement: Cannot transition to SIGNAL_ACTIVE unless all mandatory steps are validated!
+    if (toState === 'SIGNAL_ACTIVE') {
+      const unvalidatedSteps = setup.steps.filter(s => s.state !== 'VALIDATED');
+      if (unvalidatedSteps.length > 0) {
+        const errorMsg = `Illegal transition to SIGNAL_ACTIVE: ${unvalidatedSteps.length} step(s) not validated (${unvalidatedSteps.map(s => s.step_id).join(', ')})`;
+        logger.error(`[TRANSITION REJECTED] ${errorMsg}`);
+        toState = 'INVALIDATED';
+        reason = `${reason} | BLOCKED: ${errorMsg}`;
+      }
+    }
+
     setup.state = toState;
     setup.updated_at = new Date().toISOString();
 
@@ -382,28 +513,28 @@ export class SetupDetector {
 
   public translateMarketDataToSnapshot(strategyId: string, pyData: any, context: RuleEvaluationContext): any {
     const lastCandle = context.candles && context.candles.length > 0 ? context.candles[context.candles.length - 1] : null;
-    const currentPrice = pyData.current_price || (lastCandle ? lastCandle.close : 2700);
-    const atr = pyData.atr || 4.5;
-    const trend = pyData.trend_h1 || pyData.trend || 'BULLISH';
-    const direction = pyData.direction || (trend === 'BEARISH' ? 'sell' : 'buy');
+    const currentPrice = typeof pyData.current_price === 'number' && pyData.current_price > 0 ? pyData.current_price : (lastCandle ? lastCandle.close : 0);
+    const atr = typeof pyData.atr === 'number' && pyData.atr > 0 ? pyData.atr : 0;
+    const trend = (pyData.trend_h1 || pyData.trend || 'NEUTRAL').toUpperCase();
+    const direction = pyData.direction || (trend === 'BEARISH' ? 'sell' : (trend === 'BULLISH' ? 'buy' : undefined));
     
-    const riskDistance = atr * 0.5;
-    const entry = pyData.entry || currentPrice;
-    const sl = pyData.sl || (direction === 'buy' ? entry - riskDistance : entry + riskDistance);
-    const tp = pyData.tp || (direction === 'buy' ? entry + (riskDistance * 2.0) : entry - (riskDistance * 2.0));
+    const riskDistance = atr > 0 ? atr * 0.5 : 1.5;
+    const entry = typeof pyData.entry === 'number' && pyData.entry > 0 ? pyData.entry : currentPrice;
+    const sl = typeof pyData.sl === 'number' && pyData.sl > 0 ? pyData.sl : (direction === 'buy' ? entry - riskDistance : (direction === 'sell' ? entry + riskDistance : 0));
+    const tp = typeof pyData.tp === 'number' && pyData.tp > 0 ? pyData.tp : (direction === 'buy' ? entry + (riskDistance * 2.0) : (direction === 'sell' ? entry - (riskDistance * 2.0) : 0));
 
     return {
       strategyId,
       symbol: context.symbol || 'XAUUSD',
       timeframe: context.timeframe || 'M15',
-      session: pyData.current_session || pyData.session || 'London',
+      session: pyData.current_session || pyData.session || 'UNDEFINED',
       h1Trend: trend,
       direction,
-      entry: +entry.toFixed(2),
-      sl: +sl.toFixed(2),
-      tp: +tp.toFixed(2),
-      tp1: +tp.toFixed(2),
-      rr: '1:2.0',
+      entry: entry > 0 ? +entry.toFixed(2) : 0,
+      sl: sl > 0 ? +sl.toFixed(2) : 0,
+      tp: tp > 0 ? +tp.toFixed(2) : 0,
+      tp1: tp > 0 ? +tp.toFixed(2) : 0,
+      rr: (entry > 0 && sl > 0 && tp > 0 && Math.abs(entry - sl) > 0) ? `1:${(Math.abs(tp - entry) / Math.abs(entry - sl)).toFixed(1)}` : '1:2.0',
       atr14: atr,
       confirmationStatus: 'Evaluated Live'
     };

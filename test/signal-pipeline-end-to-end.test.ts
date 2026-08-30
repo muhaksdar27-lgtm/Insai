@@ -52,14 +52,34 @@ describe('PROMPT 5 — SIGNAL PIPELINE END-TO-END & ANTI-DUPLICATION SUITE', () 
     const sl = direction === 'buy' ? 2690.00 : 2710.00;
     const tp1 = direction === 'buy' ? 2725.00 : 2675.00; // 1:2.5 RR
     const manifest = getStrategyManifest(strategyId);
+    const nowIso = new Date().toISOString();
 
-    const steps = manifest ? manifest.setup_sequence.map(s => ({
+    const steps = manifest ? manifest.setup_sequence.map((s, idx) => ({
       step_id: s.step_id,
+      step_order: s.step_order || (idx + 1),
+      strategy_id: strategyId,
       rule_id: s.rule_id,
+      name: s.name,
+      description: s.description,
       state: 'VALIDATED' as const,
-      started_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      retry_count: 0
+      timestamp: nowIso,
+      first_detected_at: nowIso,
+      last_evaluated_at: nowIso,
+      last_evaluated_timestamp: nowIso,
+      timeframe: manifest.timeframe.execution || 'M15',
+      evidence: {
+        timestamp: nowIso,
+        timeframe: manifest.timeframe.execution || 'M15',
+        price: entry,
+        currentPrice: entry,
+        trend: 'BULLISH',
+        session: 'London',
+        source_candle: { timestamp: nowIso, open: 2698, high: 2702, low: 2695, close: 2700 }
+      },
+      reason: 'Rule passed',
+      invalidation: s.invalidation,
+      invalidation_condition: s.invalidation,
+      transition_history: []
     })) : [];
 
     return {
@@ -73,8 +93,8 @@ describe('PROMPT 5 — SIGNAL PIPELINE END-TO-END & ANTI-DUPLICATION SUITE', () 
       entry_price: entry,
       sl_price: sl,
       tp1_price: tp1,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: nowIso,
+      updated_at: nowIso,
       validation_logs: []
     };
   };
@@ -498,6 +518,116 @@ describe('PROMPT 5 — SIGNAL PIPELINE END-TO-END & ANTI-DUPLICATION SUITE', () 
       expect(details.isValid).toBe(false);
       expect(details.checks.filterValid).toBe(false);
       expect(details.rejectReason).toContain('exceeds maximum allowed');
+    });
+  });
+
+  // TASK 06: Strict Fail-Closed Pipeline Tests
+  describe('TASK 06: Fail-Closed Pipeline Execution', () => {
+    it('strictly rejects when setup.steps is missing or empty (no synthetic steps)', async () => {
+      const invalidSetup: any = {
+        id: 'setup_no_steps_001',
+        strategy_id: 'strategy-1-smc',
+        symbol: 'XAUUSD',
+        timeframe: 'M15',
+        direction: 'BUY',
+        entry_price: 2700,
+        sl_price: 2690,
+        tp1_price: 2725
+      };
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(invalidSetup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('VALIDATION_ERROR');
+      expect(result.stageReached).toBe('SETUP_VALIDATION');
+      expect(result.rejectionReason).toContain('Synthetic construction is strictly forbidden');
+    });
+
+    it('strictly rejects when strategy_id is unknown or missing', async () => {
+      const invalidSetup: any = {
+        id: 'setup_invalid_strat_001',
+        strategy_id: 'unknown-strategy-999',
+        symbol: 'XAUUSD',
+        timeframe: 'M15',
+        direction: 'BUY',
+        steps: [],
+        entry_price: 2700,
+        sl_price: 2690,
+        tp1_price: 2725
+      };
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(invalidSetup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('VALIDATION_ERROR');
+      expect(result.stageReached).toBe('STRATEGY_EVALUATION');
+      expect(result.rejectionReason).toContain('Unknown or unregistered strategy ID');
+    });
+
+    it('strictly rejects when step count mismatches canonical definition', async () => {
+      const setup = createValidSetup('strategy-1-smc', 'buy');
+      setup.steps = setup.steps.slice(0, 3); // Strategy 1 requires 7 steps
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(setup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('VALIDATION_ERROR');
+      expect(result.rejectionReason).toContain('Step count mismatch');
+    });
+
+    it('strictly rejects when step IDs mismatch canonical definition', async () => {
+      const setup = createValidSetup('strategy-1-smc', 'buy');
+      setup.steps[0].step_id = 'WRONG_STEP_ID' as any;
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(setup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('VALIDATION_ERROR');
+      expect(result.rejectionReason).toContain('Step ID mismatch');
+    });
+
+    it('strictly rejects when step order mismatches canonical definition', async () => {
+      const setup = createValidSetup('strategy-1-smc', 'buy');
+      setup.steps[0].step_order = 99;
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(setup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('VALIDATION_ERROR');
+      expect(result.rejectionReason).toContain('Step order mismatch');
+    });
+
+    it('strictly rejects when a validated step has empty or missing evidence', async () => {
+      const setup = createValidSetup('strategy-1-smc', 'buy');
+      setup.steps[1].evidence = {}; // Empty evidence on step 2
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(setup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('REJECTED');
+      expect(result.rejectionReason).toContain('evidence is missing or empty');
+    });
+
+    it('strictly suppresses/rejects when a mandatory step is still AWAITING', async () => {
+      const setup = createValidSetup('strategy-1-smc', 'buy');
+      setup.steps[2].state = 'AWAITING';
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(setup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('SUPPRESSED');
+      expect(result.rejectionReason).toContain('Mandatory step "ASIA_SWEEP" is not validated');
+    });
+
+    it('strictly rejects when timeframe mismatches strategy execution timeframe', async () => {
+      const setup = createValidSetup('strategy-1-smc', 'buy');
+      setup.timeframe = 'H1'; // Strategy 1 execution timeframe is M15
+      const context = createValidContext();
+      const result = await pipeline.executePipeline(setup, context);
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('REJECTED');
+      expect(result.rejectionReason).toContain('Timeframe mismatch');
     });
   });
 });

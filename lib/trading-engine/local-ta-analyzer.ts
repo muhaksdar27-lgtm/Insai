@@ -134,8 +134,8 @@ export class LocalTAAnalyzer {
     const isNearSupply = freshSupplyZones.some(s => Math.abs(currentPrice - s.bottom) <= nearZoneThreshold || (currentPrice >= s.bottom && currentPrice <= s.top));
     const sd_zone_active = isNearDemand || isNearSupply;
 
-    const primarySDPattern = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].pattern : 'DBR';
-    const zoneFreshness = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].freshness : 'FRESH';
+    const primarySDPattern = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].pattern : null;
+    const zoneFreshness = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].freshness : null;
 
     // 11. Candlestick Engulfing Trigger (with body expansion check)
     let engulfing_bull = false;
@@ -294,7 +294,7 @@ export class LocalTAAnalyzer {
         tp1: Number(s2_tp1.toFixed(2)),
         tp2: Number(s2_tp2.toFixed(2)),
         rr: `1:${(Math.abs(s2_tp1 - s2_entry) / Math.abs(s2_entry - s2_sl)).toFixed(1)}`,
-        sdZoneStatus: `${primarySDPattern} (${zoneFreshness}) Active`,
+        sdZoneStatus: primarySDPattern ? `${primarySDPattern} (${zoneFreshness}) Active` : 'S&D Zone Monitored',
         engulfingStatus: (engulfing_bull || engulfing_bear || hasDisplacement) ? 'Engulfing / Momentum Confirmed' : 'Engulfing Monitored'
       },
       strategy3: {
@@ -314,7 +314,7 @@ export class LocalTAAnalyzer {
         tp1: Number(s4_tp1.toFixed(2)),
         tp2: Number(s4_tp2.toFixed(2)),
         rr: `1:${(Math.abs(s4_tp1 - s4_entry) / Math.abs(s4_entry - s4_sl)).toFixed(1)}`,
-        newsStatus: 'Normal Volatility',
+        newsStatus: (context.news_high_impact_active || context.news_event) ? 'High Impact Active' : 'Normal Volatility',
         reversalStatus: ((choch_bull || choch_bear || bos_bull || bos_bear) && (liq_sweep_bull || liq_sweep_bear)) ? 'Post-News Reversal Confirmed' : 'Reversal Monitored'
       },
       strategy5: {
@@ -324,7 +324,7 @@ export class LocalTAAnalyzer {
         tp1: Number(s5_tp1.toFixed(2)),
         tp2: Number(s5_tp2.toFixed(2)),
         rr: `1:${(Math.abs(s5_tp1 - s5_entry) / Math.abs(s5_entry - s5_sl)).toFixed(1)}`,
-        confluenceStatus: ((bos_bull || bos_bear || choch_bull || choch_bear) && sd_zone_active) ? `SMC + ${primarySDPattern} Confluence Confirmed` : 'Confluence Monitored'
+        confluenceStatus: ((bos_bull || bos_bear || choch_bull || choch_bear) && sd_zone_active) ? `SMC + ${primarySDPattern || 'S&D'} Confluence Confirmed` : 'Confluence Monitored'
       },
 
       // Premium / Discount Dealing Range
@@ -367,7 +367,7 @@ export class LocalTAAnalyzer {
       sd_zone_active,
       sd_pattern: primarySDPattern,
       zone_freshness: zoneFreshness,
-      zone_status: `${primarySDPattern} (${zoneFreshness})`,
+      zone_status: primarySDPattern ? `${primarySDPattern} (${zoneFreshness})` : 'NO_ZONE',
       
       // Candlestick & Scalp Triggers
       engulfing_bull,
@@ -376,10 +376,368 @@ export class LocalTAAnalyzer {
       double_bottom,
       
       atr,
-      spread_acceptable: true,
-      news_high_impact_active: false,
-      news_status: 'Normal',
+      spread_acceptable: Boolean(context.spreadPips !== undefined ? context.spreadPips <= 3.0 : (latestPriceSnapshot?.spreadPips !== undefined ? latestPriceSnapshot.spreadPips <= 3.0 : (context.spread_acceptable ?? false))),
+      news_high_impact_active: Boolean(context.news_high_impact_active || context.news_event !== undefined),
+      news_status: Boolean(context.news_high_impact_active || context.news_event !== undefined) ? 'High Impact Active' : 'Normal',
       confluence_score
     };
   }
+
+  /**
+   * Performs isolated, timeframe-pure Technical Analysis for a specific canonical strategy.
+   * Strictly uses the authorized timeframes for bias, context, setup, and trigger.
+   */
+  public static analyzeStrategyIsolated(
+    strategyId: string,
+    marketContext: import('@/types/strategy-market-context').StrategyMarketContext
+  ): Record<string, any> {
+    const symbol = toCanonicalSymbol(marketContext.symbol || 'XAUUSD');
+    const currentPrice = marketContext.currentPrice || 0;
+    const session = marketContext.session || 'UNDEFINED';
+
+    // Extract timeframe contexts
+    const d1Context = marketContext.D1;
+    const h4Context = marketContext.H4;
+    const h1Context = marketContext.H1;
+    const m15Context = marketContext.M15;
+    const m5Context = marketContext.M5;
+    const m1Context = marketContext.M1;
+
+    // Timeframe-specific analysis objects
+    let h1TrendResult: HTFTrendResult | null = null;
+    if (h1Context && h1Context.candles && h1Context.candles.length >= 10) {
+      h1TrendResult = HTFTrendAnalyzer.analyzeTrend(h1Context.candles, 'H1');
+    }
+
+    let d1TrendResult: HTFTrendResult | null = null;
+    if (d1Context && d1Context.candles && d1Context.candles.length >= 10) {
+      d1TrendResult = HTFTrendAnalyzer.analyzeTrend(d1Context.candles, 'D1');
+    }
+
+    let h4TrendResult: HTFTrendResult | null = null;
+    if (h4Context && h4Context.candles && h4Context.candles.length >= 10) {
+      h4TrendResult = HTFTrendAnalyzer.analyzeTrend(h4Context.candles, 'H4');
+    }
+
+    // Default trend from H1 if available
+    const trend_h1 = h1TrendResult ? h1TrendResult.direction : (d1TrendResult?.direction || 'INSUFFICIENT_DATA');
+
+    // ATR calculation: prefer M15 for strategy 1, 2, 5; M5 for strategy 4; M1/M5 for strategy 3
+    const m15Candles = m15Context?.candles || [];
+    const m5Candles = m5Context?.candles || [];
+    const m1Candles = m1Context?.candles || [];
+    const h1Candles = h1Context?.candles || [];
+
+    const atrM15 = m15Candles.length > 0 ? (calculateATR(m15Candles, 14) || 0) : 0;
+    const atrM5 = m5Candles.length > 0 ? (calculateATR(m5Candles, 14) || 0) : 0;
+    const atrM1 = m1Candles.length > 0 ? (calculateATR(m1Candles, 14) || 0) : 0;
+
+    // Strategy 1: H1 Bias, M15 Context & Execution
+    if (strategyId === 'strategy-1-smc') {
+      const s1Candles = m15Candles;
+      const s1Atr = atrM15 || (h1Candles.length > 0 ? (calculateATR(h1Candles, 14) || 0) : 0);
+      const sessionPools = detectSessionPools(s1Candles);
+      const mss = detectMSS(s1Candles);
+      const fvgs = findFVGs(s1Candles);
+      const obs = findOrderBlocks(s1Candles);
+      const dealingRange = calculateDealingRange(s1Candles, currentPrice);
+
+      const asianSweepBull = sessionPools.sweepAsianLow;
+      const asianSweepBear = sessionPools.sweepAsianHigh;
+      const chochBull = mss ? mss.type.includes('bullish') : false;
+      const chochBear = mss ? mss.type.includes('bearish') : false;
+      const obFvgBull = fvgs.some(f => f.type === 'bullish') || obs.some(o => o.type === 'bullish');
+      const obFvgBear = fvgs.some(f => f.type === 'bearish') || obs.some(o => o.type === 'bearish');
+
+      const s1Direction: 'buy' | 'sell' = (asianSweepBull || chochBull) ? 'buy' : ((asianSweepBear || chochBear) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+      const s1RiskDist = Math.max(s1Atr * 0.5, 1.2);
+      const s1Entry = currentPrice;
+      const s1Sl = s1Direction === 'buy' ? s1Entry - s1RiskDist : s1Entry + s1RiskDist;
+      const s1Tp1 = s1Direction === 'buy' ? s1Entry + (s1RiskDist * 2.0) : s1Entry - (s1RiskDist * 2.0);
+      const s1Tp2 = s1Direction === 'buy' ? s1Entry + (s1RiskDist * 3.5) : s1Entry - (s1RiskDist * 3.5);
+
+      return {
+        strategyId,
+        symbol,
+        current_price: currentPrice,
+        session,
+        trend_h1,
+        trend: trend_h1,
+        htf_trend: h1TrendResult,
+        atr: s1Atr,
+        m15_available: m15Candles.length > 0,
+        h1_available: h1Candles.length > 0,
+        asian_sweep_bull: asianSweepBull,
+        asian_sweep_bear: asianSweepBear,
+        choch_bull: chochBull,
+        choch_bear: chochBear,
+        ob_fvg_bull: obFvgBull,
+        ob_fvg_bear: obFvgBear,
+        dealing_range_zone: dealingRange.zone,
+        is_discount: dealingRange.isDiscountForBuy,
+        is_premium: dealingRange.isPremiumForSell,
+        spread_acceptable: Boolean(marketContext.spread?.isAcceptable ?? (typeof marketContext.spread === 'number' ? marketContext.spread <= 3.0 : true)),
+        strategy1: {
+          direction: s1Direction,
+          entry: Number(s1Entry.toFixed(2)),
+          sl: Number(s1Sl.toFixed(2)),
+          tp1: Number(s1Tp1.toFixed(2)),
+          tp2: Number(s1Tp2.toFixed(2)),
+          rr: `1:${(Math.abs(s1Tp1 - s1Entry) / Math.abs(s1Entry - s1Sl)).toFixed(1)}`
+        }
+      };
+    }
+
+    // Strategy 2: D1/H4/H1 Bias, M15/M5 Setup & Trigger
+    if (strategyId === 'strategy-2-snd') {
+      const s2Candles = m15Candles.length > 0 ? m15Candles : m5Candles;
+      const s2Atr = atrM15 || atrM5;
+      const sdStructures = findSDZoneStructures(s2Candles);
+      const freshDemand = sdStructures.filter(s => s.type === 'demand' && s.freshness !== 'BREACHED');
+      const freshSupply = sdStructures.filter(s => s.type === 'supply' && s.freshness !== 'BREACHED');
+      
+      const isNearDemand = freshDemand.some(d => Math.abs(currentPrice - d.top) <= s2Atr || (currentPrice >= d.bottom && currentPrice <= d.top));
+      const isNearSupply = freshSupply.some(s => Math.abs(currentPrice - s.bottom) <= s2Atr || (currentPrice >= s.bottom && currentPrice <= s.top));
+
+      // Engulfing trigger evaluated on M15 or M5
+      let engulfingBull = false;
+      let engulfingBear = false;
+      const triggerCandles = m5Candles.length >= 2 ? m5Candles : s2Candles;
+      if (triggerCandles.length >= 2) {
+        const last = triggerCandles[triggerCandles.length - 1];
+        const prev = triggerCandles[triggerCandles.length - 2];
+        if (last.close > last.open && prev.close < prev.open && last.close >= prev.open && last.open <= prev.close) engulfingBull = true;
+        if (last.close < last.open && prev.close > prev.open && last.close <= prev.open && last.open >= prev.close) engulfingBear = true;
+      }
+
+      const s2Direction: 'buy' | 'sell' = (isNearDemand || engulfingBull) ? 'buy' : ((isNearSupply || engulfingBear) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+      const s2RiskDist = Math.max(s2Atr * 0.5, 1.2);
+      const s2Entry = currentPrice;
+      const s2Sl = s2Direction === 'buy' ? s2Entry - s2RiskDist : s2Entry + s2RiskDist;
+      const s2Tp1 = s2Direction === 'buy' ? s2Entry + (s2RiskDist * 2.0) : s2Entry - (s2RiskDist * 2.0);
+      const s2Tp2 = s2Direction === 'buy' ? s2Entry + (s2RiskDist * 3.0) : s2Entry - (s2RiskDist * 3.0);
+
+      const primarySDPattern = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].pattern : null;
+      const zoneFreshness = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].freshness : null;
+
+      return {
+        strategyId,
+        symbol,
+        current_price: currentPrice,
+        session,
+        trend_h1,
+        trend: trend_h1,
+        htf_trend: h1TrendResult,
+        d1_trend: d1TrendResult,
+        h4_trend: h4TrendResult,
+        atr: s2Atr,
+        sd_zone_active: isNearDemand || isNearSupply,
+        sd_pattern: primarySDPattern,
+        zone_freshness: zoneFreshness,
+        engulfing_bull: engulfingBull,
+        engulfing_bear: engulfingBear,
+        spread_acceptable: Boolean(marketContext.spread?.isAcceptable ?? (typeof marketContext.spread === 'number' ? marketContext.spread <= 3.0 : true)),
+        strategy2: {
+          direction: s2Direction,
+          entry: Number(s2Entry.toFixed(2)),
+          sl: Number(s2Sl.toFixed(2)),
+          tp1: Number(s2Tp1.toFixed(2)),
+          tp2: Number(s2Tp2.toFixed(2)),
+          rr: `1:${(Math.abs(s2Tp1 - s2Entry) / Math.abs(s2Entry - s2Sl)).toFixed(1)}`
+        }
+      };
+    }
+
+    // Strategy 3: H1 Bias, M15 Retracement, M5/M1 Sweep, M1 Pattern & Neckline
+    if (strategyId === 'strategy-3-scalping') {
+      const s3Atr = atrM1 || atrM5 || 0.8;
+      const m1Pivots = m1Candles.length >= 5 ? findPivots(m1Candles, 3, 3) : { highs: [], lows: [] };
+      const m1Sweeps = m1Candles.length >= 5 ? findSweeps(m1Candles) : [];
+      const m5Sweeps = m5Candles.length >= 5 ? findSweeps(m5Candles) : [];
+
+      let liqSweepBull = false;
+      let liqSweepBear = false;
+      const recentMicroSweeps = [...m5Sweeps, ...m1Sweeps].slice(-5);
+      if (recentMicroSweeps.length > 0) {
+        const lastSweep = recentMicroSweeps[recentMicroSweeps.length - 1];
+        if (lastSweep.type === 'low_sweep') liqSweepBull = true;
+        if (lastSweep.type === 'high_sweep') liqSweepBear = true;
+      }
+
+      let doubleTop = false;
+      let doubleBottom = false;
+      if (m1Pivots.highs.length >= 2) {
+        const h1 = m1Pivots.highs[m1Pivots.highs.length - 1].price;
+        const h2 = m1Pivots.highs[m1Pivots.highs.length - 2].price;
+        if (Math.abs(h1 - h2) <= s3Atr * 0.4) doubleTop = true;
+      }
+      if (m1Pivots.lows.length >= 2) {
+        const l1 = m1Pivots.lows[m1Pivots.lows.length - 1].price;
+        const l2 = m1Pivots.lows[m1Pivots.lows.length - 2].price;
+        if (Math.abs(l1 - l2) <= s3Atr * 0.4) doubleBottom = true;
+      }
+
+      const s3Direction: 'buy' | 'sell' = (doubleBottom || liqSweepBull) ? 'buy' : ((doubleTop || liqSweepBear) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+      const s3RiskDist = Math.max(s3Atr * 0.3, 0.8);
+      const s3Entry = currentPrice;
+      const s3Sl = s3Direction === 'buy' ? s3Entry - s3RiskDist : s3Entry + s3RiskDist;
+      const s3Tp1 = s3Direction === 'buy' ? s3Entry + (s3RiskDist * 1.5) : s3Entry - (s3RiskDist * 1.5);
+      const s3Tp2 = s3Direction === 'buy' ? s3Entry + (s3RiskDist * 2.5) : s3Entry - (s3RiskDist * 2.5);
+
+      return {
+        strategyId,
+        symbol,
+        current_price: currentPrice,
+        session,
+        trend_h1,
+        trend: trend_h1,
+        htf_trend: h1TrendResult,
+        atr: s3Atr,
+        m1_available: m1Candles.length > 0,
+        m5_available: m5Candles.length > 0,
+        m15_available: m15Candles.length > 0,
+        liq_sweep_bull: liqSweepBull,
+        liq_sweep_bear: liqSweepBear,
+        double_top: doubleTop,
+        double_bottom: doubleBottom,
+        spread_acceptable: Boolean(marketContext.spread?.isAcceptable ?? (typeof marketContext.spread === 'number' ? marketContext.spread <= 3.0 : true)),
+        news_high_impact_active: Boolean(marketContext.news?.hasHighImpactNewsActive),
+        strategy3: {
+          direction: s3Direction,
+          entry: Number(s3Entry.toFixed(2)),
+          sl: Number(s3Sl.toFixed(2)),
+          tp1: Number(s3Tp1.toFixed(2)),
+          tp2: Number(s3Tp2.toFixed(2)),
+          rr: `1:${(Math.abs(s3Tp1 - s3Entry) / Math.abs(s3Entry - s3Sl)).toFixed(1)}`
+        }
+      };
+    }
+
+    // Strategy 4: M5 News Context, M1 Post-News Execution
+    if (strategyId === 'strategy-4-news') {
+      const s4Atr = atrM1 || atrM5 || 1.5;
+      const m5Sweeps = m5Candles.length >= 5 ? findSweeps(m5Candles) : [];
+      const m1Bos = m1Candles.length >= 5 ? findBOS(m1Candles) : [];
+
+      let liqSweepBull = false;
+      let liqSweepBear = false;
+      if (m5Sweeps.length > 0) {
+        const lastSweep = m5Sweeps[m5Sweeps.length - 1];
+        if (lastSweep.type === 'low_sweep') liqSweepBull = true;
+        if (lastSweep.type === 'high_sweep') liqSweepBear = true;
+      }
+
+      let bosBull = false;
+      let bosBear = false;
+      if (m1Bos.length > 0) {
+        const lastBOS = m1Bos[m1Bos.length - 1];
+        if (lastBOS.type === 'bullish') bosBull = true;
+        if (lastBOS.type === 'bearish') bosBear = true;
+      }
+
+      const s4Direction: 'buy' | 'sell' = (liqSweepBull || bosBull) ? 'buy' : ((liqSweepBear || bosBear) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+      const s4RiskDist = Math.max(s4Atr * 0.6, 1.5);
+      const s4Entry = currentPrice;
+      const s4Sl = s4Direction === 'buy' ? s4Entry - s4RiskDist : s4Entry + s4RiskDist;
+      const s4Tp1 = s4Direction === 'buy' ? s4Entry + (s4RiskDist * 2.5) : s4Entry - (s4RiskDist * 2.5);
+      const s4Tp2 = s4Direction === 'buy' ? s4Entry + (s4RiskDist * 4.0) : s4Entry - (s4RiskDist * 4.0);
+
+      return {
+        strategyId,
+        symbol,
+        current_price: currentPrice,
+        session,
+        trend_h1,
+        trend: trend_h1,
+        atr: s4Atr,
+        m1_available: m1Candles.length > 0,
+        m5_available: m5Candles.length > 0,
+        news_high_impact_active: Boolean(marketContext.news?.hasHighImpactNewsActive),
+        news_event: marketContext.news?.activeEvents?.[0]?.title || null,
+        spread_acceptable: Boolean(marketContext.spread?.isAcceptable ?? (typeof marketContext.spread === 'number' ? marketContext.spread <= 3.0 : true)),
+        liq_sweep_bull: liqSweepBull,
+        liq_sweep_bear: liqSweepBear,
+        bos_bull: bosBull,
+        bos_bear: bosBear,
+        strategy4: {
+          direction: s4Direction,
+          entry: Number(s4Entry.toFixed(2)),
+          sl: Number(s4Sl.toFixed(2)),
+          tp1: Number(s4Tp1.toFixed(2)),
+          tp2: Number(s4Tp2.toFixed(2)),
+          rr: `1:${(Math.abs(s4Tp1 - s4Entry) / Math.abs(s4Entry - s4Sl)).toFixed(1)}`
+        }
+      };
+    }
+
+    // Strategy 5: H1/M15 Structure, M15 Confluence, M5/M1 Trigger
+    if (strategyId === 'strategy-5-smc-sd-confluence') {
+      const s5Atr = atrM15 || atrM5 || 1.2;
+      const dealingRange = calculateDealingRange(m15Candles, currentPrice);
+      const sdStructures = findSDZoneStructures(m15Candles);
+      const freshDemand = sdStructures.filter(s => s.type === 'demand' && s.freshness !== 'BREACHED');
+      const freshSupply = sdStructures.filter(s => s.type === 'supply' && s.freshness !== 'BREACHED');
+      
+      const isNearDemand = freshDemand.some(d => Math.abs(currentPrice - d.top) <= s5Atr || (currentPrice >= d.bottom && currentPrice <= d.top));
+      const isNearSupply = freshSupply.some(s => Math.abs(currentPrice - s.bottom) <= s5Atr || (currentPrice >= s.bottom && currentPrice <= s.top));
+
+      const m5Sweeps = m5Candles.length >= 5 ? findSweeps(m5Candles) : [];
+      let liqSweepBull = false;
+      let liqSweepBear = false;
+      if (m5Sweeps.length > 0) {
+        const lastSweep = m5Sweeps[m5Sweeps.length - 1];
+        if (lastSweep.type === 'low_sweep') liqSweepBull = true;
+        if (lastSweep.type === 'high_sweep') liqSweepBear = true;
+      }
+
+      const s5Direction: 'buy' | 'sell' = ((isNearDemand || liqSweepBull) && dealingRange.isDiscountForBuy) ? 'buy' : (((isNearSupply || liqSweepBear) && dealingRange.isPremiumForSell) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+      const s5RiskDist = Math.max(s5Atr * 0.5, 1.2);
+      const s5Entry = currentPrice;
+      const s5Sl = s5Direction === 'buy' ? s5Entry - s5RiskDist : s5Entry + s5RiskDist;
+      const s5Tp1 = s5Direction === 'buy' ? s5Entry + (s5RiskDist * 2.5) : s5Entry - (s5RiskDist * 2.5);
+      const s5Tp2 = s5Direction === 'buy' ? s5Entry + (s5RiskDist * 4.0) : s5Entry - (s5RiskDist * 4.0);
+
+      const primarySDPattern = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].pattern : null;
+      const zoneFreshness = sdStructures.length > 0 ? sdStructures[sdStructures.length - 1].freshness : null;
+
+      return {
+        strategyId,
+        symbol,
+        current_price: currentPrice,
+        session,
+        trend_h1,
+        trend: trend_h1,
+        htf_trend: h1TrendResult,
+        atr: s5Atr,
+        m15_available: m15Candles.length > 0,
+        m5_available: m5Candles.length > 0,
+        dealing_range_zone: dealingRange.zone,
+        is_discount: dealingRange.isDiscountForBuy,
+        is_premium: dealingRange.isPremiumForSell,
+        sd_zone_active: isNearDemand || isNearSupply,
+        sd_pattern: primarySDPattern,
+        zone_freshness: zoneFreshness,
+        liq_sweep_bull: liqSweepBull,
+        liq_sweep_bear: liqSweepBear,
+        spread_acceptable: Boolean(marketContext.spread?.isAcceptable ?? (typeof marketContext.spread === 'number' ? marketContext.spread <= 3.0 : true)),
+        strategy5: {
+          direction: s5Direction,
+          entry: Number(s5Entry.toFixed(2)),
+          sl: Number(s5Sl.toFixed(2)),
+          tp1: Number(s5Tp1.toFixed(2)),
+          tp2: Number(s5Tp2.toFixed(2)),
+          rr: `1:${(Math.abs(s5Tp1 - s5Entry) / Math.abs(s5Entry - s5Sl)).toFixed(1)}`
+        }
+      };
+    }
+
+    // Default fallback to analyze on general context
+    return this.analyze({
+      symbol,
+      timeframe: 'M15',
+      candles: m15Candles,
+      price: { price: currentPrice, provider: marketContext.provider, timestamp: marketContext.currentTimestamp }
+    });
+  }
 }
+

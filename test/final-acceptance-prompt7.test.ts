@@ -55,14 +55,34 @@ describe('PROMPT 7 — FINAL INTEGRATION, PERFORMANCE, SECURITY, QA & RE-AUDIT S
     const sl = direction === 'buy' ? 2690.00 : 2710.00;
     const tp1 = direction === 'buy' ? 2725.00 : 2675.00;
     const manifest = getStrategyManifest(strategyId);
+    const nowIso = new Date().toISOString();
 
-    const steps = manifest ? manifest.setup_sequence.map(s => ({
+    const steps = manifest ? manifest.setup_sequence.map((s, idx) => ({
       step_id: s.step_id,
+      step_order: s.step_order || (idx + 1),
+      strategy_id: strategyId,
       rule_id: s.rule_id,
+      name: s.name,
+      description: s.description,
       state: 'VALIDATED' as const,
-      started_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      retry_count: 0
+      timestamp: nowIso,
+      first_detected_at: nowIso,
+      last_evaluated_at: nowIso,
+      last_evaluated_timestamp: nowIso,
+      timeframe: manifest.timeframe.execution || 'M15',
+      evidence: {
+        timestamp: nowIso,
+        timeframe: manifest.timeframe.execution || 'M15',
+        price: entry,
+        currentPrice: entry,
+        trend: 'BULLISH',
+        session: 'London',
+        source_candle: { timestamp: nowIso, open: 2698, high: 2702, low: 2695, close: 2700 }
+      },
+      reason: 'Rule passed',
+      invalidation: s.invalidation,
+      invalidation_condition: s.invalidation,
+      transition_history: []
     })) : [];
 
     return {
@@ -76,8 +96,8 @@ describe('PROMPT 7 — FINAL INTEGRATION, PERFORMANCE, SECURITY, QA & RE-AUDIT S
       entry_price: entry,
       sl_price: sl,
       tp1_price: tp1,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: nowIso,
+      updated_at: nowIso,
       validation_logs: []
     };
   };

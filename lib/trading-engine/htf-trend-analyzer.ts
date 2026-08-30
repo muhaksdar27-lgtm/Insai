@@ -86,7 +86,7 @@ export class HTFTrendAnalyzer {
       else if (currentPrice < ema20 * 0.9995) priceVsEma = 'BELOW';
 
       // 5. Volatility (ATR)
-      const atr = calculateATR(candles, Math.min(14, candles.length)) || 4.5;
+      const atr = calculateATR(candles, Math.min(14, candles.length)) || 0;
 
       // 6. Swing Structure Analysis (Pivots)
       const pivots = findPivots(candles, 3, 3);

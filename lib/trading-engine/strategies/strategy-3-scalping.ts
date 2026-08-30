@@ -14,6 +14,7 @@ export interface StrategyExecutionResult {
 export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: any = {}): StrategyExecutionResult {
   const symbol = context.symbol || 'XAUUSD';
   
+  // Evaluate strategy rules
   const candidateRules = RuleEngine.evaluateStrategyRules('strategy-3-scalping', context, pyData);
   
   let validCount = 0;
@@ -51,19 +52,19 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
   const doubleTop = !!pyData.double_top;
   const doubleBottom = !!pyData.double_bottom;
 
-  const h1Trend = pyData.trend_h1 || pyData.trend || 'neutral';
+  const h1Trend = (pyData.trend_h1 || pyData.trend || 'NEUTRAL').toLowerCase();
   
   const direction: 'buy' | 'sell' = s3.direction || ((chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy')));
 
   const confirmationStatus = (sweepBull || sweepBear) && (doubleTop || doubleBottom) ? 'Scalp Sweep & Double Top/Bottom Confirmed' : 'Scalp Pattern Monitored';
 
-  const atr = pyData.atr || 0;
+  const atr = typeof pyData.atr === 'number' && pyData.atr > 0 ? pyData.atr : 0;
   const entryPriceVal = s3.entry || pyData.current_price || context.candles?.[context.candles?.length - 1]?.close || 0;
   const slVal = s3.sl || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal - (atr * 0.3)).toFixed(2) : +(entryPriceVal + (atr * 0.3)).toFixed(2)) : undefined);
   const tp1Val = s3.tp1 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 0.45)).toFixed(2) : +(entryPriceVal - (atr * 0.45)).toFixed(2)) : undefined);
   const tp2Val = s3.tp2 || (entryPriceVal && atr > 0 ? (direction === 'buy' ? +(entryPriceVal + (atr * 0.75)).toFixed(2) : +(entryPriceVal - (atr * 0.75)).toFixed(2)) : undefined);
   
-  const currentSession = pyData.current_session || pyData.session || 'Any';
+  const currentSession = pyData.current_session || pyData.session || 'UNDEFINED';
 
   const setupSnapshot = {
     strategyId: 'strategy-3-scalping',
@@ -71,23 +72,23 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
     symbol,
     timeframe: 'M1',
     session: currentSession,
-    h1Trend,
+    h1Trend: h1Trend.toUpperCase(),
     bias: h1Trend.toUpperCase(),
     marketBias: h1Trend.toUpperCase(),
     direction,
-    entry: entryPriceVal,
-    entryPrice: entryPriceVal,
-    sl: slVal,
-    slPrice: slVal,
-    tp1: tp1Val,
-    tp1Price: tp1Val,
-    tp2: tp2Val,
-    tp2Price: tp2Val,
-    rr: s3.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '1:1.5',
+    entry: entryPriceVal || '--',
+    entryPrice: entryPriceVal || '--',
+    sl: slVal || '--',
+    slPrice: slVal || '--',
+    tp1: tp1Val || '--',
+    tp1Price: tp1Val || '--',
+    tp2: tp2Val || '--',
+    tp2Price: tp2Val || '--',
+    rr: s3.rr || candidateRules['rule_risk_reward']?.evidence?.rr || '--',
     sweepStatus: s3.sweepStatus || ((sweepBull || sweepBear || pyData.asian_sweep_bull || pyData.asian_sweep_bear) ? 'Scalp Sweep Confirmed' : 'Scalp Sweep Monitored'),
     doubleTopBottomStatus: s3.doubleTopBottomStatus || ((doubleTop || doubleBottom) ? (doubleTop ? 'Double Top Confirmed' : 'Double Bottom Confirmed') : 'Double Top/Bottom Monitored'),
-    atr14: atr,
-    atrBuffer50Pct: `${((atr * 0.3) * 10).toFixed(1)} pips`,
+    atr14: atr > 0 ? atr : '--',
+    atrBuffer50Pct: atr > 0 ? `${((atr * 0.3) * 10).toFixed(1)} pips` : '--',
     confluenceScore,
     confirmationStatus,
     aiDecision: pyData.aiDecision || 'PENDING'

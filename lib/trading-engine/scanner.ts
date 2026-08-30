@@ -1,6 +1,7 @@
 import { getDatabaseClient } from "../db/client";
 import { healthCheckEngine } from "../observability/health-check";
 import { TradingEngine } from './engine';
+import { StrategyContextBuilder } from './strategy-context-builder';
 import { getMarketDataService } from '../market-data/market-data-service';
 import { MarketCalendar } from '../market-data/market-calendar';
 import { logger } from '../utils/logger';
@@ -216,13 +217,22 @@ export class MarketScanner {
 
       logger.info('Running market scan for XAUUSD (triggered by real-time WebSocket/throttle)...');
       
-      // 2. Get Context (Use M15 for precise institutional structure & trend evaluation)
-      const baseContext = await getMarketDataService().getContextData("XAUUSD", "M15");
+      // 2. Build multi-timeframe StrategyMarketContext
+      const globalContext = await StrategyContextBuilder.buildGlobalMarketContext('XAUUSD');
       const correlationId = crypto.randomUUID();
-      const context = { ...baseContext, correlationId };
+      globalContext.correlationId = correlationId;
 
       // 2b. Hard Gate: Check Market Calendar & Data Freshness
-      const marketStatus = MarketCalendar.getMarketStatus("XAUUSD", context);
+      const baseContext = {
+        symbol: 'XAUUSD',
+        timeframe: 'M15',
+        timestamp: globalContext.currentTimestamp,
+        price: { price: globalContext.currentPrice, provider: globalContext.provider, freshness: globalContext.dataFreshness },
+        candles: globalContext.M15?.candles || [],
+        correlationId
+      };
+
+      const marketStatus = MarketCalendar.getMarketStatus("XAUUSD", baseContext);
       if (marketStatus.isHardBlocked) {
         logger.info(`[HARD_BLOCK_SCAN_SKIPPED] Market scan skipped for XAUUSD: ${marketStatus.blockReason}`);
         return;
@@ -278,17 +288,8 @@ export class MarketScanner {
          logger.error(`Error monitoring active signals: ${e.message}`);
       }
 
-      const candles = context.candles || [];
-      if (candles.length > 0) {
-        const latestCandleTime = new Date(candles[candles.length - 1].timestamp).getTime();
-        const now = Date.now();
-        if (now - latestCandleTime > 4 * 60 * 60 * 1000) {
-          logger.info(`[OFF_HOURS_DATA] Using latest market data candle timestamp (${candles[candles.length - 1].timestamp}) for setup evaluation.`);
-        }
-      }
-
-      // 3. Pass to engine with M15 timeframe for institutional strategy evaluation
-      await this.engine.processMarketData('XAUUSD', 'M15', context, activeStrategyIds);
+      // 3. Pass StrategyMarketContext to engine for true multi-timeframe strategy isolation
+      await this.engine.processStrategyMarketContext('XAUUSD', globalContext, activeStrategyIds);
       
     } catch (error: any) {
       if (error.message.includes('not configured')) {

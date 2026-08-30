@@ -1,35 +1,17 @@
 import { StrategyResponse, DashboardCard, StrategyStep } from "@/types";
 import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName } from "@/lib/trading-engine/state-machine";
 import { getStrategyDefinition } from "@/lib/trading-engine/strategy-registry";
+import { 
+  CANONICAL_STRATEGY_DEFINITIONS, 
+  CANONICAL_STRATEGY_IDS 
+} from "@/lib/trading-engine/strategies/definitions";
 import { transformCandidateRules, RuleValidationResult } from "@/lib/utils/rule-transformer";
 
-export const CANONICAL_STRATEGIES = [
-  {
-    id: 'strategy-1-smc',
-    name: 'STRATEGI 1 — SMC + Sesi London + M15',
-    description: 'SMC Strategy strictly for London session on M15 timeframe. Relies on Asia session liquidity sweep and M15 CHoCH.'
-  },
-  {
-    id: 'strategy-2-snd',
-    name: 'STRATEGI 2 — Supply & Demand + Engulfing',
-    description: 'Supply and Demand zones paired with moving average confluence and engulfing trigger.'
-  },
-  {
-    id: 'strategy-3-scalping',
-    name: 'STRATEGI 3 — Scalping SMC + Liquidity Sweep + Double Top/Bottom',
-    description: 'Aggressive M1 scalping aligned with H1 trend, requiring liquidity sweep before double top/bottom structural formation.'
-  },
-  {
-    id: 'strategy-4-news',
-    name: 'STRATEGI 4 — News Liquidity Sweep Reversal',
-    description: 'Trades the post-news liquidity sweep. Strictly avoids the initial news candle, waiting for structural reversal.'
-  },
-  {
-    id: 'strategy-5-smc-sd-confluence',
-    name: 'STRATEGI 5 — SMC-SD Pattern Confluence',
-    description: 'High-probability confluence engine requiring overlaps between market structure, SD zones, and liquidity sweeps.'
-  }
-] as const;
+export const CANONICAL_STRATEGIES = CANONICAL_STRATEGY_IDS.map(id => ({
+  id: CANONICAL_STRATEGY_DEFINITIONS[id].id,
+  name: CANONICAL_STRATEGY_DEFINITIONS[id].name,
+  description: CANONICAL_STRATEGY_DEFINITIONS[id].description
+}));
 
 export function normalizeStrategy(strategy: StrategyResponse) {
   const steps = buildTimeline(strategy);
