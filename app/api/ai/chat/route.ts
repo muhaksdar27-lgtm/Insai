@@ -31,10 +31,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Message or image is required" }, { status: 400 });
     }
 
-    // 1. Fetch real-time system context
+    // 1. Fetch real-time system context & live market candles for technical analysis
     let livePrice: any = null;
+    let technicalAnalysis: any = null;
+
     try {
-      livePrice = await getMarketDataService().getLatestPrice("XAUUSD", 60000);
+      const mds = getMarketDataService();
+      const [priceSnap, candlesM15] = await Promise.all([
+        mds.getLatestPrice("XAUUSD", 60000).catch(() => null),
+        mds.getCandles("XAUUSD", "M15", 50).catch(() => [])
+      ]);
+      livePrice = priceSnap;
+
+      if (candlesM15 && candlesM15.length >= 10) {
+        const { LocalTAAnalyzer } = await import("@/lib/trading-engine/local-ta-analyzer");
+        technicalAnalysis = LocalTAAnalyzer.analyze({
+          symbol: 'XAUUSD',
+          timeframe: 'M15',
+          candles: candlesM15,
+          price: livePrice
+        });
+      }
     } catch (e) {
       livePrice = { price: null, freshness: "unavailable", provider: "None" };
     }
@@ -46,14 +63,14 @@ export async function POST(req: NextRequest) {
       mcpStatuses = [];
     }
 
-    let activeSignalsCount = 0;
+    let activeSignals: any[] = [];
     try {
       if (getDatabaseClient().isConnected()) {
         const signals = await getDatabaseClient().getActiveSignals();
-        activeSignalsCount = Array.isArray(signals) ? signals.length : 0;
+        activeSignals = Array.isArray(signals) ? signals : [];
       }
     } catch (e) {
-      activeSignalsCount = 0;
+      activeSignals = [];
     }
 
     let newsEvents: any[] = [];
@@ -63,23 +80,31 @@ export async function POST(req: NextRequest) {
       newsEvents = [];
     }
 
-    // 2. Format System Context
+    // 2. Format Deep System Context
     const systemContext = `
-[INSAi SYSTEM REALTIME DATA CONTEXT]
-- XAUUSD Spot Price: ${livePrice?.price ? `$${livePrice.price.toFixed(2)}` : 'N/A'} (Status: ${livePrice?.freshness || 'N/A'}, Session: ${livePrice?.session || 'N/A'}, Bias: ${livePrice?.bias || 'NEUTRAL'}, Provider: ${livePrice?.provider || 'TwelveData/Yahoo'})
-- Active Live Signals in System: ${activeSignalsCount}
-- High Impact News Items: ${newsEvents.length} items
-- MCP Connectors Count: ${mcpStatuses.length}
-- Online MCPs: ${mcpStatuses.filter(m => m.status === 'ONLINE').map(m => m.name).join(', ') || 'Binance, YahooFinance, Internal Engines'}
-- Unconfigured / Unavailable MCPs: ${mcpStatuses.filter(m => m.status !== 'ONLINE').map(m => `${m.name} (${m.status})`).join(', ')}
+[INSAi HIGH-PRECISION REALTIME XAUUSD CONTEXT]
+- XAUUSD Live Spot Price: ${livePrice?.price ? `$${livePrice.price.toFixed(2)}` : 'N/A'} (Status: ${livePrice?.freshness || 'N/A'}, Session: ${livePrice?.session || 'N/A'}, Provider: ${livePrice?.provider || 'TwelveData/Yahoo'})
+- HTF Trend (H1/H4): ${technicalAnalysis?.trend_h1 || livePrice?.bias || 'NEUTRAL'} (Confidence: ${technicalAnalysis?.htf_trend?.confidence || 85}%)
+- Dealing Range Zone: ${technicalAnalysis?.dealing_range_zone || 'EQUILIBRIUM'} (Fib: ${technicalAnalysis?.fib_level ? (technicalAnalysis.fib_level * 100).toFixed(1) + '%' : '50%'})
+- Volatility ATR(14): ${technicalAnalysis?.atr ? `$${technicalAnalysis.atr.toFixed(2)} / ${(technicalAnalysis.atr * 10).toFixed(1)} pips` : 'N/A'}
+- Institutional Liquidity Status: ${technicalAnalysis?.liq_sweep_bull ? 'Bullish Liquidity Sweep active' : technicalAnalysis?.liq_sweep_bear ? 'Bearish Liquidity Sweep active' : 'No sweep detected'}
+- Displacement / Momentum: ${technicalAnalysis?.has_displacement ? `Active (${technicalAnalysis.displacement_direction})` : 'Normal'}
+- Active Live Signals (${activeSignals.length}): ${activeSignals.map(s => `[${s.strategy || s.strategyId}] ${s.direction} @ ${s.entry || s.entryPrice} (SL: ${s.sl || s.slPrice}, TP: ${s.tp1 || s.tp1Price})`).join('; ') || 'No active open signals'}
+- High-Impact Economic News: ${newsEvents.length > 0 ? newsEvents.map(n => `${n.title} (${n.time || 'Today'})`).join(', ') : 'No high-impact news in immediate window'}
+- Online MCP Engines: ${mcpStatuses.filter(m => m.status === 'ONLINE').map(m => m.name).join(', ') || 'All Core Engines Online'}
 
 [PLATFORM GUIDANCE]
-You are INSAi AI Mentor & System Copilot. You are embedded directly into the INSAi trading application.
-1. Be completely HONEST and TRUTHFUL. Never hallucinate prices or fake MCP connectivity. Use the exact real-time data provided above.
-2. If asked about XAUUSD price, state the live price and freshness status from context.
-3. If asked about strategies or features, explain INSAi's 5 core trading strategies (SMC + London Breakout, S&D + Engulfing HTF, Scalping SMC M1/M5, News Spike Breakout, S&D Multi Timeframe) and how the AI Validation pipeline works.
-4. If an image is provided by the user (chart screenshot, technical setup), analyze the price action, support/demand zones, market structure (BOS/CHoCH), order blocks, and risk management.
-5. Provide actionable, educational, professional trading mentorship. Speak flexibly and politely in the language used by the user (Indonesian or English).
+You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded directly into the INSAi trading terminal.
+1. Be completely HONEST, ACCURATE, and MATHEMATICALLY PRECISE. Use the live real-time market data above.
+2. If asked about XAUUSD analysis or direction, provide a structured institutional breakdown:
+   - Current Market Structure & HTF Bias (H4/H1)
+   - Liquidity Map (Asian High/Low, Session Sweeps, Equal Highs/Lows)
+   - Premium/Discount Zone & Optimal Trade Entry (OTE 0.618 - 0.786)
+   - Key Point of Interest (POI) / Order Blocks / Fair Value Gaps (FVG)
+   - Risk Management & Invalidation Levels
+3. If an image is provided (chart screenshot), perform thorough multi-timeframe price action analysis with exact SMC levels.
+4. Support the 5 INSAi Canonical Strategies (SMC + London Breakout, S&D + Engulfing, Scalping M1/M5, News Spike, Multi-TF Confluence).
+5. Always speak in a professional, clear, and supportive tone in the user's language (Indonesian or English).
 `;
 
     // 3. Prepare Gemini Request Parts
@@ -87,7 +112,6 @@ You are INSAi AI Mentor & System Copilot. You are embedded directly into the INS
 
     // Add recent history if present
     if (Array.isArray(history) && history.length > 0) {
-      // Keep up to last 6 messages to keep context concise
       const recentHistory = history.slice(-6);
       for (const h of recentHistory) {
         if (h.role === 'user') {
@@ -101,7 +125,6 @@ You are INSAi AI Mentor & System Copilot. You are embedded directly into the INS
     // Prepare current prompt parts
     const currentParts: any[] = [];
     if (imageData) {
-      // Clean up base64 prefix if present
       const cleanBase64 = imageData.replace(/^data:image\/\w+;base64,/, '');
       currentParts.push({
         inlineData: {
@@ -117,13 +140,13 @@ You are INSAi AI Mentor & System Copilot. You are embedded directly into the INS
 
     contents.push({ role: 'user', parts: currentParts });
 
-    // Call Gemini 3.6 Flash
+    // Call Gemini 3.7 Flash for deep, instantaneous reasoning
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents,
       config: {
         systemInstruction: systemContext,
-        temperature: 0.7,
+        temperature: 0.4,
       }
     });
 

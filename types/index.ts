@@ -324,6 +324,14 @@ export interface MarketSnapshot extends ProviderStatus {
   receivedAt?: string;
   providerTimestamp?: string;
   status?: string;
+  change?: number;
+  changePercent?: number;
+  high24h?: number;
+  low24h?: number;
+  previousClose?: number;
+  bid?: number;
+  ask?: number;
+  spread?: number;
 }
 
 export interface Candle {

@@ -402,8 +402,8 @@ export class AIValidationOrchestrator {
         logger.debug('Historical RAG context lookup skipped', { error: e.message });
       }
 
-      const prompt = `INSAI Analyst. Strategi: ${strategyId} | State: ${state.stateName}.
-TUGAS: Anda adalah Validator AI yang bertugas MEMVALIDASI setup trading berdasarkan STRATEGI SPESIFIK pengguna. Gemini HANYA bertindak sebagai VALIDATOR. Gemini TIDAK PERNAH membuat signal sendiri.
+      const prompt = `INSAI Institutional Gold Quantitative Validator. Strategi: ${strategyId} | State: ${state.stateName}.
+TUGAS: Anda adalah Lead Quantitative & Institutional Orderflow AI Validator yang bertugas MEMVALIDASI setup trading XAU/USD (Gold) berdasarkan aturan baku strategi pengguna. Gemini HANYA bertindak sebagai VALIDATOR independen dan objektif (fail-closed). Gemini TIDAK PERNAH membuat signal spekulatif sendiri.
 
 STRATEGY CANONICAL CONTEXT:
 - Strategy ID: ${strategyId} (v${strategyVersion})
@@ -411,18 +411,24 @@ STRATEGY CANONICAL CONTEXT:
 - Description: ${strategyDef?.description || 'No specific description'}
 - Required Rules: ${strategyDef?.validationRules?.join(', ') || 'Standard rules'}
 
+XAU/USD INSTITUTIONAL DOMAIN PRINCIPLES:
+1. Session Liquidity Dynamics: Asia range (liquidity engineering) -> London open (liquidity raid/sweep) -> NY session (trend continuation or institutional reversal).
+2. Fair Value Gap & Mitigation: High-probability entries strictly seek mitigated Order Blocks / FVG with genuine institutional displacement (>60% candle body ratio).
+3. Dealing Range Alignment: Longs must strictly reside in Discount Zone (<50% or OTE 0.618-0.786); Shorts must reside in Premium Zone (>50%).
+4. Macro Confluences: Inverted DXY Dollar Index correlation & US 10-Year yield pressure.
+
 MARKET CONTEXT (Korelasi & Makro):
-- DXY: ${JSON.stringify(marketContext?.marketData?.correlations?.dxy || 'Not available')}
-- US10Y: ${JSON.stringify(marketContext?.marketData?.correlations?.us10y || 'Not available')}
-- COT Data: ${JSON.stringify(marketContext?.marketData?.correlations?.cotData || 'Not available')}
-- News/Calendar: ${marketContext?.marketData?.calendar ? 'Active events detected' : 'No major events'}
+- DXY Index Context: ${JSON.stringify(marketContext?.marketData?.correlations?.dxy || 'Not available')}
+- US10Y Yield Context: ${JSON.stringify(marketContext?.marketData?.correlations?.us10y || 'Not available')}
+- COT Data Sentiment: ${JSON.stringify(marketContext?.marketData?.correlations?.cotData || 'Not available')}
+- News/Calendar Status: ${marketContext?.marketData?.calendar ? 'Active events detected' : 'No major events'}
 - Historical Similarity (RAG):
 ${similarHistoryText}
 
 CANONICAL EVIDENCE:
 ${JSON.stringify(canonicalEvidence, null, 2)}
 
-Analisis bukti dari Scoring Engine dan konteks makro di atas SESUAI DENGAN ATURAN STRATEGI INI. Berikan probabilitas (0-100) untuk:
+Analisis bukti dari Scoring Engine dan konteks makro di atas SESUAI DENGAN ATURAN STRATEGI INI. Berikan probabilitas objektif (0-100) untuk:
 - Institution Accumulation Probability (institutionalAccumulation)
 - Institution Distribution Probability (institutionalDistribution)
 - Liquidity Sweep Probability (liquiditySweep)
@@ -431,14 +437,14 @@ Analisis bukti dari Scoring Engine dan konteks makro di atas SESUAI DENGAN ATURA
 - Breakout Probability (genuineBreakout)
 - False Breakout Probability (falseBreakout)
 - News Probability (newsIntervention)
-Dan berikan:
-- Confidence Score keseluruhan (0-100) (Threshold persetujuan: ${this.MIN_CONFIDENCE_THRESHOLD}%)
+Dan berikan skor kuantitatif:
+- Confidence Score keseluruhan (0-100) (Threshold persetujuan minimum: ${this.MIN_CONFIDENCE_THRESHOLD}%)
 - Market Confidence (0-100)
 - Data Quality Score (0-100)
 - Signal Quality Score (0-100)
 
-Sertakan alasan (reasoning) kuat berbasis data (evidence) untuk keputusan Anda.
-Jika data tidak cukup atau ambigu (misalnya rule bernilai WAIT/ASUMSI), Anda HARUS mereturn decision REJECTED, jangan memaksakan APPROVED.
+Sertakan alasan (reasoning) teknis berbasis data terukur (evidence) untuk keputusan Anda.
+Jika data tidak cukup, terjadi kontradiksi zona, atau aturan bernilai WAIT/GAGAL, Anda HARUS mereturn decision REJECTED, jangan pernah memaksakan APPROVED.
 VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
 
       const responseSchema: Schema = {
@@ -472,7 +478,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         required: ['decision', 'evidence', 'reasoning', 'rulesChecked', 'rulesPassed', 'rulesFailed', 'probabilities', 'confidenceScore', 'marketConfidence', 'dataQualityScore', 'signalQualityScore']
       };
 
-      const response = await this.callGeminiWithTimeoutAndRetry(aiClient, prompt, responseSchema, 8000, 1);
+      const response = await this.callGeminiWithTimeoutAndRetry(aiClient, prompt, responseSchema, 10000, 1);
       const text = response.text;
       if (!text) throw new Error('Empty response payload from Gemini API');
 
@@ -556,7 +562,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
       const startTime = Date.now();
       try {
         const generatePromise = aiClient.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.7-flash',
           contents: prompt,
           config: {
             responseMimeType: 'application/json',

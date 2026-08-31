@@ -24,7 +24,7 @@ export class BinanceProvider implements PriceProvider {
     const formattedSymbol = toProviderSymbol(canonicalSymbol, this.name);
     
     try {
-      const res = await fetchWithRetry(`https://api.binance.com/api/v3/ticker/price?symbol=${formattedSymbol}`, {
+      const res = await fetchWithRetry(`https://api.binance.com/api/v3/ticker/24hr?symbol=${formattedSymbol}`, {
           timeoutMs: 2000,
           retries: 1
       });
@@ -35,12 +35,20 @@ export class BinanceProvider implements PriceProvider {
       
       const data = await res.json();
       
-      if (!data.price) {
+      const priceVal = parseFloat(data.lastPrice || data.price);
+      if (!priceVal || isNaN(priceVal)) {
         throw new Error('Failed to fetch price from Binance');
       }
 
       const receivedAt = new Date().toISOString();
-      const priceVal = parseFloat(data.price);
+      const change = data.priceChange ? parseFloat(data.priceChange) : undefined;
+      const changePercent = data.priceChangePercent ? parseFloat(data.priceChangePercent) : undefined;
+      const high24h = data.highPrice ? parseFloat(data.highPrice) : undefined;
+      const low24h = data.lowPrice ? parseFloat(data.lowPrice) : undefined;
+      const prevClose = data.prevClosePrice ? parseFloat(data.prevClosePrice) : undefined;
+      const bid = data.bidPrice ? parseFloat(data.bidPrice) : undefined;
+      const ask = data.askPrice ? parseFloat(data.askPrice) : undefined;
+      const spread = bid && ask ? Number((ask - bid).toFixed(2)) : 0.20;
 
       getProviderRegistry().reportSuccess(this.name);
       
@@ -53,7 +61,15 @@ export class BinanceProvider implements PriceProvider {
         providerTimestamp: receivedAt,
         receivedAt,
         ageMs: 0,
-        status: 'OK'
+        status: 'OK',
+        change,
+        changePercent,
+        high24h,
+        low24h,
+        previousClose: prevClose,
+        bid,
+        ask,
+        spread
       };
     } catch (e: any) {
       getProviderRegistry().reportError(this.name, e.message);

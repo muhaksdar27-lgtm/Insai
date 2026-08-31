@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { DashboardSnapshot } from "@/types";
 import { MarketPanel } from "@/components/dashboard/market-panel";
+import { AiIntelligencePanel } from "@/components/dashboard/ai-intelligence-panel";
 import { EngineStatusPanel } from "@/components/dashboard/engine-status-panel";
 import { ExecutiveSummaryPanel } from "@/components/dashboard/executive-summary-panel";
 import { SystemHealthPanel } from "@/components/dashboard/system-health-panel";
@@ -119,6 +120,9 @@ export default function DashboardPage() {
             timestamp={snapshot.timestamp}
             isStale={isStale}
           />
+
+          {/* AI Quantitative Intelligence */}
+          <AiIntelligencePanel />
 
           {/* Engine & Infrastructure */}
           <EngineStatusPanel

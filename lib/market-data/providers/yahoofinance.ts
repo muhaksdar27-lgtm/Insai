@@ -81,6 +81,15 @@ export class YahooFinanceProvider implements PriceProvider {
 
       getProviderRegistry().reportSuccess(this.name);
       
+      const prevClose = meta.chartPreviousClose || meta.previousClose;
+      const change = typeof prevClose === 'number' && prevClose > 0 ? Number((price - prevClose).toFixed(2)) : undefined;
+      const changePercent = typeof prevClose === 'number' && prevClose > 0 ? Number((((price - prevClose) / prevClose) * 100).toFixed(2)) : undefined;
+      const high24h = meta.regularMarketDayHigh || meta.dayHigh || undefined;
+      const low24h = meta.regularMarketDayLow || meta.dayLow || undefined;
+      const bid = meta.bid || undefined;
+      const ask = meta.ask || undefined;
+      const spread = bid && ask ? Number((ask - bid).toFixed(2)) : 0.25;
+
       return {
         symbol: canonicalSymbol,
         price,
@@ -90,7 +99,15 @@ export class YahooFinanceProvider implements PriceProvider {
         providerTimestamp: providerTs,
         receivedAt,
         ageMs,
-        status: freshness === 'live' ? 'OK' : 'STALE'
+        status: freshness === 'live' ? 'OK' : 'STALE',
+        change,
+        changePercent,
+        high24h,
+        low24h,
+        previousClose: prevClose,
+        bid,
+        ask,
+        spread
       };
     } catch (e: any) {
       getProviderRegistry().reportError(this.name, e.message);
