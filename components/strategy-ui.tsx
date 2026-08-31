@@ -6,15 +6,18 @@ import {
   TrendingDown,
   CheckCircle2,
   XCircle,
-  Loader2
+  Search
 } from "lucide-react";
 import { getStatusBadge } from "@/lib/utils";
 import { StrategyStep } from "@/types";
 
 export const StrategyStatus = memo(function StrategyStatus({ status, className = "" }: { status: string; className?: string }) {
   const badgeStyle = getStatusBadge(status);
+  const isSearching = ['ACTIVE', 'DETECTED', 'SCANNING', 'AWAITING'].includes(status.toUpperCase());
+
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[10px] font-bold tracking-wider border uppercase ${badgeStyle} ${className}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10px] font-bold tracking-wider border uppercase ${badgeStyle} ${className}`}>
+      {isSearching && <Search className="w-2.5 h-2.5 animate-pulse" />}
       {status}
     </span>
   );
@@ -22,8 +25,9 @@ export const StrategyStatus = memo(function StrategyStatus({ status, className =
 
 export const ProgressBar = memo(function ProgressBar({ progress, status }: { progress: number; status?: string }) {
   let color = "bg-blue-500";
-  if (status === 'error' || status === 'failed' || status === 'rejected') color = "bg-rose-500";
-  else if (status === 'finished' || status === 'approved') color = "bg-emerald-500";
+  if (status === 'error' || status === 'failed' || status === 'rejected' || status === 'invalidated') color = "bg-rose-500";
+  else if (status === 'finished' || status === 'approved' || status === 'signal_active') color = "bg-emerald-500";
+  else if (status === 'active' || status === 'detected' || status === 'scanning') color = "bg-amber-500";
 
   return (
     <div className="w-full bg-zinc-950 rounded-full h-1.5 mt-1.5 overflow-hidden border border-zinc-800/80">
@@ -48,50 +52,84 @@ export const StrategyHeader = memo(function StrategyHeader({ name, description, 
 
 export const TimelineCard = memo(function TimelineCard({ steps }: { steps: StrategyStep[] }) {
   if (!steps || steps.length === 0) {
-    return <div className="text-[10px] text-zinc-500 font-mono italic">No steps available</div>;
+    return <div className="text-[10px] text-zinc-500 font-mono italic">Belum ada langkah setup terdaftar</div>;
   }
+
+  // Find first active/searching step in sequence
+  const currentSearchingStep = steps.find(s => {
+    const st = (s.status || '').toLowerCase();
+    return st === 'active' || st === 'detected' || st === 'current';
+  });
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-1.5 bg-zinc-950/80 rounded-lg p-2 border border-zinc-800/80 shadow-inner">
-      {steps.map((step: StrategyStep, sIdx: number) => {
-        const statusLower = (step.status || '').toLowerCase();
-        const isActive = statusLower === 'active' || statusLower === 'current';
-        const isValidated = statusLower === 'validated' || statusLower === 'finished' || statusLower === 'passed';
-        const isApproved = statusLower === 'approved';
-        const isRejected = statusLower === 'rejected' || statusLower === 'failed';
-        const isExpired = statusLower === 'expired';
+    <div className="space-y-2">
+      {/* Active Searching Status Banner */}
+      {currentSearchingStep && (
+        <div className="flex items-center justify-between px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-mono">
+          <span className="flex items-center gap-1.5 font-bold tracking-wide">
+            <Search className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
+            <span>MENCARI SETUP: <span className="text-zinc-100">{currentSearchingStep.name}</span></span>
+          </span>
+          <span className="text-[9px] bg-amber-500/20 px-1.5 py-0.5 rounded font-bold uppercase animate-pulse">
+            SCANNING REALTIME
+          </span>
+        </div>
+      )}
 
-        let bgCls = 'bg-zinc-900/40 border-zinc-800/60 text-zinc-400';
-        let icon = <span className="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0" />;
+      {/* Sequential Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-1.5 bg-zinc-950/80 rounded-lg p-2 border border-zinc-800/80 shadow-inner">
+        {steps.map((step: StrategyStep, sIdx: number) => {
+          const statusLower = (step.status || '').toLowerCase();
+          const isActive = statusLower === 'active' || statusLower === 'current' || statusLower === 'detected';
+          const isValidated = statusLower === 'validated' || statusLower === 'finished' || statusLower === 'passed';
+          const isApproved = statusLower === 'approved' || statusLower === 'signal_active';
+          const isRejected = statusLower === 'rejected' || statusLower === 'failed' || statusLower === 'invalidated';
+          const isExpired = statusLower === 'expired';
 
-        if (isApproved) {
-          bgCls = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold';
-          icon = <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
-        } else if (isValidated) {
-          bgCls = 'bg-blue-500/10 border-blue-500/30 text-blue-400 font-semibold';
-          icon = <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
-        } else if (isActive) {
-          bgCls = 'bg-blue-500/20 border-blue-500/50 text-blue-200 font-bold shadow-[0_0_10px_rgba(59,130,246,0.2)] animate-pulse';
-          icon = <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin shrink-0" />;
-        } else if (isRejected) {
-          bgCls = 'bg-rose-500/10 border-rose-500/30 text-rose-400 font-bold';
-          icon = <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />;
-        } else if (isExpired) {
-          bgCls = 'bg-amber-500/10 border-amber-500/30 text-amber-400 font-bold';
-          icon = <XCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
-        }
+          let bgCls = 'bg-zinc-900/40 border-zinc-800/60 text-zinc-500';
+          let icon = <span className="w-1.5 h-1.5 rounded-full bg-zinc-700 shrink-0" />;
+          let labelBadge = <span className="text-[8px] font-mono text-zinc-600">MENUNGGU</span>;
 
-        const stepKey = step.id || `step-${sIdx}-${step.name}`;
+          if (isApproved) {
+            bgCls = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold';
+            icon = <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+            labelBadge = <span className="text-[8px] font-mono text-emerald-400">LOLOS</span>;
+          } else if (isValidated) {
+            bgCls = 'bg-blue-500/10 border-blue-500/30 text-blue-400 font-semibold';
+            icon = <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+            labelBadge = <span className="text-[8px] font-mono text-blue-400">TERVALIDASI</span>;
+          } else if (isActive) {
+            bgCls = 'bg-amber-500/15 border-amber-500/50 text-amber-200 font-bold shadow-[0_0_12px_rgba(245,158,11,0.2)] animate-pulse';
+            icon = <Search className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />;
+            labelBadge = <span className="text-[8px] font-mono text-amber-300 font-bold">🔍 MENCARI</span>;
+          } else if (isRejected) {
+            bgCls = 'bg-rose-500/10 border-rose-500/30 text-rose-400 font-bold';
+            icon = <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />;
+            labelBadge = <span className="text-[8px] font-mono text-rose-400">GAGAL</span>;
+          } else if (isExpired) {
+            bgCls = 'bg-orange-500/10 border-orange-500/30 text-orange-400 font-bold';
+            icon = <XCircle className="w-3.5 h-3.5 text-orange-400 shrink-0" />;
+            labelBadge = <span className="text-[8px] font-mono text-orange-400">EXPIRED</span>;
+          }
 
-        return (
-          <div key={stepKey} className={`flex items-center gap-1.5 p-1.5 rounded-md border ${bgCls} transition-all`}>
-            <span className="text-[10px] font-mono font-bold opacity-70 shrink-0">{sIdx + 1}.</span>
-            {icon}
-            <span className="text-[10px] uppercase tracking-wider truncate min-w-0 font-medium" title={`${step.name} (${step.status || 'awaiting'})`}>
-              {step.name}
-            </span>
-          </div>
-        );
-      })}
+          const stepKey = step.id || `step-${sIdx}-${step.name}`;
+
+          return (
+            <div key={stepKey} className={`flex flex-col gap-1 p-1.5 rounded-md border ${bgCls} transition-all`}>
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-mono font-bold opacity-70 shrink-0">{sIdx + 1}.</span>
+                {icon}
+              </div>
+              <span className="text-[10px] uppercase tracking-wider truncate min-w-0 font-medium" title={`${step.name} (${step.status || 'awaiting'})`}>
+                {step.name}
+              </span>
+              <div className="flex justify-end">
+                {labelBadge}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 });
