@@ -289,7 +289,9 @@ export class SetupDetector {
         this.recordStepTransition(currentStep, 'AWAITING', evalResult.reason, sourceEvent, evalResult.evidence);
         
         // AWAITING preserves the setup and continues scanning on future ticks!
-        logger.debug(`[STEP AWAITING] Strategy ${strategyId} Step ${currentStep.step_order} (${currentStep.step_id}) is awaiting: ${evalResult.reason}`);
+        // Throttled per strategy step & reason to prevent high-frequency log spam while preserving diagnostics
+        const awaitingThrottleKey = `awaiting_${strategyId}_${currentStep.step_id}_${evalResult.reason}`;
+        logger.debugThrottled(awaitingThrottleKey, 60000, `[STEP AWAITING] Strategy ${strategyId} Step ${currentStep.step_order} (${currentStep.step_id}) is awaiting: ${evalResult.reason}`);
         keepEvaluating = false;
       } else if (evalResult.status === 'INVALIDATED' || evalResult.status === 'REJECTED') {
         const targetState = evalResult.status === 'INVALIDATED' ? 'INVALIDATED' : 'REJECTED';

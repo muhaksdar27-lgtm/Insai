@@ -1,4 +1,4 @@
-export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
 export interface LogPayload {
   correlation_id?: string;
@@ -12,11 +12,32 @@ export interface LogPayload {
   [key: string]: any;
 }
 
+const LEVEL_PRIORITY: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3
+};
+
+function getActiveLogLevel(): LogLevel {
+  const envLevel = process.env.LOG_LEVEL?.toLowerCase();
+  if (envLevel && envLevel in LEVEL_PRIORITY) {
+    return envLevel as LogLevel;
+  }
+  if (process.env.DEBUG === 'true' || process.env.DEBUG === '1') {
+    return 'debug';
+  }
+  return process.env.NODE_ENV === 'production' ? 'info' : 'debug';
+}
+
 const globalAny: any = globalThis;
 if (!globalAny.__logBuffer) {
   globalAny.__logBuffer = [];
 }
 export const logBuffer: any[] = globalAny.__logBuffer;
+
+// In-memory throttle tracker for high-frequency logs
+const logThrottleMap = new Map<string, number>();
 
 // Mock AsyncLocalStorage for browser compatibility
 export const requestContext = {
@@ -51,17 +72,57 @@ export const logger = {
       ...(payload ? maskSensitive(payload) : {})
     };
     
-    // Add to buffer
+    // Add to buffer (keep up to 200 recent entries for diagnostics)
     logBuffer.unshift(logEntry);
     if (logBuffer.length > 200) {
-        logBuffer.pop();
+      logBuffer.pop();
     }
     
-    // Logs are directed to console. In a production environment, this would integrate with an external APM/observability platform.
-    console.log(JSON.stringify(logEntry));
+    // Check log level threshold before outputting to console
+    const activeLevel = getActiveLogLevel();
+    if (LEVEL_PRIORITY[level] <= LEVEL_PRIORITY[activeLevel]) {
+      const serialized = JSON.stringify(logEntry);
+      switch (level) {
+        case 'error':
+          console.error(serialized);
+          break;
+        case 'warn':
+          console.warn(serialized);
+          break;
+        case 'debug':
+          console.debug(serialized);
+          break;
+        case 'info':
+        default:
+          console.log(serialized);
+          break;
+      }
+    }
   },
   info: (message: string, payload?: LogPayload) => logger.log('info', message, payload),
   warn: (message: string, payload?: LogPayload) => logger.log('warn', message, payload),
   error: (message: string, payload?: LogPayload) => logger.log('error', message, payload),
   debug: (message: string, payload?: LogPayload) => logger.log('debug', message, payload),
+  
+  /**
+   * Emits a debug log throttled by a unique key and interval.
+   * If called multiple times with the same key within intervalMs, subsequent calls are skipped.
+   */
+  debugThrottled: (throttleKey: string, intervalMs: number, message: string, payload?: LogPayload) => {
+    const now = Date.now();
+    const lastLogged = logThrottleMap.get(throttleKey) || 0;
+    if (now - lastLogged >= intervalMs) {
+      logThrottleMap.set(throttleKey, now);
+      // Clean up old entries if map grows
+      if (logThrottleMap.size > 500) {
+        for (const [k, ts] of logThrottleMap.entries()) {
+          if (now - ts > 600000) { // older than 10 mins
+            logThrottleMap.delete(k);
+          }
+        }
+      }
+      logger.debug(message, payload);
+    }
+  }
 };
+
