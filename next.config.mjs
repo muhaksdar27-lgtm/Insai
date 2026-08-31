@@ -1,4 +1,22 @@
+const isProd = process.env.NODE_ENV === 'production';
+
+const cspHeader = [
+  "default-src 'self'",
+  isProd ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https://picsum.photos",
+  "font-src 'self' data:",
+  "connect-src 'self' wss://ws.twelvedata.com https://api.twelvedata.com https://query1.finance.yahoo.com https://api.polygon.io",
+  "frame-ancestors 'self'",
+  "base-uri 'self'",
+  "form-action 'self'"
+].join('; ');
+
 const securityHeaders = [
+  {
+    key: 'Content-Security-Policy',
+    value: cspHeader
+  },
   {
     key: 'Permissions-Policy',
     value: "camera=(), microphone=(), geolocation=(), browsing-topics=()"
@@ -50,7 +68,6 @@ const nextConfig = {
     ],
   },
   transpilePackages: ['motion'],
-  turbopack: {},
   webpack: (config, {dev}) => {
     if (dev && process.env.DISABLE_HMR === 'true') {
       config.watchOptions = {

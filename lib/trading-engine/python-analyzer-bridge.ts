@@ -40,6 +40,45 @@ export interface PythonCandle {
   volume?: number;
 }
 
+export interface AnalysisParameters {
+  period?: number;
+  window?: number;
+  lookback?: number;
+  threshold?: number;
+  [key: string]: string | number | boolean | undefined;
+}
+
+export interface MarketContext {
+  spread_acceptable?: boolean;
+  news_high_impact_active?: boolean;
+  session?: string;
+  volatility_state?: string;
+  [key: string]: string | number | boolean | undefined;
+}
+
+export interface MarketSnapshotData {
+  symbol: string;
+  price: number;
+  timestamp: string;
+  provider?: string;
+  bid?: number;
+  ask?: number;
+}
+
+export interface StrategyContextData {
+  strategyId: string;
+  name?: string;
+  timeframe?: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface RuleChecklistItem {
+  ruleId: string;
+  description: string;
+  passed: boolean;
+  weight?: number;
+}
+
 export interface PythonAnalysisRequest {
   request_id: string;
   symbol: string;
@@ -49,8 +88,8 @@ export interface PythonAnalysisRequest {
   session: string;
   strategy_id: string;
   analysis_type: AnalysisType | string;
-  analysis_parameters?: Record<string, any>;
-  market_context?: Record<string, any>;
+  analysis_parameters?: AnalysisParameters;
+  market_context?: MarketContext;
 }
 
 export interface PythonAnalysisResponse {
@@ -58,8 +97,8 @@ export interface PythonAnalysisResponse {
   status: AnalysisStatus;
   detected: boolean | null;
   analysis_type: string;
-  values: Record<string, any>;
-  evidence: Record<string, any>;
+  values: Record<string, string | number | boolean | unknown>;
+  evidence: Record<string, string | number | boolean | unknown>;
   timestamp: string;
   source: string;
   error?: string | null;
@@ -468,11 +507,11 @@ export class PythonAnalyzerBridge {
    * Enforces that AI only receives strictly verified data
    */
   public static validateAIDataIntegrity(
-    marketSnapshot: any,
+    marketSnapshot: MarketSnapshotData | null | undefined,
     candles: PythonCandle[],
-    strategyContext: any,
-    setupEvidence: any,
-    ruleChecklist: any[]
+    strategyContext: StrategyContextData | null | undefined,
+    setupEvidence: Record<string, unknown> | null | undefined,
+    ruleChecklist: RuleChecklistItem[] | null | undefined
   ): { isValid: boolean; missingFactors: string[] } {
     const missingFactors: string[] = [];
 

@@ -2,63 +2,112 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getDatabaseClient } from '@/lib/db/client';
+import { logger } from '@/lib/utils/logger';
 import crypto from 'crypto';
-import { publicApiError } from '@/lib/utils/api-error';
+
+const ALLOWED_OUTCOMES = new Set(['WIN', 'LOSS', 'BE', 'BREAK_EVEN', 'CANCELLED']);
+const ALLOWED_STATUSES = new Set(['FINISHED', 'CLOSED', 'TAKE_PROFIT', 'STOP_LOSS', 'CANCELLED', 'EXPIRED']);
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ signal_key: string }> }
 ) {
   const { signal_key } = await params;
-  const reqId = crypto.randomUUID();
+  const reqId = request.headers.get('x-request-id') || crypto.randomUUID();
 
-  let success = false;
-  let error = null;
+  // 1. Authorization check for signal state manipulation
+  const adminToken = process.env.ADMIN_TOKEN || process.env.INTERNAL_API_TOKEN;
+  const authHeader = request.headers.get('x-admin-token') || 
+                     request.headers.get('x-internal-token') || 
+                     request.headers.get('authorization')?.replace('Bearer ', '') || 
+                     request.headers.get('x-api-key');
+
+  if (process.env.NODE_ENV === 'production' && adminToken) {
+    if (authHeader !== adminToken) {
+      logger.warn(`Signal Close: Unauthorized attempt to close signal ${signal_key} (reqId: ${reqId})`);
+      return NextResponse.json({
+        success: false,
+        data: null,
+        error: { code: 'UNAUTHORIZED', message: 'Authorization required to close or archive signals.' },
+        meta: { request_id: reqId, timestamp: new Date().toISOString() }
+      }, { status: 401 });
+    }
+  }
+
+  if (!signal_key || typeof signal_key !== 'string' || signal_key.length < 3) {
+    return NextResponse.json({
+      success: false,
+      data: null,
+      error: { code: 'INVALID_SIGNAL_KEY', message: 'Valid signal_key identifier is required.' },
+      meta: { request_id: reqId, timestamp: new Date().toISOString() }
+    }, { status: 400 });
+  }
 
   try {
     const body = await request.json().catch(() => ({}));
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return NextResponse.json({ success: false, data: null, error: { code: 'INVALID_INPUT', message: 'Invalid close payload' }, meta: { request_id: reqId, timestamp: new Date().toISOString() } }, { status: 400 });
-    }
-    const outcome = body.outcome || 'WIN';
-    const allowedOutcomes = new Set(['WIN', 'LOSS', 'BREAKEVEN']);
-    if (!allowedOutcomes.has(outcome)) {
-      return NextResponse.json({ success: false, data: null, error: { code: 'INVALID_OUTCOME', message: 'Unsupported signal outcome' }, meta: { request_id: reqId, timestamp: new Date().toISOString() } }, { status: 400 });
-    }
-    const pipsResult = body.pips === undefined ? (outcome === 'WIN' ? 35 : (outcome === 'LOSS' ? -15 : 0)) : Number(body.pips);
-    if (!Number.isFinite(pipsResult) || Math.abs(pipsResult) > 100000) {
-      return NextResponse.json({ success: false, data: null, error: { code: 'INVALID_PIPS', message: 'Pips must be a finite number within the supported range' }, meta: { request_id: reqId, timestamp: new Date().toISOString() } }, { status: 400 });
-    }
-    const finalState = body.status || 'FINISHED';
-    if (!['FINISHED', 'CLOSED'].includes(finalState)) {
-      return NextResponse.json({ success: false, data: null, error: { code: 'INVALID_STATUS', message: 'Unsupported final signal status' }, meta: { request_id: reqId, timestamp: new Date().toISOString() } }, { status: 400 });
+    
+    // Outcome validation
+    const rawOutcome = String(body.outcome || 'WIN').toUpperCase();
+    const outcome = ALLOWED_OUTCOMES.has(rawOutcome) ? rawOutcome : 'WIN';
+
+    // Status validation
+    const rawStatus = String(body.status || 'FINISHED').toUpperCase();
+    const finalState = ALLOWED_STATUSES.has(rawStatus) ? rawStatus : 'FINISHED';
+
+    // Pips validation & bounded range check (-500 to +2000)
+    let pipsResult = 0;
+    if (typeof body.pips === 'number' && !isNaN(body.pips)) {
+      pipsResult = Math.max(-500, Math.min(2000, Number(body.pips.toFixed(1))));
+    } else {
+      pipsResult = outcome === 'WIN' ? 35 : (outcome === 'LOSS' ? -15 : 0);
     }
 
     const historyRecord = await getDatabaseClient().archiveToHistory(
       signal_key,
       finalState,
       pipsResult,
-      outcome
+      outcome,
+      reqId
     );
 
-    success = !!historyRecord;
-  } catch (err: any) {
-    error = { code: 'DB_ERROR', message: publicApiError(err, 'Unable to close signal') };
-  }
-
-  const response: ApiResponse<any> = {
-    success,
-    data: success ? {
-      signal_key,
-      status: 'ARCHIVED_TO_HISTORY',
-      timestamp: new Date().toISOString()
-    } : null,
-    error,
-    meta: {
-      request_id: reqId,
-      timestamp: new Date().toISOString()
+    if (!historyRecord) {
+      return NextResponse.json({
+        success: false,
+        data: null,
+        error: { code: 'SIGNAL_NOT_FOUND', message: `Signal '${signal_key}' not found or could not be archived.` },
+        meta: { request_id: reqId, timestamp: new Date().toISOString() }
+      }, { status: 404 });
     }
-  };
 
-  return NextResponse.json(response, { status: success ? 200 : 500 });
+    const response: ApiResponse<any> = {
+      success: true,
+      data: {
+        signal_key,
+        status: finalState,
+        outcome,
+        pips: pipsResult,
+        archived_at: new Date().toISOString()
+      },
+      error: null,
+      meta: {
+        request_id: reqId,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    return NextResponse.json(response, { status: 200 });
+
+  } catch (err: any) {
+    logger.error(`Signal Close Handler Error: ${err.message}`, { signal_key, reqId });
+    const response: ApiResponse<null> = {
+      success: false,
+      data: null,
+      error: { code: 'SIGNAL_CLOSE_FAILED', message: 'Internal server error while archiving signal.' },
+      meta: {
+        request_id: reqId,
+        timestamp: new Date().toISOString()
+      }
+    };
+    return NextResponse.json(response, { status: 500 });
+  }
 }
