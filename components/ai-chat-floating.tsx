@@ -204,7 +204,7 @@ export function AiChatFloating() {
                     INSAi AI Mentor
                     <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">LIVE SNAPSHOT</span>
                   </h3>
-                  <p className="text-[10px] text-zinc-400 font-mono">Gemini 3.6 Flash • Jujur & Presisi</p>
+                  <p className="text-[10px] text-zinc-400 font-mono">Gemini 3.7 Flash • Multi-Model Resilient</p>
                 </div>
               </div>
 

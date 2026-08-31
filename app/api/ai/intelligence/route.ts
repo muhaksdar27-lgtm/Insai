@@ -96,18 +96,30 @@ High Impact News: ${newsEvents.length > 0 ? newsEvents[0].title : 'None'}
 
 Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), accumulationScore (0-100), distributionScore (0-100), keyActionableZone, liquidityNarrative, recommendation) dalam Bahasa Indonesia.`;
 
-        const res = await ai.models.generateContent({
-          model: "gemini-3.7-flash",
-          contents: prompt,
-          config: {
-            responseMimeType: "application/json",
-            temperature: 0.2
-          }
-        });
+        const candidateModels = ["gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+        for (const modelName of candidateModels) {
+          try {
+            const res = await ai.models.generateContent({
+              model: modelName,
+              contents: prompt,
+              config: {
+                responseMimeType: "application/json",
+                temperature: 0.2
+              }
+            });
 
-        if (res.text) {
-          const parsed = JSON.parse(res.text);
-          aiSynthesis = { ...aiSynthesis, ...parsed };
+            if (res.text) {
+              const parsed = JSON.parse(res.text);
+              aiSynthesis = { ...aiSynthesis, ...parsed };
+              break;
+            }
+          } catch (e: any) {
+            const isUnavailableOrBusy = e.status === 503 || e.message?.includes('503') || e.message?.includes('high demand') || e.message?.includes('UNAVAILABLE');
+            if (isUnavailableOrBusy) {
+              continue;
+            }
+            break;
+          }
         }
       } catch (err) {
         // Fallback to deterministic synthesis without failing

@@ -557,44 +557,58 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
     timeoutMs: number = 8000,
     maxRetries: number = 1
   ): Promise<any> {
-    let attempt = 0;
-    while (attempt <= maxRetries) {
-      const startTime = Date.now();
-      try {
-        const generatePromise = aiClient.models.generateContent({
-          model: 'gemini-3.7-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: responseSchema,
-            temperature: 0,
-          },
-        });
+    const candidateModels = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    let lastError: any = null;
 
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`)), timeoutMs);
-        });
+    for (const modelName of candidateModels) {
+      let attempt = 0;
+      while (attempt <= maxRetries) {
+        const startTime = Date.now();
+        try {
+          const generatePromise = aiClient.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: responseSchema,
+              temperature: 0,
+            },
+          });
 
-        const response = await Promise.race([generatePromise, timeoutPromise]);
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`Gemini API call timed out after ${timeoutMs}ms`)), timeoutMs);
+          });
 
-        // Record latency successfully
-        const { metricsEngine } = await import('../../observability/metrics-engine');
-        metricsEngine.recordAiValidationLatency(Date.now() - startTime);
+          const response = await Promise.race([generatePromise, timeoutPromise]);
 
-        return response;
-      } catch (err: any) {
-        attempt++;
-        const { metricsEngine } = await import('../../observability/metrics-engine');
-        metricsEngine.recordAiValidationLatency(Date.now() - startTime);
+          // Record latency successfully
+          const { metricsEngine } = await import('../../observability/metrics-engine');
+          metricsEngine.recordAiValidationLatency(Date.now() - startTime);
 
-        const isQuotaOrAuth = err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429') || err.message?.includes('401') || err.message?.includes('403') || err.message?.toLowerCase().includes('quota');
-        if (attempt > maxRetries || isQuotaOrAuth) {
-          throw err;
+          return response;
+        } catch (err: any) {
+          lastError = err;
+          attempt++;
+          const { metricsEngine } = await import('../../observability/metrics-engine');
+          metricsEngine.recordAiValidationLatency(Date.now() - startTime);
+
+          const isHighDemandOrBusy = err.status === 503 || err.message?.includes('503') || err.message?.includes('high demand') || err.message?.includes('UNAVAILABLE');
+          if (isHighDemandOrBusy) {
+            logger.warn(`Model ${modelName} experiencing high demand (503), switching to next fallback model...`);
+            break; // Switch to next model immediately
+          }
+
+          const isQuotaOrAuth = err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429') || err.message?.includes('401') || err.message?.includes('403') || err.message?.toLowerCase().includes('quota');
+          if (attempt > maxRetries || isQuotaOrAuth) {
+            break;
+          }
+          logger.warn(`Gemini API call failed for ${modelName} (attempt ${attempt}/${maxRetries}), retrying in 500ms... Error: ${err.message}`);
+          await new Promise(r => setTimeout(r, 500));
         }
-        logger.warn(`Gemini API call failed (attempt ${attempt}/${maxRetries}), retrying in 500ms... Error: ${err.message}`);
-        await new Promise(r => setTimeout(r, 500));
       }
     }
+
+    throw lastError || new Error('All Gemini candidate models failed');
   }
 }
 

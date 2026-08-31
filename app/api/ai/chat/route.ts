@@ -140,15 +140,40 @@ You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded 
 
     contents.push({ role: 'user', parts: currentParts });
 
-    // Call Gemini 3.7 Flash for deep, instantaneous reasoning
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents,
-      config: {
-        systemInstruction: systemContext,
-        temperature: 0.4,
+    // Robust Multi-Model Fallback Cascade to handle temporary 503 / high demand spikes
+    const candidateModels = ["gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+    let response: any = null;
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents,
+          config: {
+            systemInstruction: systemContext,
+            temperature: 0.4,
+          }
+        });
+        if (response && response.text) {
+          break; // Successfully got response
+        }
+      } catch (e: any) {
+        lastError = e;
+        const isUnavailableOrBusy = e.status === 503 || e.message?.includes('503') || e.message?.includes('high demand') || e.message?.includes('UNAVAILABLE') || e.message?.includes('RESOURCE_EXHAUSTED');
+        if (isUnavailableOrBusy) {
+          console.warn(`Model ${modelName} experiencing high demand (503/429), falling back to next available model...`);
+          continue;
+        }
+        // If other fatal error (e.g. invalid API key), break early
+        throw e;
       }
-    });
+    }
+
+    if (!response || !response.text) {
+      if (lastError) throw lastError;
+      throw new Error("No response generated from AI models");
+    }
 
     const replyText = response.text || "Maaf, terjadi kendala saat memproses jawaban AI. Silakan coba lagi.";
 
@@ -160,10 +185,14 @@ You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded 
 
   } catch (err: any) {
     console.error("AI Chat error:", err);
+    const isHighDemand = err.status === 503 || err.message?.includes('503') || err.message?.includes('high demand') || err.message?.includes('UNAVAILABLE');
+    
     return NextResponse.json({
       success: false,
       error: err.message || "Failed to process AI chat request",
-      reply: `Layanan AI Chat sedang mengalami kendala (${err.message || 'Error'}). Silakan periksa konfigurasi GEMINI_API_KEY di Settings.`,
+      reply: isHighDemand 
+        ? "⚠️ Server AI saat ini sedang mengalami lonjakan trafik (high demand). Silakan kirim ulang pesan Anda dalam beberapa detik."
+        : `Layanan AI Chat sedang mengalami kendala (${err.message || 'Error'}). Silakan periksa konfigurasi GEMINI_API_KEY di Settings.`,
       timestamp: new Date().toISOString()
     }, { status: 200 });
   }
