@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { RuleEvaluationContext } from '@/types';
 import { RuleEngine } from '../rule-engine';
 
@@ -27,7 +26,7 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
     if (res.status === 'invalid' || res.status === 'FAIL') {
       if (res.mandatory) hasCriticalInvalid = true;
     }
-    if (res.status === 'WAIT' || res.status === 'valid_wait') hasPending = true;
+    if (res.status === 'WAIT' || res.status === 'pending') hasPending = true;
     if (res.status === 'PASS' || res.status === 'valid') validCount++;
   }
   
@@ -44,9 +43,6 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
   const chochBear = !!pyData.choch_bear;
   const bosBull = !!pyData.bos_bull;
   const bosBear = !!pyData.bos_bear;
-  const obFvgBull = !!pyData.ob_fvg_bull;
-  const obFvgBear = !!pyData.ob_fvg_bear;
-  const sdActive = !!pyData.sd_zone_active;
   const engulfBull = !!pyData.engulfing_bull;
   const engulfBear = !!pyData.engulfing_bear;
   const doubleTop = !!pyData.double_top;

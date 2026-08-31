@@ -9,5 +9,12 @@
   "python-engine/test_deterministic_analyzer.py::test_liquidity_sweep",
   "python-engine/test_deterministic_analyzer.py::test_ma50_and_ma200",
   "python-engine/test_deterministic_analyzer.py::test_rsi",
-  "python-engine/test_deterministic_analyzer.py::test_swing_and_trend_structure"
+  "python-engine/test_deterministic_analyzer.py::test_swing_and_trend_structure",
+  "python-engine/test_strategy_regression_matrix.py::TestPythonStrategyRegressionMatrix::test_1_empty_candles_raises_validation_exception",
+  "python-engine/test_strategy_regression_matrix.py::TestPythonStrategyRegressionMatrix::test_2_insufficient_candles_count",
+  "python-engine/test_strategy_regression_matrix.py::TestPythonStrategyRegressionMatrix::test_3_strategy_isolation_and_dispatch",
+  "python-engine/test_strategy_regression_matrix.py::TestPythonStrategyRegressionMatrix::test_4_all_5_strategy_modules_registered",
+  "python-engine/test_strategy_regression_matrix.py::TestPythonStrategyRegressionMatrix::test_5_unknown_strategy_id_fails_cleanly",
+  "python-engine/test_strategy_regression_matrix.py::TestPythonStrategyRegressionMatrix::test_6_news_strategy_evaluates_news_requirement",
+  "python-engine/test_strategy_regression_matrix.py::TestPythonStrategyRegressionMatrix::test_7_missing_atr_fails_deterministic_indicator"
 ]

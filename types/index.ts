@@ -413,6 +413,8 @@ export interface RuleEvaluationContext {
   symbol: string;
   timeframe: string;
   timestamp: string;
+  session?: string;
+  strategy_id?: string;
   candles?: Candle[];
   marketData?: any;
   indicators?: any;

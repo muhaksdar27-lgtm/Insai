@@ -804,11 +804,11 @@ export class DatabaseService {
 
   public async getStrategies() {
     const defaultStrats = [
-      { id: 'strategy-1-smc', name: 'SMC Logic', description: 'Smart Money Concepts including BOS, CHoCH, and Liquidity Sweeps', status: 'active', parameters: {}, enabled: true },
-      { id: 'strategy-2-snd', name: 'Supply & Demand', description: 'Order Blocks, Fair Value Gaps, and Support/Resistance Zones', status: 'active', parameters: {}, enabled: true },
-      { id: 'strategy-3-scalping', name: 'Scalping Trends', description: 'High momentum short-term trend scalping', status: 'active', parameters: {}, enabled: true },
-      { id: 'strategy-4-news', name: 'News Volatility', description: 'High-impact news filter and volatility breakout', status: 'active', parameters: {}, enabled: true },
-      { id: 'strategy-5-smc-sd-confluence', name: 'SMC & S/D Confluence', description: '4-Layer multi-timeframe confluence logic', status: 'active', parameters: {}, enabled: true }
+      { id: 'strategy-1-smc', name: 'SMC Logic', description: 'Smart Money Concepts including BOS, CHoCH, and Liquidity Sweeps', status: 'DATABASE_UNAVAILABLE', parameters: {}, enabled: true },
+      { id: 'strategy-2-snd', name: 'Supply & Demand', description: 'Order Blocks, Fair Value Gaps, and Support/Resistance Zones', status: 'DATABASE_UNAVAILABLE', parameters: {}, enabled: true },
+      { id: 'strategy-3-scalping', name: 'Scalping Trends', description: 'High momentum short-term trend scalping', status: 'DATABASE_UNAVAILABLE', parameters: {}, enabled: true },
+      { id: 'strategy-4-news', name: 'News Volatility', description: 'High-impact news filter and volatility breakout', status: 'DATABASE_UNAVAILABLE', parameters: {}, enabled: true },
+      { id: 'strategy-5-smc-sd-confluence', name: 'SMC & S/D Confluence', description: '4-Layer multi-timeframe confluence logic', status: 'DATABASE_UNAVAILABLE', parameters: {}, enabled: true }
     ];
 
     if (!this.isConnected()) {

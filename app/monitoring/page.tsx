@@ -65,18 +65,28 @@ const STEP_SCAN_LABELS: Record<string, string> = {
 };
 
 function StatusBadge({ status, currentStepId, currentStepName }: { status: string; currentStepId?: string; currentStepName?: string }) {
-  const s = (status || '').toLowerCase();
-  if (s === 'approved' || s === 'dispatched') return (
+  const s = (status || '').toUpperCase();
+  if (s === 'APPROVED' || s === 'SIGNAL_ACTIVE' || s === 'DISPATCHED') return (
     <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1">
-      <CheckCircle2 className="w-3 h-3 text-emerald-400" /> APPROVED
+      <CheckCircle2 className="w-3 h-3 text-emerald-400" /> {s === 'SIGNAL_ACTIVE' ? 'SIGNAL ACTIVE' : 'APPROVED'}
     </span>
   );
-  if (s === 'validated' || s === 'passed') return (
+  if (s === 'AI_PENDING') return (
+    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-500/10 text-purple-400 border border-purple-500/30 uppercase tracking-wider flex items-center gap-1 font-mono">
+      <Loader2 className="w-3 h-3 text-purple-400 animate-spin" /> AI PENDING
+    </span>
+  );
+  if (s === 'VALIDATED' || s === 'PASSED') return (
     <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/10 text-blue-400 border border-blue-500/30 uppercase tracking-wider flex items-center gap-1">
       <CheckCircle2 className="w-3 h-3 text-blue-400" /> VALIDATED
     </span>
   );
-  if (s === 'active' || s === 'scanning' || s === 'setup_found') {
+  if (s === 'DATABASE_UNAVAILABLE' || s === 'NOT_CONFIGURED') return (
+    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-zinc-900 text-rose-400 border border-rose-900/50 uppercase tracking-wider flex items-center gap-1 font-mono">
+      <AlertTriangle className="w-3 h-3 text-rose-500" /> DB UNAVAILABLE
+    </span>
+  );
+  if (s === 'ACTIVE' || s === 'DETECTED' || s === 'SCANNING' || s === 'SETUP_FOUND') {
     let label = 'ACTIVE SCAN';
     if (currentStepId && STEP_SCAN_LABELS[currentStepId]) {
       label = STEP_SCAN_LABELS[currentStepId];
@@ -92,19 +102,19 @@ function StatusBadge({ status, currentStepId, currentStepName }: { status: strin
       </span>
     );
   }
-  if (s === 'rejected' || s === 'failed') return (
+  if (s === 'REJECTED' || s === 'FAILED' || s === 'INVALIDATED') return (
     <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/30 uppercase tracking-wider flex items-center gap-1">
-      <XCircle className="w-3 h-3 text-rose-400" /> REJECTED
+      <XCircle className="w-3 h-3 text-rose-400" /> {s === 'INVALIDATED' ? 'INVALIDATED' : 'REJECTED'}
     </span>
   );
-  if (s === 'expired') return (
+  if (s === 'EXPIRED') return (
     <span className="px-2 py-0.5 rounded text-[10px] font-black bg-orange-500/10 text-orange-400 border border-orange-500/30 uppercase tracking-wider flex items-center gap-1">
       <XCircle className="w-3 h-3 text-orange-400" /> EXPIRED
     </span>
   );
   return (
     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-900 text-zinc-400 border border-zinc-800 uppercase tracking-wider flex items-center gap-1">
-      <Clock className="w-3 h-3 text-zinc-500" /> AWAITING
+      <Clock className="w-3 h-3 text-zinc-500" /> {s === 'UNKNOWN' ? 'UNKNOWN' : 'AWAITING'}
     </span>
   );
 }
@@ -234,9 +244,10 @@ export default function MonitoringPage() {
     let rejected = 0;
 
     strategies.forEach(s => {
-      if (s.setupStatus === 'approved' || s.currentStep === 'DISPATCHED') approved++;
-      else if (s.setupStatus === 'active' || s.setupStatus === 'scanning') active++;
-      else if (s.setupStatus === 'rejected' || s.setupStatus === 'expired') rejected++;
+      const st = (s.setupStatus || '').toUpperCase();
+      if (st === 'APPROVED' || st === 'SIGNAL_ACTIVE') approved++;
+      else if (st === 'ACTIVE' || st === 'DETECTED' || st === 'SCANNING' || st === 'AI_PENDING' || st === 'VALIDATED') active++;
+      else if (st === 'REJECTED' || st === 'INVALIDATED' || st === 'EXPIRED' || st === 'FAILED') rejected++;
     });
 
     return { total: strategies.length, active, approved, rejected };

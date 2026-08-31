@@ -35,6 +35,5 @@ export function getStrategyEvaluator(strategyId: string): IStrategyEvaluator {
   if (normId.includes('4') || normId.includes('news')) return evaluatorRegistry['strategy-4-news'];
   if (normId.includes('5') || normId.includes('confluence')) return evaluatorRegistry['strategy-5-smc-sd-confluence'];
 
-  // Default fallback to strategy-1-smc
-  return evaluatorRegistry['strategy-1-smc'];
+  throw new Error(`Unrecognized strategy ID: "${strategyId}". Strategy isolation requires exact strategy evaluator registration.`);
 }

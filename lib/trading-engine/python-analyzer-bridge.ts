@@ -85,7 +85,7 @@ export class PythonAnalyzerBridge {
     const symbol = req.symbol || 'XAUUSD';
     const timeframe = req.timeframe || 'M15';
     const analysisType = (req.analysis_type || 'FULL_ANALYSIS') as AnalysisType;
-    const session = req.session || 'London';
+    const session = req.session || 'UNKNOWN';
     const strategyId = req.strategy_id || 'strategy-default';
     const candles = req.candles || [];
     const parameters = req.analysis_parameters || {};

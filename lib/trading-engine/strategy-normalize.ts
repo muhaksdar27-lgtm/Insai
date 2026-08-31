@@ -75,116 +75,144 @@ export function deriveRuleSummary(payload: any): Record<string, any> {
     return {};
 }
 
-export function normalizeStrategyFromDB(baseStrat: any, state: any): StrategyResponse & { assumptions_flagged?: string } {
+export function normalizeStrategyFromDB(baseStrat: any, state?: any): StrategyResponse & { assumptions_flagged?: string } {
+    if (!baseStrat) {
+        return {
+            id: 'unknown',
+            name: 'Unknown Strategy',
+            status: 'UNKNOWN',
+            progress: 0,
+            currentStep: 'Unknown',
+            steps: [],
+            setupSnapshot: {},
+            ruleResults: {},
+            signal: null,
+            freshness: 'stale',
+            updatedAt: null
+        };
+    }
+
     const strategyId = baseStrat.id;
     const flowConfig = STRATEGY_FLOWS_CONFIG.find(f => f.id === strategyId);
-    const flowSteps = flowConfig?.steps || [];
-    const flow: string[] = flowSteps.map(s => s.id);
+    const flowSteps = flowConfig?.steps?.filter(s => s.id !== 'FAILED' && s.id !== 'REJECTED') || flowConfig?.steps || [];
     
-    let currentStep = 'Scanning';
+    let currentStep = 'Awaiting';
     let progress = 0;
     let setupSnapshot: SetupSnapshot = {};
     let ruleResults: Record<string, any> = {};
     let signal: any = null;
     let updatedAt: string | null = null;
     let freshness = 'stale';
-    let steps: { name: string; status: any }[] = [];
-    let errors: string[] = [];
+    let steps: { id?: string; name: string; status: any }[] = [];
+    const errors: string[] = [];
     let assumptions_flagged = '';
+    let status = baseStrat.status || baseStrat.state || 'UNKNOWN';
 
-    if (state) {
-        const currentStateName = state.state_name as StateName;
-        const payload = state.payload_json || {};
+    if (baseStrat.status === 'DATABASE_UNAVAILABLE' || baseStrat.state === 'DATABASE_UNAVAILABLE') {
+        return {
+            id: strategyId,
+            name: baseStrat.name,
+            status: 'DATABASE_UNAVAILABLE',
+            progress: 0,
+            currentStep: 'Database Unavailable',
+            steps: flowSteps.map(s => ({ id: s.id, name: s.title, status: 'awaiting' })),
+            setupSnapshot: {},
+            ruleResults: {},
+            signal: null,
+            freshness: 'stale',
+            updatedAt: null,
+            errors: ['Database state unavailable']
+        };
+    }
+
+    const effectiveState = state || (baseStrat.state_name || baseStrat.state || baseStrat.setup_snapshot || baseStrat.payload_json ? {
+        state_name: baseStrat.state_name || baseStrat.state,
+        payload_json: baseStrat.payload_json || {
+            setupSnapshot: baseStrat.setup_snapshot,
+            ruleResults: baseStrat.rule_results,
+            signalKey: baseStrat.signal_key || baseStrat.signal,
+            ...baseStrat.setup_snapshot
+        },
+        signal_key: baseStrat.signal_key || baseStrat.signal,
+        reason: baseStrat.reason || baseStrat.current_step_id || baseStrat.current_step,
+        updated_at: baseStrat.updated_at,
+        created_at: baseStrat.created_at
+    } : null);
+
+    if (effectiveState && effectiveState.state_name) {
+        const currentStateName = effectiveState.state_name as StateName;
+        const payload = effectiveState.payload_json || {};
+        status = currentStateName;
         
-        setupSnapshot = deriveSetupSnapshot(payload, state);
+        setupSnapshot = deriveSetupSnapshot(payload, effectiveState);
         ruleResults = deriveRuleSummary(payload);
         
-        signal = state.signal_key || payload.signalKey || null;
-        updatedAt = state.updated_at || state.created_at || null;
+        signal = effectiveState.signal_key || payload.signalKey || payload.signal_key || null;
+        updatedAt = effectiveState.updated_at || effectiveState.created_at || null;
         
-        let currentIndex = flow.indexOf(currentStateName);
-        const isRejected = ['FAILED', 'REJECTED', 'EXPIRED', 'SUPPRESSED'].includes(currentStateName);
+        const isRejected = ['FAILED', 'REJECTED', 'EXPIRED', 'SUPPRESSED', 'INVALIDATED'].includes(currentStateName);
         
-        if (isRejected && currentIndex === -1) {
-            const lastState = payload.lastState || setupSnapshot.lastState;
-            if (lastState && flow.indexOf(lastState as StateName) !== -1) {
-                currentIndex = flow.indexOf(lastState as StateName);
-            } else {
-                currentIndex = 0;
-            }
-        }
-        
-        currentStep = getStepDisplayName(strategyId, currentStateName) || 'Unknown Step';
         if (isRejected) {
-            currentStep = `Failed: ${state.reason || 'Validation Error'}`;
-            if (state.reason) {
-                errors.push(state.reason);
+            currentStep = `Failed: ${effectiveState.reason || 'Validation Error'}`;
+            if (effectiveState.reason) {
+                errors.push(effectiveState.reason);
             }
-        } else if (['WAITING_MARKET', 'SCANNING', 'INITIALIZING'].includes(currentStateName) || currentStateName.includes('WAIT')) {
-            if (state.reason && state.reason.trim() !== '' && state.reason !== 'Success' && state.reason !== 'Waiting for market data...') {
-                currentStep = `Wait: ${state.reason}`;
-            }
+        } else if (currentStateName === 'AI_PENDING') {
+            currentStep = effectiveState.reason || 'AI Evaluation Pending';
+        } else if (currentStateName === 'SIGNAL_ACTIVE' || currentStateName === 'APPROVED') {
+            currentStep = 'Signal Dispatched';
+        } else if (currentStateName === 'VALIDATED') {
+            currentStep = effectiveState.reason || 'Technical Rules Validated';
+        } else if (currentStateName === 'DETECTED') {
+            currentStep = effectiveState.reason || 'Setup Detected';
+        } else if (currentStateName === 'AWAITING') {
+            currentStep = effectiveState.reason || 'Awaiting Setup Confluence';
+        } else {
+            currentStep = getStepDisplayName(strategyId, currentStateName) || effectiveState.reason || 'Scanning';
         }
-        
-        const checkRule = (ruleKey: string): boolean => {
-            const r = ruleResults[ruleKey] || Object.values(ruleResults).find((x: any) => x.ruleId === ruleKey || x.name === ruleKey);
-            if (!r) return false;
-            const st = String(r.status || '').toUpperCase();
-            return st === 'PASS' || st === 'VALID' || st === 'VALIDATED' || st === 'APPROVED' || r.passed === true;
-        };
 
-        const checkRuleFailed = (ruleKey: string): boolean => {
-            const r = ruleResults[ruleKey] || Object.values(ruleResults).find((x: any) => x.ruleId === ruleKey || x.name === ruleKey);
-            if (!r) return false;
-            const st = String(r.status || '').toUpperCase();
-            return st === 'FAIL' || st === 'INVALID' || st === 'REJECTED';
-        };
+        // Canonical step records strictly preserved from engine
+        const canonicalStepRecords: any[] = payload.setupObject?.steps || payload.steps || payload.setupDetails?.steps || [];
 
-        steps = flow.map((stepName) => {
-            let status: any = 'awaiting';
-            const title = getStepDisplayName(strategyId, stepName);
-            
-            if (signal || currentStateName === 'DISPATCHED' || currentStateName === 'SIGNAL_ACTIVE') {
-                status = stepName === 'DISPATCHED' ? 'approved' : 'approved';
-            } else if (stepName === 'LONDON_FILTER') {
-                status = checkRule('rule_session_restriction') ? 'approved' : (checkRuleFailed('rule_session_restriction') ? 'failed' : 'current');
-            } else if (stepName === 'H1_TREND' || stepName === 'MA_TREND' || stepName === 'H1_M15_STRUCTURE') {
-                status = checkRule('rule_h1_trend') ? 'approved' : (checkRuleFailed('rule_h1_trend') ? 'failed' : 'current');
-            } else if (stepName === 'ASIA_SWEEP' || stepName === 'M1_M5_SWEEP' || stepName === 'CONFLUENCE_SWEEP') {
-                status = checkRule('rule_liquidity_sweep') || String(setupSnapshot.sweepStatus || '').includes('Confirmed') ? 'approved' : 'current';
-            } else if (stepName === 'SD_ZONE' || stepName === 'SD_FIB_OVERLAP') {
-                status = checkRule('rule_sd_zone') || String(setupSnapshot.sdZoneStatus || '').includes('Active') ? 'approved' : 'current';
-            } else if (stepName === 'M15_CHOCH' || stepName === 'M1_BOS_REVERSAL') {
-                status = checkRule('rule_choch_confirmation') || String(setupSnapshot.confirmationStatus || '').includes('Confirmed') ? 'approved' : 'current';
-            } else if (stepName === 'OB_FVG' || stepName === 'ENGULFING_TRIGGER' || stepName === 'DOUBLE_TOP_BOTTOM' || stepName === 'REJECTION_TRIGGER') {
-                status = checkRule('rule_ob_fvg_entry') || checkRule('rule_engulfing_trigger') || checkRule('rule_scalp_pattern') || checkRule('rule_confluence_overlap') ? 'approved' : 'current';
-            } else if (stepName === 'RISK_PARAMS' || stepName === 'RISK_NEWS_FILTER' || stepName === 'MIN_RR_CALC') {
-                status = checkRule('rule_spread_check') && checkRule('rule_atr_sl_buffer') && checkRule('rule_risk_reward') ? 'approved' : 'current';
-            } else if (stepName === 'AI_GATE') {
-                const aiDec = (setupSnapshot as any).aiDecision || (payload as any).aiDecision;
-                status = aiDec === 'APPROVED' ? 'approved' : (aiDec === 'REJECTED' ? 'failed' : 'awaiting');
-            } else if (stepName === 'DISPATCHED') {
-                status = signal ? 'approved' : 'awaiting';
+        steps = flowSteps.map((stepConfig, idx) => {
+            const stepId = stepConfig.id;
+            const title = stepConfig.title;
+
+            // 1. Direct match with canonical step record
+            const recorded = canonicalStepRecords.find(
+                (s: any) => s.step_id === stepId || s.step_order === idx + 1 || s.name === title
+            );
+
+            if (recorded) {
+                const rawState = String(recorded.state || recorded.status || '').toUpperCase();
+                let mappedStatus: string = 'awaiting';
+                if (rawState === 'VALIDATED') mappedStatus = 'validated';
+                else if (rawState === 'APPROVED') mappedStatus = 'approved';
+                else if (rawState === 'ACTIVE' || rawState === 'DETECTED') mappedStatus = 'active';
+                else if (rawState === 'REJECTED' || rawState === 'INVALIDATED' || rawState === 'FAILED') mappedStatus = 'rejected';
+                else if (rawState === 'EXPIRED') mappedStatus = 'expired';
+                else mappedStatus = 'awaiting';
+
+                return { id: stepId, name: title, status: mappedStatus };
             }
 
-            return { name: title, status };
-        });
-
-        // Ensure sequential status consistency
-        let firstCurrentFound = false;
-        steps = steps.map(s => {
-            if (s.status === 'approved') return s;
-            if (s.status === 'failed') return s;
-            if (!firstCurrentFound) {
-                firstCurrentFound = true;
-                return { ...s, status: 'current' };
+            // 2. Direct 1:1 match in ruleResults
+            const directRule = ruleResults[stepId] || Object.values(ruleResults).find((r: any) => r.ruleId === stepId);
+            if (directRule) {
+                const stUpper = String(directRule.status || '').toUpperCase();
+                if (stUpper === 'PASS' || stUpper === 'VALID' || stUpper === 'VALIDATED' || stUpper === 'APPROVED') {
+                    return { id: stepId, name: title, status: 'validated' };
+                }
+                if (stUpper === 'FAIL' || stUpper === 'INVALID' || stUpper === 'REJECTED') {
+                    return { id: stepId, name: title, status: 'rejected' };
+                }
             }
-            return { ...s, status: 'awaiting' };
+
+            return { id: stepId, name: title, status: 'awaiting' };
         });
 
-        const approvedCount = steps.filter(s => s.status === 'approved').length;
-        progress = steps.length > 0 ? Math.round((approvedCount / steps.length) * 100) : 0;
-        if (signal) progress = 100;
+        const validatedCount = steps.filter(s => s.status === 'validated' || s.status === 'approved').length;
+        progress = steps.length > 0 ? Math.round((validatedCount / steps.length) * 100) : 0;
         
         const now = new Date().getTime();
         const lastUpdated = updatedAt ? new Date(updatedAt).getTime() : 0;
@@ -198,20 +226,22 @@ export function normalizeStrategyFromDB(baseStrat: any, state: any): StrategyRes
             assumptions_flagged = 'Setup prices are incomplete or missing. Waiting for valid entry signals.';
         }
     } else {
-        steps = flow.map((stepName, idx) => ({
-            name: getStepDisplayName(strategyId, stepName),
-            status: idx === 0 ? 'current' : 'awaiting'
+        steps = flowSteps.map((stepConfig) => ({
+            id: stepConfig.id,
+            name: stepConfig.title,
+            status: 'awaiting'
         }));
         progress = 0;
-        currentStep = getStepDisplayName(strategyId, 'IDLE');
+        currentStep = 'Awaiting Setup';
         freshness = 'live';
         assumptions_flagged = '';
+        status = baseStrat.status || 'UNKNOWN';
     }
 
     return {
         id: strategyId,
         name: baseStrat.name,
-        status: baseStrat.status,
+        status,
         progress,
         currentStep,
         steps,

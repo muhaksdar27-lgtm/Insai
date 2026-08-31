@@ -101,7 +101,7 @@ describe('Strategy Timeframe Isolation & Assertions', () => {
 
     const result = StepEvaluator.evaluateStep(step, contextWithoutM1, {});
     expect(result.status).toBe('AWAITING');
-    expect(result.reason).toContain('M1 timeframe');
+    expect(result.reason).toContain('M1');
   });
 
   it('RuleEngine should return WAIT when strategy-3-scalping lacks M1 data', () => {

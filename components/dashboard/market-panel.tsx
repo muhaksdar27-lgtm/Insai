@@ -16,7 +16,7 @@ export const MarketPanel = memo(function MarketPanel({ market, newsEvents, times
   const isClosed = market?.freshness === "closed";
   const isLive = market && (market.freshness === "live" || market.freshness === "cached") && !isStale && !isClosed;
   const isUp = (market?.price || 0) > 4000;
-  const session = isClosed ? "Market Closed" : (market?.session || "London");
+  const session = isClosed ? "Market Closed" : (market?.session || "N/A");
   const bias = market?.bias || "NEUTRAL";
 
   return (

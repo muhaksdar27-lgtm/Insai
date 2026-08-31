@@ -553,7 +553,7 @@ export default function LiveSignals() {
                       {selectedSignal.strategyName}
                     </h4>
                     <p className="text-[10px] font-mono text-zinc-400 mt-0.5">
-                      Session: {selectedSignal.session || 'London'} • Timeframe: {selectedSignal.timeframe || 'M15'}
+                      Session: {selectedSignal.session || 'N/A'} • Timeframe: {selectedSignal.timeframe || 'M15'}
                     </p>
                   </div>
 

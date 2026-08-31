@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     // 2. Format System Context
     const systemContext = `
 [INSAi SYSTEM REALTIME DATA CONTEXT]
-- XAUUSD Spot Price: ${livePrice?.price ? `$${livePrice.price.toFixed(2)}` : 'N/A'} (Status: ${livePrice?.freshness || 'N/A'}, Session: ${livePrice?.session || 'London'}, Bias: ${livePrice?.bias || 'NEUTRAL'}, Provider: ${livePrice?.provider || 'TwelveData/Yahoo'})
+- XAUUSD Spot Price: ${livePrice?.price ? `$${livePrice.price.toFixed(2)}` : 'N/A'} (Status: ${livePrice?.freshness || 'N/A'}, Session: ${livePrice?.session || 'N/A'}, Bias: ${livePrice?.bias || 'NEUTRAL'}, Provider: ${livePrice?.provider || 'TwelveData/Yahoo'})
 - Active Live Signals in System: ${activeSignalsCount}
 - High Impact News Items: ${newsEvents.length} items
 - MCP Connectors Count: ${mcpStatuses.length}

@@ -78,7 +78,7 @@ export async function GET(req: Request) {
     const signals = rawSignals.map((item: any, idx: number) => {
       const signalData = item.signals || {};
       const createdAt = item.created_at || new Date().toISOString();
-      const rawStrategyId = item.strategy_id || signalData.strategy_id || 'strategy-1-smc';
+      const rawStrategyId = item.strategy_id || signalData.strategy_id || 'UNKNOWN';
       const stratDef = getStrategyDefinition(rawStrategyId);
       const canonicalStrategyName = stratDef ? stratDef.name : (item.strategyName || rawStrategyId);
 
@@ -89,7 +89,7 @@ export async function GET(req: Request) {
         strategyName: canonicalStrategyName,
         symbol: item.symbol || 'XAUUSD',
         timeframe: signalData.timeframe || item.timeframe || 'M15',
-        session: signalData.session || item.session || 'London',
+        session: signalData.session || item.session || 'UNDEFINED',
         direction: ((signalData.direction === 'LONG' || signalData.direction === 'buy' || item.direction === 'BUY' || item.direction === 'LONG') ? 'buy' : 'sell') as 'buy' | 'sell',
         entryPrice: signalData.entry_price || item.entry || 0,
         slPrice: signalData.sl_price || item.sl || 0,
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
     const history = rawHistory.map((item: any, idx: number) => {
       const signalData = item.signals || {};
       const closedAt = new Date(item.closed_at || item.created_at || Date.now());
-      const rawStrategyId = item.strategy_id || signalData.strategy_id || item.strategyName;
+      const rawStrategyId = item.strategy_id || signalData.strategy_id || item.strategyName || 'UNKNOWN';
       const stratDef = getStrategyDefinition(rawStrategyId);
       const canonicalStrategyName = stratDef ? stratDef.name : (item.strategy_name || rawStrategyId || 'Strategy');
 
@@ -125,7 +125,7 @@ export async function GET(req: Request) {
         sl: signalData.sl_price || item.sl || 0,
         tp1: signalData.tp1_price || item.tp1 || 0,
         strategyName: canonicalStrategyName,
-        strategyId: rawStrategyId || 'strategy-1-smc',
+        strategyId: rawStrategyId,
         status: item.status || item.outcome || 'FINISHED',
         reason: item.reason || ''
       };
@@ -161,7 +161,7 @@ export async function GET(req: Request) {
       activeStrategyCount: activeStrategies.length,
       currentStep: mostActiveStrat?.currentStep || 'IDLE',
       currentPair: 'XAUUSD',
-      currentSession: market?.session || 'London',
+      currentSession: market?.session || 'UNDEFINED',
       lastSignalAt: signals[0]?.createdAt || history[0]?.closedAt || null,
       nextScanAt: null,
       queueSize: queueSize,

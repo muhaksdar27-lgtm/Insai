@@ -37,7 +37,9 @@ export class IngestionService {
     // So we just call it once to bootstrap the connection
     try {
        await getMarketDataService().getLatestPrice(symbol);
-    } catch(e) {}
+    } catch (e: any) {
+      logger.debug(`Ingestion bootstrap price check notice: ${e?.message || e}`);
+    }
 
     // 3. Fallback Mechanism
     this.startFallbackMonitor();

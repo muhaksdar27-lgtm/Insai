@@ -223,7 +223,9 @@ export class MarketDataService {
       if (redisCached && redisCached.expiresAt > now) {
         cachedData = redisCached.data;
       }
-    } catch (e) {}
+    } catch (e: any) {
+      logger.debug(`Redis cache lookup error for latest_news: ${e?.message || e}`);
+    }
 
     if (!cachedData) {
       if (this.newsCache && this.newsCache.expiresAt > now) {
@@ -293,7 +295,9 @@ export class MarketDataService {
       if (redisCached && redisCached.expiresAt > now) {
         cachedData = redisCached.data;
       }
-    } catch (e) {}
+    } catch (e: any) {
+      logger.debug(`Redis cache lookup error for calendar_events: ${e?.message || e}`);
+    }
 
     if (!cachedData) {
       if (this.calendarCache && this.calendarCache.expiresAt > now) {

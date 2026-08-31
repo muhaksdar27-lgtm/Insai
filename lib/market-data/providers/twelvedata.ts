@@ -49,7 +49,9 @@ export class TwelveDataProvider implements PriceProvider {
         if (this.ws.readyState === 1 || this.ws.readyState === 0) {
           this.ws.close();
         }
-      } catch (e) {}
+      } catch (e: any) {
+        logger.debug(`TwelveData WS close error during cleanup: ${e?.message || e}`);
+      }
       this.ws = null;
     }
   }

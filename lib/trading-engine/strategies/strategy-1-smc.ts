@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { RuleEvaluationContext } from '@/types';
 import { RuleEngine } from '../rule-engine';
 
@@ -27,7 +26,7 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
     if (res.status === 'invalid' || res.status === 'FAIL') {
       if (res.mandatory) hasCriticalInvalid = true;
     }
-    if (res.status === 'WAIT' || res.status === 'valid_wait') hasPending = true;
+    if (res.status === 'WAIT' || res.status === 'pending') hasPending = true;
     if (res.status === 'PASS' || res.status === 'valid') validCount++;
   }
   

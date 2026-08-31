@@ -52,7 +52,7 @@ export async function GET() {
         sl: signalData.sl_price || item.sl || 0,
         tp1: signalData.tp1_price || item.tp1 || 0,
         strategyName: canonicalStrategyName,
-        strategyId: rawStrategyId || 'strategy-1-smc',
+        strategyId: rawStrategyId || 'UNKNOWN',
         status: item.status || item.outcome || 'FINISHED',
         reason: item.reason || ''
       };

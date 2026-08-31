@@ -502,7 +502,7 @@ export class Strategy3ScalpingEvaluator implements IStrategyEvaluator {
     );
 
     // 2. Session Rule (Any active volume session)
-    const currentSession = analysisData.current_session || analysisData.session || 'London';
+    const currentSession = analysisData.current_session || analysisData.session || context.session || 'UNKNOWN';
     rules['rule_session_restriction'] = createRuleResult(
       'rule_session_restriction',
       false,

@@ -460,7 +460,7 @@ export class SignalPipeline {
     }
     const rrStr = `1:${calculatedRR.toFixed(2)}`;
 
-    // --- STAGE 5: SIGNAL CANDIDATE GATE ---
+    // --- STAGE 5: IDEMPOTENCY & DETERMINISTIC SIGNAL KEY ---
     const deterministicSignalKey = this.generateDeterministicSignalKey(
       stratId,
       symbol,
@@ -469,29 +469,10 @@ export class SignalPipeline {
       eventContext
     );
 
-    const candidateDetails = await SignalCandidateGate.evaluateCandidate(
-      strategySetup,
-      context,
-      context.marketData || {},
-      deterministicSignalKey
-    );
-
-    if (!candidateDetails.isValid) {
-      logger.info(`[PIPELINE STAGE 5: SIGNAL CANDIDATE] Candidate invalid for ${deterministicSignalKey}: ${candidateDetails.rejectReason}`);
-      return {
-        success: false,
-        stageReached: 'SIGNAL_CANDIDATE',
-        signalKey: deterministicSignalKey,
-        status: 'REJECTED',
-        candidateValidation: candidateDetails,
-        rejectionReason: candidateDetails.rejectReason || 'Candidate criteria not met'
-      };
-    }
-
-    // --- STAGE 6: IDEMPOTENCY (Duplicate check) ---
+    // 1. Check in-memory registry for existing signal
     const existingSignal = this.memorySignalRegistry.get(deterministicSignalKey);
     if (existingSignal) {
-      logger.info(`[PIPELINE STAGE 6: IDEMPOTENCY] Returning existing signal for duplicate key ${deterministicSignalKey}`);
+      logger.info(`[PIPELINE STAGE 5: IDEMPOTENCY] Returning existing signal for duplicate key ${deterministicSignalKey}`);
       return {
         success: true,
         stageReached: 'IDEMPOTENCY',
@@ -502,22 +483,53 @@ export class SignalPipeline {
       };
     }
 
+    // 2. Check Database for existing active signal (Hard Gate, fail-closed)
     try {
-      const dbSignal = await getDatabaseClient().getSignalByKey(deterministicSignalKey);
-      if (dbSignal && (dbSignal.status === 'SIGNAL_ACTIVE' || dbSignal.status === 'APPROVED' || dbSignal.status === 'COMPLETED')) {
-        this.memorySignalRegistry.set(deterministicSignalKey, dbSignal);
-        logger.info(`[PIPELINE STAGE 6: IDEMPOTENCY] Found existing active signal in DB for ${deterministicSignalKey}`);
-        return {
-          success: true,
-          stageReached: 'IDEMPOTENCY',
-          signalKey: deterministicSignalKey,
-          status: 'EXISTING',
-          signal: dbSignal,
-          isDuplicate: true
-        };
+      const dbClient = getDatabaseClient();
+      if (dbClient.isConnected()) {
+        const dbSignal = await dbClient.getSignalByKey(deterministicSignalKey);
+        if (dbSignal && (dbSignal.status === 'SIGNAL_ACTIVE' || dbSignal.status === 'APPROVED' || dbSignal.status === 'COMPLETED' || dbSignal.status === 'ACTIVE' || dbSignal.status === 'TAKE_PARTIAL')) {
+          this.memorySignalRegistry.set(deterministicSignalKey, dbSignal);
+          logger.info(`[PIPELINE STAGE 5: IDEMPOTENCY] Found existing active signal in DB for ${deterministicSignalKey}`);
+          return {
+            success: true,
+            stageReached: 'IDEMPOTENCY',
+            signalKey: deterministicSignalKey,
+            status: 'EXISTING',
+            signal: dbSignal,
+            isDuplicate: true
+          };
+        }
       }
     } catch (dbErr: any) {
-      logger.debug(`Database idempotency check notice: ${dbErr.message}`);
+      logger.warn(`[PIPELINE STAGE 5: IDEMPOTENCY] Database duplicate verification error: ${dbErr.message}. Blocking candidate (fail-closed).`);
+      return {
+        success: false,
+        stageReached: 'IDEMPOTENCY',
+        signalKey: deterministicSignalKey,
+        status: 'REJECTED',
+        rejectionReason: `Candidate blocked: Database unavailable during duplicate verification (fail-closed): ${dbErr.message}`
+      };
+    }
+
+    // --- STAGE 6: SIGNAL CANDIDATE GATE ---
+    const candidateDetails = await SignalCandidateGate.evaluateCandidate(
+      strategySetup,
+      context,
+      context.marketData || {},
+      deterministicSignalKey
+    );
+
+    if (!candidateDetails.isValid) {
+      logger.info(`[PIPELINE STAGE 6: SIGNAL CANDIDATE] Candidate invalid for ${deterministicSignalKey}: ${candidateDetails.rejectReason}`);
+      return {
+        success: false,
+        stageReached: 'SIGNAL_CANDIDATE',
+        signalKey: deterministicSignalKey,
+        status: 'REJECTED',
+        candidateValidation: candidateDetails,
+        rejectionReason: candidateDetails.rejectReason || 'Candidate criteria not met'
+      };
     }
 
     // --- STAGE 7: DEDUPE (Strategy-Aware Cooldown) ---

@@ -503,6 +503,10 @@ export class SetupDetector {
     return setup;
   }
 
+  public getSetup(id: string): StrategySetup | undefined {
+    return this.activeSetups.get(id) || this.historySetups.get(id);
+  }
+
   public updateSetupDetails(id: string, details: Partial<StrategySetup>) {
     const setup = this.activeSetups.get(id);
     if (setup) {

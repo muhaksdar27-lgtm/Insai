@@ -241,7 +241,7 @@ export class NotificationEngine {
     const { displayName, uniqueReason, defaultRules } = this.getStrategyDetails(payload.strategyName);
     const symbol = payload.symbol || 'XAUUSD';
     const timeframe = payload.timeframe || 'M15';
-    const session = payload.session || 'London';
+    const session = payload.session || 'UNDEFINED';
     const rawVer = payload.engineVersion || '2.0.0';
     const engineVer = rawVer.startsWith('v') ? rawVer : `v${rawVer}`;
     const formattedTime = new Date(payload.timestamp || Date.now()).toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
@@ -257,7 +257,16 @@ export class NotificationEngine {
       tpFormatted = `${payload.entry}`;
     }
 
-    const rr = payload.riskReward || '1:2.0';
+    let rr = payload.riskReward;
+    if (!rr) {
+      if (typeof payload.entry === 'number' && typeof payload.sl === 'number' && Array.isArray(payload.tp) && payload.tp.length > 0) {
+        const risk = Math.abs(payload.entry - payload.sl);
+        const reward = Math.abs(payload.tp[0] - payload.entry);
+        rr = risk > 0 ? `1:${(reward / risk).toFixed(2)}` : 'N/A';
+      } else {
+        rr = 'N/A';
+      }
+    }
     const atr = payload.atrBuffer || '0.5x ATR';
     const validation = payload.validationStatus || 'Engine Validated';
 

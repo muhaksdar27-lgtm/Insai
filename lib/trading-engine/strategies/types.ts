@@ -100,11 +100,15 @@ export function buildSignalKey(
 ): string {
   if (typeof componentsOrStrategyId === 'object') {
     const { strategy_id, version: ver, symbol: sym, direction: dir, setup_instance: inst, event_context: ctx } = componentsOrStrategyId;
-    const v = ver || 'v2.0.0';
-    return `sig::${strategy_id}::${v}::${sym}::${(dir || 'BUY').toUpperCase()}::${inst}::${ctx || 'candle_closed'}`;
+    if (ver) {
+      return `sig::${strategy_id}::${ver}::${sym}::${(dir || 'BUY').toUpperCase()}::${inst}::${ctx || 'candle_closed'}`;
+    }
+    return `sig::${strategy_id}::${sym}::${(dir || 'BUY').toUpperCase()}::${inst}::${ctx || 'candle_closed'}`;
   }
-  const v = version || 'v2.0.0';
-  return `sig::${componentsOrStrategyId}::${v}::${symbol}::${(direction || 'BUY').toUpperCase()}::${setup_instance}::${event_context || 'candle_closed'}`;
+  if (version) {
+    return `sig::${componentsOrStrategyId}::${version}::${symbol}::${(direction || 'BUY').toUpperCase()}::${setup_instance}::${event_context || 'candle_closed'}`;
+  }
+  return `sig::${componentsOrStrategyId}::${symbol}::${(direction || 'BUY').toUpperCase()}::${setup_instance}::${event_context || 'candle_closed'}`;
 }
 
 export function parseSignalKey(key: string): SignalIdentityComponents | null {
@@ -124,7 +128,6 @@ export function parseSignalKey(key: string): SignalIdentityComponents | null {
     } else if (parts.length === 5) {
       return {
         strategy_id: parts[0],
-        version: 'v2.0.0',
         symbol: parts[1],
         direction: parts[2] as 'BUY' | 'SELL',
         setup_instance: parts[3],
@@ -140,7 +143,6 @@ export function parseSignalKey(key: string): SignalIdentityComponents | null {
   if (parts.length < 5) return null;
   return {
     strategy_id: parts[0],
-    version: 'v2.0.0',
     symbol: parts[1],
     direction: parts[2] as 'BUY' | 'SELL',
     setup_instance: parts[3],
