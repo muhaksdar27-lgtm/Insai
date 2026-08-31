@@ -5,6 +5,7 @@ import { getDatabaseClient } from '@/lib/db/client';
 import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
 import { ApiResponse } from '@/types';
 import crypto from 'crypto';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export async function GET() {
   const reqId = crypto.randomUUID();
@@ -75,7 +76,7 @@ export async function GET() {
       data: null,
       error: {
         code: 'HISTORY_FETCH_ERROR',
-        message: error.message || 'Failed to fetch trade history'
+        message: publicApiError(error, 'Failed to fetch trade history')
       },
       meta: {
         request_id: reqId,

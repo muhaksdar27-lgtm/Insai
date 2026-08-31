@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { metricsEngine } from '@/lib/observability/metrics-engine';
 import { ApiResponse } from '@/types';
 import crypto from 'crypto';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function GET(req: Request) {
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,
-      error: { code: 'METRICS_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
+      error: { code: 'METRICS_ERROR', message: publicApiError(error, 'Metrics unavailable') },
       meta: {
         request_id: reqId,
         timestamp: new Date().toISOString()

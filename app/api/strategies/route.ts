@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ApiResponse, StrategyResponse } from '@/types';
 import crypto from 'crypto';
 import { getStrategiesData } from '@/lib/services/api-service';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function GET() {
     strategies = await getStrategiesData();
     success = true;
   } catch (err: any) {
-    error = { code: 'DB_ERROR', message: err.message || 'Failed to fetch strategies' };
+    error = { code: 'DB_ERROR', message: publicApiError(err, 'Failed to fetch strategies') };
     success = false;
   }
 

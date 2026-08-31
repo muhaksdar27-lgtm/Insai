@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from 'next/server';
 import { healthCheckEngine, SystemHealth } from '@/lib/observability/health-check';
 import { ApiResponse } from '@/types';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function GET(req: Request) {
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,
-      error: { code: 'HEALTH_CHECK_ERROR', message: error.message || 'Unknown error' },
+      error: { code: 'HEALTH_CHECK_ERROR', message: publicApiError(error, 'Health check unavailable') },
       meta: {
         request_id: reqId,
         timestamp: new Date().toISOString()

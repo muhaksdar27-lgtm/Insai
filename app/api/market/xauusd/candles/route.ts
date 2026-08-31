@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getMarketDataService } from '@/lib/market-data/market-data-service';
 import crypto from 'crypto';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
       success = false;
     }
   } catch (err: any) {
-    error = { code: 'FETCH_ERROR', message: err.message || 'Failed to fetch candles' };
+    error = { code: 'FETCH_ERROR', message: publicApiError(err, 'Failed to fetch candles') };
     candles = [];
     success = false;
   }

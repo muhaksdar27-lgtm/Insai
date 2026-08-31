@@ -4,7 +4,7 @@ A real-time, robust trading engine applet. This system features real data fetchi
 
 ## Features
 
-- **Full-Stack Next.js 15+ App Router**: Powers the user interface and the primary routing mechanisms.
+- **Full-Stack Next.js 16 App Router**: Powers the user interface and the primary routing mechanisms.
 - **Python Backend Engine**: A FastAPI local service (`python-engine`) optimized for running math-intensive AI operations or indicators.
 - **Durable Persistence**: Built on pure native PostgreSQL (`pg` connection pool) for signal history, states, auditing, and market snapshots.
 - **Market Data Pipelines**: Integrates with external APIs (TwelveData, NFS Economic Calendar) in real time.
@@ -24,6 +24,12 @@ A real-time, robust trading engine applet. This system features real data fetchi
    # Install Node dependencies
    npm ci --no-audit --prefer-offline
 
+   # Optional: run all local quality gates
+   npx tsc -p tsconfig.build.json --noEmit
+   npm run lint
+   npm test -- --run
+   python3 -m pytest -q python-engine
+
    # Install Python dependencies
    python3 -m venv venv
    source venv/bin/activate
@@ -31,7 +37,7 @@ A real-time, robust trading engine applet. This system features real data fetchi
    ```
 
 2. **Environment Variables**
-   Copy `.env.example` to `.env` and fill in the necessary keys.
+   Copy `.env.example` to `.env` and fill in the necessary keys. Deployment secrets must be managed by the platform secret manager; the Settings API only changes the small set of numeric strategy thresholds in runtime memory and never writes `.env`.
    ```bash
    cp .env.example .env
    ```
@@ -54,4 +60,4 @@ npm run build
 npm run start
 ```
 
-*Note: This repository contains no dummy logic, mock datasets, or "AI slop" data. All components are built for production-readiness, requiring valid credentials to function correctly.*
+*Note: AI and market-data responses explicitly expose whether their source is live, derived, deterministic fallback, or unavailable. Production requires valid credentials and healthy required dependencies.*

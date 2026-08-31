@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getMarketScanner } from '@/lib/trading-engine/scanner';
 import { getDatabaseClient } from '@/lib/db/client';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function POST() {
     const signals = await runScan();
     return NextResponse.json({ success: true, message: 'Market scan executed successfully', signals });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Scan failed' }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicApiError(error, 'Scan failed') }, { status: 500 });
   }
 }
 
@@ -25,7 +26,7 @@ export async function GET() {
     const signals = await runScan();
     return NextResponse.json({ success: true, message: 'Market scan executed successfully', signals });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || 'Scan failed' }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicApiError(error, 'Scan failed') }, { status: 500 });
   }
 }
 

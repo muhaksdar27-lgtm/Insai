@@ -510,6 +510,23 @@ export class DatabaseService {
     }
   }
 
+  public async getLatestMarketPrice(symbol: string): Promise<number | null> {
+    if (!this.isConnected()) return null;
+    try {
+      const pool = this.getPool();
+      if (!pool) return null;
+      const { rows } = await pool.query(
+        'SELECT close FROM market_snapshots WHERE symbol = $1 ORDER BY COALESCE(timestamp, created_at) DESC LIMIT 1',
+        [symbol]
+      );
+      const price = rows?.[0]?.close === undefined ? null : Number(rows[0].close);
+      return price !== null && Number.isFinite(price) && price > 0 ? price : null;
+    } catch (err: any) {
+      logger.warn(`Market price lookup for history archive failed: ${err.message}`);
+      return null;
+    }
+  }
+
   public async archiveToHistory(signalKey: string, finalState: string, pipsResult: number = 0, outcome?: string, correlationId?: string, rrRealized?: number) {
     let signalData = this.memorySignalsCache.get(signalKey);
 
@@ -535,10 +552,43 @@ export class DatabaseService {
       return null;
     }
 
+    const terminalStates = new Set(['CLOSED', 'FINISHED', 'TAKE_PROFIT', 'STOP_LOSS', 'REJECTED', 'FAILED', 'EXPIRED', 'SUPPRESSED', 'DISPATCHED_CLOSED']);
+    const cachedHistory = this.memoryHistoryCache.get(signalKey);
+    if (terminalStates.has(finalState) && cachedHistory) {
+      return cachedHistory;
+    }
+
+    if (terminalStates.has(finalState) && this.isConnected()) {
+      try {
+        const pool = this.getPool();
+        if (pool) {
+          const { rows } = await pool.query(
+            'SELECT * FROM history WHERE signal_key = $1 ORDER BY closed_at DESC NULLS LAST, created_at DESC LIMIT 1',
+            [signalKey]
+          );
+          if (rows?.[0]) {
+            this.memoryHistoryCache.set(signalKey, rows[0]);
+            return rows[0];
+          }
+        }
+      } catch (err: any) {
+        logger.warn(`Existing history lookup failed: ${err.message}`);
+      }
+    }
+
     signalData.status = finalState;
     this.memorySignalsCache.set(signalKey, signalData);
 
-    const computedOutcome = outcome || (pipsResult > 0 ? 'WIN' : (pipsResult < 0 ? 'LOSS' : 'BREAK_EVEN'));
+    const entryPrice = Number(signalData.entry_price ?? signalData.entryPrice ?? 0);
+    const livePrice = await this.getLatestMarketPrice(signalData.symbol || 'XAUUSD');
+    const direction = String(signalData.direction || '').toUpperCase();
+    const derivedPips = livePrice !== null && entryPrice > 0
+      ? (direction === 'LONG' || direction === 'BUY' ? livePrice - entryPrice : entryPrice - livePrice) * 10
+      : null;
+    const effectivePips = derivedPips !== null && Number.isFinite(derivedPips) ? derivedPips : pipsResult;
+    const computedOutcome = derivedPips !== null
+      ? (effectivePips > 0 ? 'WIN' : (effectivePips < 0 ? 'LOSS' : 'BREAK_EVEN'))
+      : (outcome || (effectivePips > 0 ? 'WIN' : (effectivePips < 0 ? 'LOSS' : 'BREAK_EVEN')));
     let computedRr = rrRealized;
     if (computedRr === undefined && signalData) {
       const entry = signalData.entry_price || signalData.entryPrice || 0;
@@ -556,7 +606,7 @@ export class DatabaseService {
        symbol: signalData.symbol,
        status: finalState,
        outcome: computedOutcome,
-       pips_result: pipsResult,
+       pips_result: effectivePips,
        rr_realized: computedRr ?? 0,
        reason: finalState,
        correlation_id: correlationId || signalData.correlation_id,
