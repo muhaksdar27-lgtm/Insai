@@ -4,6 +4,7 @@ import { ApiResponse } from '@/types';
 import { getDatabaseClient } from '@/lib/db/client';
 import crypto from 'crypto';
 import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export async function GET(
   _request: Request,
@@ -53,7 +54,7 @@ export async function GET(
     
     success = true;
   } catch (err: any) {
-    error = { code: 'DB_ERROR', message: err.message };
+    error = { code: 'DB_ERROR', message: publicApiError(err, 'Unable to load strategy state') };
   }
   
   const response: ApiResponse<any> = {

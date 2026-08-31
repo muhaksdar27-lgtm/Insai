@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getDatabaseClient } from '@/lib/db/client';
 import crypto from 'crypto';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export async function POST(
   _request: Request,
@@ -18,7 +19,7 @@ export async function POST(
     await getDatabaseClient().updateSignalState(signal_key, 'APPROVED');
     success = true;
   } catch (err: any) {
-    error = { code: 'DB_ERROR', message: err.message };
+    error = { code: 'DB_ERROR', message: publicApiError(err, 'Unable to approve signal') };
   }
 
   const response: ApiResponse<any> = {

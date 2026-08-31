@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getMarketDataService } from '@/lib/market-data/market-data-service';
 import crypto from 'crypto';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export async function GET() {
     }
     success = true;
   } catch (err: any) {
-    error = { code: 'FETCH_ERROR', message: err.message };
+    error = { code: 'FETCH_ERROR', message: publicApiError(err, 'Failed to fetch active news') };
   }
 
   const response: ApiResponse<any> = {

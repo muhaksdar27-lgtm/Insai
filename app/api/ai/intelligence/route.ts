@@ -11,6 +11,7 @@ import {
   detectDisplacement
 } from "@/lib/trading-engine/indicators";
 import { GoogleGenAI } from "@google/genai";
+import { publicApiError } from "@/lib/utils/api-error";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -37,6 +38,9 @@ export async function GET() {
 
     const spotPrice = priceSnap?.price || (m15Candles.length > 0 ? m15Candles[m15Candles.length - 1].close : 0);
     const session = priceSnap?.session || "N/A";
+    if (!Number.isFinite(spotPrice) || spotPrice <= 0 || m15Candles.length === 0) {
+      return NextResponse.json({ success: false, error: 'Market data is temporarily unavailable', analysisSource: 'unavailable' }, { status: 503 });
+    }
 
     // Compute SMC & Quant Metrics
     const dealingRange = calculateDealingRange(m15Candles, spotPrice);
@@ -69,15 +73,17 @@ export async function GET() {
     });
 
     // Generate Institutional AI Summary using Gemini 3.7 Flash if API key available
-    let aiSynthesis = {
+    let analysisSource = "deterministic_fallback";
+    let aiSynthesis: Record<string, unknown> = {
       marketRegime: "Equilibrium / Consolidation",
       institutionalBias: h1Analysis.trend_h1 || "NEUTRAL",
-      confidenceScore: 88,
-      accumulationScore: 72,
-      distributionScore: 28,
+      confidenceScore: null,
+      accumulationScore: null,
+      distributionScore: null,
       keyActionableZone: `$${dealingRange.equilibrium.toFixed(2)}`,
       liquidityNarrative: sessionPools.sweepAsianHigh ? "Asian High liquidity raided, looking for mean reversion or expansion." : "Trading within defined dealing range.",
-      recommendation: "Focus on High-Probability Order Block mitigation aligned with H1 institutional trend."
+      recommendation: null,
+      analysisSource: "deterministic_fallback"
     };
 
     if (process.env.GEMINI_API_KEY) {
@@ -110,7 +116,16 @@ Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), 
 
             if (res.text) {
               const parsed = JSON.parse(res.text);
-              aiSynthesis = { ...aiSynthesis, ...parsed };
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('AI response was not an object');
+              }
+              const candidate = parsed as Record<string, unknown>;
+              const numericFields = ['confidenceScore', 'accumulationScore', 'distributionScore'];
+              if (numericFields.some((field) => candidate[field] !== undefined && (!Number.isFinite(Number(candidate[field])) || Number(candidate[field]) < 0 || Number(candidate[field]) > 100))) {
+                throw new Error('AI response contained an invalid score');
+              }
+              aiSynthesis = { ...aiSynthesis, ...candidate, analysisSource: 'gemini' };
+              analysisSource = 'gemini';
               break;
             }
           } catch (e: any) {
@@ -133,7 +148,7 @@ Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), 
       spotPrice,
       session,
       provider: priceSnap?.provider || "TwelveData/Yahoo",
-      freshness: priceSnap?.freshness || "live",
+      freshness: priceSnap?.freshness || "derived",
       dealingRange,
       sessionPools,
       displacement,
@@ -152,7 +167,9 @@ Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), 
         fvgs,
         sdZones
       },
-      aiSynthesis
+      aiSynthesis,
+      analysisSource,
+      degraded: analysisSource !== 'gemini'
     };
 
     cachedIntelligence = {
@@ -164,7 +181,7 @@ Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), 
   } catch (error: any) {
     console.error("Failed to generate AI intelligence:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to generate market intelligence" },
+      { success: false, error: publicApiError(error, "Failed to generate market intelligence") },
       { status: 500 }
     );
   }

@@ -11,6 +11,7 @@ import { getMcpManager } from '@/lib/mcp/mcp-manager';
 import { PythonEngineManager } from '@/lib/mcp/engines/deployment';
 import { getQueueManager } from '@/lib/redis/queue';
 import { metricsEngine } from '@/lib/observability/metrics-engine';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -226,7 +227,7 @@ export async function GET(req: Request) {
       data: null,
       error: {
         code: 'SNAPSHOT_FETCH_ERROR',
-        message: error.message || 'Failed to assemble dashboard snapshot'
+        message: publicApiError(error, 'Failed to assemble dashboard snapshot')
       },
       meta: {
         request_id: reqId,

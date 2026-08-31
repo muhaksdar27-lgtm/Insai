@@ -2,6 +2,7 @@ node_modules/
 .next/
 .next-prod/
 coverage/
+.pytest_cache/
 .DS_Store
 *.log
 .env*

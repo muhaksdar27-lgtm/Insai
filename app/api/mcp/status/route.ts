@@ -4,6 +4,7 @@ import { getMcpRegistry } from '@/lib/mcp/registry';
 import { getMcpManager } from '@/lib/mcp/mcp-manager';
 import { PythonEngineManager } from '@/lib/mcp/engines/deployment';
 import crypto from 'crypto';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export async function GET() {
     return NextResponse.json({
       success: false,
       data: [],
-      error: { code: 'INTERNAL_ERROR', message: error.message },
+      error: { code: 'INTERNAL_ERROR', message: publicApiError(error, 'MCP status unavailable') },
       meta: { request_id: crypto.randomUUID(), timestamp: new Date().toISOString() }
     }, { status: 500 });
   }

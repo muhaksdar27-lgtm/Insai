@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getDatabaseClient } from '@/lib/db/client';
 import { transformAiChecklist } from '@/lib/utils/rule-transformer';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function GET() {
     
     if (!Array.isArray(data)) {
       const errCode = data?.status === 'not_configured' ? 'DATABASE_NOT_CONFIGURED' : 'DB_ERROR';
-      const errMessage = data?.reason || 'Failed to fetch active signals';
+      const errMessage = publicApiError(data?.reason, 'Failed to fetch active signals');
       const errorResponse: ApiResponse<null> = {
         success: false,
         data: null,
@@ -148,7 +149,7 @@ export async function GET() {
   } catch (err: any) {
     error = {
       code: 'DB_ERROR',
-      message: err.message || 'Failed to fetch active signals'
+      message: publicApiError(err, 'Failed to fetch active signals')
     };
   }
 

@@ -12,10 +12,12 @@ PYTHON_ENGINE_URL = "http://127.0.0.1:8181"
 
 [phases.install]
 cmds = [
-    "npm install --no-audit --prefer-offline --no-fund --legacy-peer-deps",
-    "python3 -m venv /app/venv || python3 -m venv ./venv || true",
-    "(/app/venv/bin/pip install --upgrade pip && /app/venv/bin/pip install -r python-engine/requirements.txt) || (./venv/bin/pip install -r python-engine/requirements.txt) || true",
-    "chmod +x ops/start.sh || true"
+    "npm ci --no-audit --prefer-offline --no-fund",
+    "python3 -m venv /app/venv",
+    "/app/venv/bin/pip install --upgrade pip",
+    "/app/venv/bin/pip install -r python-engine/requirements.txt",
+    "/app/venv/bin/python -m pytest -q python-engine",
+    "chmod +x ops/start.sh"
 ]
 
 [phases.build]

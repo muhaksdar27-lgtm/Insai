@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getMarketDataService } from "@/lib/market-data/market-data-service";
 import { getMcpRegistry } from "@/lib/mcp/registry";
 import { getDatabaseClient } from "@/lib/db/client";
+import { publicApiError } from "@/lib/utils/api-error";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,7 +26,20 @@ export async function POST(req: NextRequest) {
     });
 
     const body = await req.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: 'Invalid request payload' }, { status: 400 });
+    }
     const { message, history = [], imageData, imageMimeType = "image/png" } = body;
+    if (message !== undefined && (typeof message !== 'string' || message.length > 12000)) {
+      return NextResponse.json({ success: false, error: 'Message must be a string of at most 12000 characters' }, { status: 400 });
+    }
+    if (!Array.isArray(history) || history.length > 20 || history.some((h) => !h || !['user', 'model', 'assistant'].includes(h.role) || typeof h.content !== 'string' || h.content.length > 12000)) {
+      return NextResponse.json({ success: false, error: 'History is invalid or exceeds the supported size' }, { status: 400 });
+    }
+    const allowedImageMimeTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+    if (imageData !== undefined && (typeof imageData !== 'string' || imageData.length > 7_000_000 || !allowedImageMimeTypes.has(imageMimeType))) {
+      return NextResponse.json({ success: false, error: 'Image payload is invalid or exceeds the supported size' }, { status: 400 });
+    }
 
     if (!message && !imageData) {
       return NextResponse.json({ error: "Message or image is required" }, { status: 400 });
@@ -84,7 +98,7 @@ export async function POST(req: NextRequest) {
     const systemContext = `
 [INSAi HIGH-PRECISION REALTIME XAUUSD CONTEXT]
 - XAUUSD Live Spot Price: ${livePrice?.price ? `$${livePrice.price.toFixed(2)}` : 'N/A'} (Status: ${livePrice?.freshness || 'N/A'}, Session: ${livePrice?.session || 'N/A'}, Provider: ${livePrice?.provider || 'TwelveData/Yahoo'})
-- HTF Trend (H1/H4): ${technicalAnalysis?.trend_h1 || livePrice?.bias || 'NEUTRAL'} (Confidence: ${technicalAnalysis?.htf_trend?.confidence || 85}%)
+- HTF Trend (H1/H4): ${technicalAnalysis?.trend_h1 || livePrice?.bias || 'NEUTRAL'} (Confidence: ${technicalAnalysis?.htf_trend?.confidence ?? 'N/A'}%)
 - Dealing Range Zone: ${technicalAnalysis?.dealing_range_zone || 'EQUILIBRIUM'} (Fib: ${technicalAnalysis?.fib_level ? (technicalAnalysis.fib_level * 100).toFixed(1) + '%' : '50%'})
 - Volatility ATR(14): ${technicalAnalysis?.atr ? `$${technicalAnalysis.atr.toFixed(2)} / ${(technicalAnalysis.atr * 10).toFixed(1)} pips` : 'N/A'}
 - Institutional Liquidity Status: ${technicalAnalysis?.liq_sweep_bull ? 'Bullish Liquidity Sweep active' : technicalAnalysis?.liq_sweep_bear ? 'Bearish Liquidity Sweep active' : 'No sweep detected'}
@@ -189,11 +203,11 @@ You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded 
     
     return NextResponse.json({
       success: false,
-      error: err.message || "Failed to process AI chat request",
-      reply: isHighDemand 
-        ? "⚠️ Server AI saat ini sedang mengalami lonjakan trafik (high demand). Silakan kirim ulang pesan Anda dalam beberapa detik."
-        : `Layanan AI Chat sedang mengalami kendala (${err.message || 'Error'}). Silakan periksa konfigurasi GEMINI_API_KEY di Settings.`,
+      error: publicApiError(err, "Failed to process AI chat request"),
+      reply: isHighDemand
+        ? "Server AI sedang mengalami lonjakan trafik. Silakan coba lagi dalam beberapa detik."
+        : "Layanan AI sedang mengalami kendala. Silakan periksa konfigurasi GEMINI_API_KEY atau coba lagi nanti.",
       timestamp: new Date().toISOString()
-    }, { status: 200 });
+    }, { status: isHighDemand ? 503 : 500 });
   }
 }

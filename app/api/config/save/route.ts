@@ -2,22 +2,10 @@ import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { logger } from '@/lib/utils/logger';
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
 const ALLOWED_KEYS = new Set([
-  'TWELVEDATA_API_KEY',
-  'NEWS_API_KEY',
-  'TELEGRAM_BOT_TOKEN',
-  'TELEGRAM_CHAT_ID',
-  'GEMINI_API_KEY',
-  'DATABASE_URL',
-  'PYTHON_ENGINE_URL',
-  'REDIS_URL',
-  'POLYGON_API_KEY',
-  'TWITTER_BEARER_TOKEN',
   'STANDARD_PIP_BUFFER',
   'MIN_ENGULFING_BODY_RATIO',
   'DOUBLE_PATTERN_TOLERANCE',
@@ -55,11 +43,15 @@ export async function POST(req: Request) {
       }
 
       const strVal = String(value).trim();
+      if (!strVal || strVal.length > 32 || /[\n\r\0]/.test(strVal)) {
+        invalidKeys.push(key);
+        continue;
+      }
       
       // Perform validation based on key type
       if (key === 'STANDARD_PIP_BUFFER' || key === 'DOUBLE_PATTERN_TOLERANCE' || key === 'NEWS_NO_TRADE_WINDOW') {
         const num = Number(strVal);
-        if (isNaN(num) || num < 0 || num > 500) {
+        if (!Number.isFinite(num) || num < 0 || num > 500) {
           return NextResponse.json({
             success: false,
             data: null,
@@ -71,7 +63,7 @@ export async function POST(req: Request) {
 
       if (key === 'MIN_ENGULFING_BODY_RATIO') {
         const num = Number(strVal);
-        if (isNaN(num) || num <= 0 || num > 1) {
+        if (!Number.isFinite(num) || num <= 0 || num > 1) {
           return NextResponse.json({
             success: false,
             data: null,
@@ -81,8 +73,7 @@ export async function POST(req: Request) {
         }
       }
 
-      const sanitizedValue = strVal.replace(/[\n\r]/g, '');
-      process.env[key] = sanitizedValue; 
+      process.env[key] = strVal;
       logger.info(`Config Applied: Updated ${key} in runtime memory`);
       updatedKeys.push(key);
     }
@@ -96,41 +87,14 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // Try persisting to .env file if available
-    let persistedToDisk = false;
-    try {
-      const envPath = path.join(process.cwd(), '.env');
-      let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
-      let envLines = envContent.split('\n');
-
-      for (const key of updatedKeys) {
-        const val = process.env[key] || '';
-        let found = false;
-        envLines = envLines.map(line => {
-          if (line.trim().startsWith(`${key}=`)) {
-            found = true;
-            return `${key}=${val}`;
-          }
-          return line;
-        });
-        if (!found) {
-          envLines.push(`${key}=${val}`);
-        }
-      }
-
-      fs.writeFileSync(envPath, envLines.join('\n'), 'utf8');
-      persistedToDisk = true;
-      logger.info('Config Persisted: Successfully written updated keys to .env');
-    } catch (fsErr: any) {
-      logger.warn(`Config Disk Persistence Note: Could not write to .env file directly (${fsErr.message}). Runtime memory updated.`);
-    }
+    // Runtime-only configuration. Secrets and deployment configuration must be managed
+    // outside the application process via the platform secret manager.
+    const persistedToDisk = false;
 
     const response: ApiResponse<{ message: string; updatedKeys: string[]; persistedToDisk: boolean }> = {
       success: true,
       data: {
-        message: persistedToDisk
-          ? `Successfully updated ${updatedKeys.length} configuration key(s) in runtime memory and .env file.`
-          : `Successfully updated ${updatedKeys.length} configuration key(s) in runtime memory (filesystem is read-only).`,
+        message: `Successfully updated ${updatedKeys.length} configuration key(s) in runtime memory only.`,
         updatedKeys,
         persistedToDisk
       },
@@ -144,7 +108,7 @@ export async function POST(req: Request) {
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,
-      error: { code: 'SAVE_ERROR', message: error.message || 'Failed to save configuration' },
+      error: { code: 'SAVE_ERROR', message: 'Failed to save configuration' },
       meta: { request_id: reqId, timestamp: new Date().toISOString() }
     };
     return NextResponse.json(errorResponse, { status: 500 });

@@ -4,6 +4,7 @@ import { getEnv } from '@/lib/utils/env';
 import { getDatabaseClient } from '@/lib/db/client';
 import { getQueueManager } from '@/lib/redis/queue';
 import crypto from 'crypto';
+import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ async function pingBackend(): Promise<EnginePingResult> {
       status: 'ERROR',
       latencyMs: Date.now() - start,
       lastChecked: new Date().toISOString(),
-      message: e.message || 'Backend execution failed'
+      message: publicApiError(e, 'Backend execution failed')
     };
   }
 }
@@ -70,8 +71,8 @@ async function pingPython(): Promise<EnginePingResult> {
         status: 'ONLINE',
         latencyMs: latency,
         lastChecked: new Date().toISOString(),
-        message: `HTTP ${res.status} OK — Python TA-Lib Service active at ${pyUrl}`,
-        details: { url: pyUrl, statusCode: res.status, ...data }
+        message: `HTTP ${res.status} OK — Python TA-Lib Service is active`,
+        details: { configured: Boolean(externalUrl), statusCode: res.status, ...data }
       };
     } else {
       return {
@@ -80,8 +81,8 @@ async function pingPython(): Promise<EnginePingResult> {
         status: 'ERROR',
         latencyMs: latency,
         lastChecked: new Date().toISOString(),
-        message: `HTTP ${res.status} ${res.statusText} from ${pyUrl}`,
-        details: { url: pyUrl, statusCode: res.status }
+        message: `Python service returned HTTP ${res.status}`,
+        details: { configured: Boolean(externalUrl), statusCode: res.status }
       };
     }
   } catch (e: any) {
@@ -93,9 +94,9 @@ async function pingPython(): Promise<EnginePingResult> {
       latencyMs: Date.now() - start,
       lastChecked: new Date().toISOString(),
       message: isConnRefused
-        ? `Python service unreachable at ${pyUrl} (Process offline or port closed)`
-        : `Python engine error: ${e.message}`,
-      details: { url: pyUrl, error: e.message }
+        ? 'Python service is unreachable (process offline or port closed)'
+        : publicApiError(e, 'Python engine unavailable'),
+      details: { configured: Boolean(externalUrl) }
     };
   }
 }
@@ -158,8 +159,8 @@ async function pingAI(): Promise<EnginePingResult> {
       status: 'OFFLINE',
       latencyMs: Date.now() - start,
       lastChecked: new Date().toISOString(),
-      message: `Gemini API unreachable: ${e.message}`,
-      details: { error: e.message }
+        message: publicApiError(e, 'Gemini API unreachable'),
+      details: { configured: true }
     };
   }
 }
@@ -201,7 +202,7 @@ async function pingDatabase(): Promise<EnginePingResult> {
       status: 'ERROR',
       latencyMs: Date.now() - start,
       lastChecked: new Date().toISOString(),
-      message: `Database connection error: ${e.message}`
+        message: publicApiError(e, 'Database connection error')
     };
   }
 }
@@ -254,7 +255,7 @@ async function pingQueue(): Promise<EnginePingResult> {
       status: 'ERROR',
       latencyMs: Date.now() - start,
       lastChecked: new Date().toISOString(),
-      message: `Queue check failed: ${e.message}`
+        message: publicApiError(e, 'Queue check failed')
     };
   }
 }
@@ -322,7 +323,7 @@ async function pingRedis(): Promise<EnginePingResult> {
       status: 'ERROR',
       latencyMs: Date.now() - start,
       lastChecked: new Date().toISOString(),
-      message: `Redis test failed: ${e.message}`
+        message: publicApiError(e, 'Redis test failed')
     };
   }
 }
