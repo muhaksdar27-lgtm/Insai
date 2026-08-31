@@ -46,7 +46,11 @@ export class FallbackChain<T> {
             errors.push(new Error(`Provider ${name} skipped: not configured`));
             continue;
           }
-          logger.warn(`Skipping provider ${name} due to open circuit breaker for ${context} (Status: ${healthStatus})`);
+          logger.warnThrottled(
+            `cb_skip_${name}_${context}`,
+            60000,
+            `Skipping provider ${name} due to open circuit breaker for ${context} (Status: ${healthStatus})`
+          );
           errors.push(new Error(`Provider ${name} skipped: circuit breaker open (${healthStatus})`));
           continue;
         }
@@ -65,7 +69,11 @@ export class FallbackChain<T> {
             return m.includes('not configured') || m.includes('not specified') || m.includes('apikey');
           });
           if (!isUnsupported && !isNotConfigured && errors.length > 0) {
-            logger.info(`FALLBACK_EVENT: ${context} failed on primary ${primaryName}. Fallback recorded source: ${name}`);
+            logger.infoThrottled(
+              `fallback_event_${primaryName}_${name}_${context}`,
+              60000,
+              `FALLBACK_EVENT: ${context} failed on primary ${primaryName}. Fallback recorded source: ${name}`
+            );
           }
           (result as any).recordedSource = {
             primaryProvider: primaryName,

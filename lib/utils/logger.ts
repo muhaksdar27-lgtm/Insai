@@ -113,15 +113,46 @@ export const logger = {
     const lastLogged = logThrottleMap.get(throttleKey) || 0;
     if (now - lastLogged >= intervalMs) {
       logThrottleMap.set(throttleKey, now);
-      // Clean up old entries if map grows
       if (logThrottleMap.size > 500) {
         for (const [k, ts] of logThrottleMap.entries()) {
-          if (now - ts > 600000) { // older than 10 mins
-            logThrottleMap.delete(k);
-          }
+          if (now - ts > 600000) logThrottleMap.delete(k);
         }
       }
       logger.debug(message, payload);
+    }
+  },
+
+  /**
+   * Emits a warn log throttled by a unique key and interval.
+   */
+  warnThrottled: (throttleKey: string, intervalMs: number, message: string, payload?: LogPayload) => {
+    const now = Date.now();
+    const lastLogged = logThrottleMap.get(throttleKey) || 0;
+    if (now - lastLogged >= intervalMs) {
+      logThrottleMap.set(throttleKey, now);
+      if (logThrottleMap.size > 500) {
+        for (const [k, ts] of logThrottleMap.entries()) {
+          if (now - ts > 600000) logThrottleMap.delete(k);
+        }
+      }
+      logger.warn(message, payload);
+    }
+  },
+
+  /**
+   * Emits an info log throttled by a unique key and interval.
+   */
+  infoThrottled: (throttleKey: string, intervalMs: number, message: string, payload?: LogPayload) => {
+    const now = Date.now();
+    const lastLogged = logThrottleMap.get(throttleKey) || 0;
+    if (now - lastLogged >= intervalMs) {
+      logThrottleMap.set(throttleKey, now);
+      if (logThrottleMap.size > 500) {
+        for (const [k, ts] of logThrottleMap.entries()) {
+          if (now - ts > 600000) logThrottleMap.delete(k);
+        }
+      }
+      logger.info(message, payload);
     }
   }
 };
