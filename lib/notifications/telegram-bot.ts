@@ -32,7 +32,24 @@ export class TelegramBotService {
         })
       });
       if (!res.ok) {
-        throw new Error(`Telegram API Error: ${res.statusText}`);
+        const errText = await res.text().catch(() => res.statusText);
+        // If Telegram rejected HTML entities parsing, fallback to clean text format
+        if (errText.includes("can't parse entities") || errText.includes('parse')) {
+          logger.warn(`Telegram HTML parse failed: ${errText}. Retrying as plain text...`);
+          const plainText = message.replace(/<[^>]*>/g, '');
+          const fallbackRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: this.currentChatId,
+              text: plainText
+            })
+          });
+          if (fallbackRes.ok) {
+            return true;
+          }
+        }
+        throw new Error(`Telegram API Error (${res.status}): ${errText}`);
       }
       return true;
     } catch (e: any) {

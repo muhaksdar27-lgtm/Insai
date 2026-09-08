@@ -64,6 +64,18 @@ export async function GET() {
       }
     }
 
+    if (latestPrice <= 0) {
+      try {
+        const { getMarketDataService } = await import('@/lib/market-data/market-data-service');
+        const snap = await getMarketDataService().getLatestPrice('XAUUSD');
+        if (snap?.price && typeof snap.price === 'number') {
+          latestPrice = snap.price;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
     // Map DB schema to UI expected format
     formattedData = data.map((signal: any) => {
       // Calculate age based on created_at

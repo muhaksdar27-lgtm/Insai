@@ -557,7 +557,8 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
     timeoutMs: number = 8000,
     maxRetries: number = 1
   ): Promise<any> {
-    const candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash'];
+    // User requested gemini-1.5-flash; fallback gracefully to gemini-flash-latest, 3.6-flash, 3.5-flash
+    const candidateModels = ['gemini-1.5-flash', 'gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.8-flash'];
     let lastError: any = null;
 
     for (const modelName of candidateModels) {
@@ -591,6 +592,12 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
           attempt++;
           const { metricsEngine } = await import('../../observability/metrics-engine');
           metricsEngine.recordAiValidationLatency(Date.now() - startTime);
+
+          const isNotFoundOrDeprecated = err.status === 404 || err.message?.includes('404') || err.message?.includes('not found') || err.message?.includes('is not supported') || err.message?.includes('deprecated');
+          if (isNotFoundOrDeprecated) {
+            logger.info(`Model ${modelName} not supported in current environment, falling back immediately...`);
+            break;
+          }
 
           const isHighDemandOrBusy = err.status === 503 || err.message?.includes('503') || err.message?.includes('high demand') || err.message?.includes('UNAVAILABLE');
           if (isHighDemandOrBusy) {

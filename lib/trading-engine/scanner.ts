@@ -206,8 +206,9 @@ export class MarketScanner {
       
       const isNewCandle = currentCandleBlock !== this.lastScannedCandleBlock;
       const isSignificantPriceChange = Math.abs(currentPrice - this.lastScannedPrice) >= 0.05;
+      const isHeartbeatDue = (now - this.lastScanTime) >= 30000;
       
-      if (!force && !isNewCandle && !isSignificantPriceChange && this.lastScannedPrice > 0) {
+      if (!force && !isNewCandle && !isSignificantPriceChange && !isHeartbeatDue && this.lastScannedPrice > 0) {
          // Skip scan to preserve TwelveData/YahooFinance API quota!
          return;
       }
