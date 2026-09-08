@@ -33,7 +33,8 @@ export function deriveSetupSnapshot(payload: any, state: any): SetupSnapshot {
       snap.direction = (dirLower === 'long' || dirLower === 'buy') ? 'buy' : (dirLower === 'short' || dirLower === 'sell') ? 'sell' : dirLower;
     } else if (src.bias || src.marketBias || src.trend_h1) {
       const biasStr = String(src.bias || src.marketBias || src.trend_h1).toLowerCase();
-      snap.direction = biasStr.includes('bear') ? 'sell' : 'buy';
+      if (biasStr.includes('bear')) snap.direction = 'sell';
+      else if (biasStr.includes('bull')) snap.direction = 'buy';
     }
     
     if (entry && sl && tp1) {

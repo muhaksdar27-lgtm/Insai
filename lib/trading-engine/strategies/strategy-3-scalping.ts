@@ -1,9 +1,10 @@
 import { RuleEvaluationContext } from '@/types';
 import { RuleEngine } from '../rule-engine';
+import { inferDirection, resolveCandidateValidity, SignalDirection } from './strategy-signal-guards';
 
 export interface StrategyExecutionResult {
   isCandidateValid: boolean | 'pending';
-  direction: 'buy' | 'sell';
+  direction: SignalDirection | null;
   candidateRules: Record<string, any>;
   confluenceScore: number;
   confirmationStatus: string;
@@ -31,10 +32,7 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
   }
   
   const confluenceScore = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
-  let isCandidateValid: boolean | 'pending' = true;
-  if (hasCriticalInvalid) isCandidateValid = false;
-  else if (hasPending) isCandidateValid = 'pending';
-  else isCandidateValid = confluenceScore >= 80;
+  let isCandidateValid: boolean | 'pending';
 
   const s3 = pyData.strategy3 || {};
   const sweepBull = !!pyData.liq_sweep_bull;
@@ -50,7 +48,8 @@ export function detectStrategy3Scalping(context: RuleEvaluationContext, pyData: 
 
   const h1Trend = (pyData.trend_h1 || pyData.trend || 'NEUTRAL').toLowerCase();
   
-  const direction: 'buy' | 'sell' = s3.direction || ((chochBull || sweepBull || bosBull || engulfBull || doubleBottom) ? 'buy' : ((chochBear || sweepBear || bosBear || engulfBear || doubleTop) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy')));
+  const direction: SignalDirection | null = inferDirection({ explicit: s3.direction, bullish: (chochBull || sweepBull || bosBull || engulfBull || doubleBottom), bearish: (chochBear || sweepBear || bosBear || engulfBear || doubleTop), h1Trend });
+  isCandidateValid = resolveCandidateValidity(totalCount, validCount, hasCriticalInvalid, hasPending, direction);
 
   const confirmationStatus = (sweepBull || sweepBear) && (doubleTop || doubleBottom) ? 'Scalp Sweep & Double Top/Bottom Confirmed' : 'Scalp Pattern Monitored';
 

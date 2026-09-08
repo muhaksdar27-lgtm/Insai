@@ -28,7 +28,7 @@ export interface StrategyDefinition {
     isRelevantForStates: (states: MarketState[]) => boolean;
     extractCandidateRules: (context: RuleEvaluationContext, pyData: any) => {
         isCandidateValid: boolean | 'pending';
-        direction?: 'buy' | 'sell';
+        direction?: 'buy' | 'sell' | null;
         candidateRules: any;
         confluenceScore?: number;
         confirmationStatus?: string;

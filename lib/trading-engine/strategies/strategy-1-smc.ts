@@ -1,9 +1,10 @@
 import { RuleEvaluationContext } from '@/types';
 import { RuleEngine } from '../rule-engine';
+import { inferDirection, resolveCandidateValidity, SignalDirection } from './strategy-signal-guards';
 
 export interface StrategyExecutionResult {
   isCandidateValid: boolean | 'pending';
-  direction: 'buy' | 'sell';
+  direction: SignalDirection | null;
   candidateRules: Record<string, any>;
   confluenceScore: number;
   confirmationStatus: string;
@@ -31,10 +32,7 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
   }
   
   const confluenceScore = totalCount > 0 ? Math.round((validCount / totalCount) * 100) : 0;
-  let isCandidateValid: boolean | 'pending' = true;
-  if (hasCriticalInvalid) isCandidateValid = false;
-  else if (hasPending) isCandidateValid = 'pending';
-  else isCandidateValid = confluenceScore >= 80;
+  let isCandidateValid: boolean | 'pending';
 
   const s1 = pyData.strategy1 || {};
   const sweepBull = !!pyData.liq_sweep_bull || !!pyData.asian_sweep_bull;
@@ -45,7 +43,8 @@ export function detectStrategy1SMC(context: RuleEvaluationContext, pyData: any =
   const obFvgBear = !!pyData.ob_fvg_bear;
   const h1Trend = (pyData.trend_h1 || pyData.trend || 'NEUTRAL').toLowerCase();
   
-  const direction: 'buy' | 'sell' = s1.direction || ((chochBull || sweepBull) ? 'buy' : ((chochBear || sweepBear) ? 'sell' : (h1Trend === 'bearish' ? 'sell' : 'buy')));
+  const direction: SignalDirection | null = inferDirection({ explicit: s1.direction, bullish: (chochBull || sweepBull), bearish: (chochBear || sweepBear), h1Trend });
+  isCandidateValid = resolveCandidateValidity(totalCount, validCount, hasCriticalInvalid, hasPending, direction);
 
   const confirmationStatus = (sweepBull || sweepBear) && (chochBull || chochBear)
     ? 'Asia Sweep & M15 CHoCH Confirmed'

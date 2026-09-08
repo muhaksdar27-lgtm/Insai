@@ -248,9 +248,13 @@ export class NotificationEngine {
   private formatMessage(payload: NotificationPayload): string {
     const escapeHtml = (text: string) => (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     
-    // Convert direction strictly to BUY or SELL (no LONG, no SHORT)
+    // Payloads reaching this method have passed the final quality gate. Keep
+    // the direction strict; never turn an unknown value into a SELL signal.
     const rawDir = (payload.direction || '').toUpperCase();
-    const action: 'BUY' | 'SELL' = (rawDir === 'BUY' || rawDir === 'LONG') ? 'BUY' : 'SELL';
+    if (rawDir !== 'BUY' && rawDir !== 'SELL') {
+      throw new Error(`Invalid signal direction: ${payload.direction}`);
+    }
+    const action: 'BUY' | 'SELL' = rawDir;
 
     const { displayName, uniqueReason, defaultRules } = this.getStrategyDetails(payload.strategyName);
     const symbol = payload.symbol || 'XAUUSD';
@@ -299,11 +303,9 @@ export class NotificationEngine {
       const trimmed = payload.confidence.trim();
       confidenceStr = trimmed.endsWith('%') ? trimmed : `${trimmed}%`;
     } else {
-      // Calculate from rules passed ratio
-      const totalRules = defaultRules.length;
-      const passedCount = rawRulesList.length;
-      const calculatedPct = Math.min(100, Math.max(75, Math.round((passedCount / totalRules) * 100)));
-      confidenceStr = `${calculatedPct}%`;
+      // Missing confidence is missing evidence, not a reason to invent a
+      // score. The final gate should normally prevent this branch.
+      confidenceStr = 'N/A';
     }
 
     const reasonText = payload.reason && payload.reason.trim().length > 10 ? payload.reason : uniqueReason;
@@ -341,4 +343,3 @@ ${escapeHtml(reasonText)}
 }
 
 export const notificationEngine = new NotificationEngine();
-

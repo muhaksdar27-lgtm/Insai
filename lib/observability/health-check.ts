@@ -99,7 +99,14 @@ class HealthCheckEngine {
             }
         });
 
-        if (configuredCount === 0) {
+        // Yahoo is an intentional fallback and must not make the service look
+        // fully online when the configured real-time providers are absent.
+        const hasConfiguredRealtimeProvider = Boolean(
+          getEnv('TWELVEDATA_API_KEY') ||
+          getEnv('POLYGON_API_KEY') ||
+          getEnv('BINANCE_API_KEY')
+        );
+        if (!hasConfiguredRealtimeProvider || configuredCount === 0) {
             this.updateServiceHealth('MarketData', 'DEGRADED', Date.now() - start, 'Primary providers not configured; YahooFinance active fallback');
         } else if (onlineCount > 0) {
             this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, onlineCount > 1 ? 'Hybrid Active' : 'Online');

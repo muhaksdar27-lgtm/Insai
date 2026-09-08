@@ -115,10 +115,20 @@ export async function GET() {
       const aiReviewEvidence = (signal.signal_evidence || []).find((e: any) => e.engine_name === 'ai_validation' && e.evidence_type === 'ai_review');
       const aiReview = aiReviewEvidence ? aiReviewEvidence.details : null;
 
+      const normalizedDirection = signal.direction === 'LONG' || signal.direction === 'buy'
+        ? 'BUY'
+        : signal.direction === 'SHORT' || signal.direction === 'sell'
+          ? 'SELL'
+          : null;
+      if (!normalizedDirection) {
+        logger.warn(`Skipping live signal ${signal.signal_key || signal.id}: invalid direction`);
+        return null;
+      }
+
       return {
         id: signal.id,
         signalKey: signal.signal_key,
-        direction: (signal.direction === 'LONG' || signal.direction === 'buy') ? 'BUY' : (signal.direction === 'SHORT' || signal.direction === 'sell') ? 'SELL' : (signal.direction || 'BUY').toUpperCase(),
+        direction: normalizedDirection,
         pair: signal.symbol || 'XAUUSD',
         strategyName: strategyMap.get(signal.strategy_id) || signal.strategy_id || 'Strategy',
         status: statusExt,
@@ -145,7 +155,7 @@ export async function GET() {
         freshness: freshness,
         createdAt: signal.created_at
       };
-    });
+    }).filter(Boolean);
     
     success = true;
   } catch (err: unknown) {
