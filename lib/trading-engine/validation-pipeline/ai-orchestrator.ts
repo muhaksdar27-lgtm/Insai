@@ -557,7 +557,7 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
     timeoutMs: number = 8000,
     maxRetries: number = 1
   ): Promise<any> {
-    const candidateModels = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash'];
     let lastError: any = null;
 
     for (const modelName of candidateModels) {

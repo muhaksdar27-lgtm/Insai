@@ -39,13 +39,13 @@ export class FallbackChain<T> {
       }
 
       const healthStatus = getProviderRegistry().getProviderHealth(name)?.healthStatus;
-      if (healthStatus === 'NOT CONFIGURED' || healthStatus === 'UNAVAILABLE' || healthStatus === 'RATE LIMITED' || healthStatus === 'QUOTA_EXCEEDED' || healthStatus === 'INVALID_KEY' || healthStatus === 'PROVIDER_ERROR') {
+      if (healthStatus === 'NOT CONFIGURED') {
+        errors.push(new Error(`Provider ${name} skipped: not configured`));
+        continue;
+      }
+      if (healthStatus === 'UNAVAILABLE' || healthStatus === 'RATE LIMITED' || healthStatus === 'QUOTA_EXCEEDED' || healthStatus === 'INVALID_KEY' || healthStatus === 'PROVIDER_ERROR') {
         const health = getProviderRegistry().getProviderHealth(name);
         if (health?.circuitBreakerStatus === 'open') {
-          if (healthStatus === 'NOT CONFIGURED') {
-            errors.push(new Error(`Provider ${name} skipped: not configured`));
-            continue;
-          }
           logger.warnThrottled(
             `cb_skip_${name}_${context}`,
             60000,

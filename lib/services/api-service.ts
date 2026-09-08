@@ -7,16 +7,8 @@ export async function getStrategiesData() {
     const configStrategies = allStrats.map(s => ({
       id: s.id,
       name: s.name,
-      status: 'UNKNOWN',
+      status: 'active',
     }));
-
-    const isConnected = getDatabaseClient().isConnected();
-    if (!isConnected) {
-      return configStrategies.map(s => normalizeStrategyFromDB(
-        { ...s, status: 'DATABASE_UNAVAILABLE' },
-        null
-      ));
-    }
 
     const dbStrategies = await getDatabaseClient().getStrategies().catch(() => null);
     let baseStrategies = configStrategies;
@@ -25,7 +17,7 @@ export async function getStrategiesData() {
       for (const dbStrat of dbStrategies) {
         const index = baseStrategies.findIndex(s => s.id === dbStrat.id);
         if (index >= 0) {
-          baseStrategies[index] = { ...baseStrategies[index], status: dbStrat.status || 'UNKNOWN' };
+          baseStrategies[index] = { ...baseStrategies[index], status: dbStrat.status || 'active' };
         }
       }
     }
@@ -40,18 +32,8 @@ export async function getStrategiesData() {
     for (let i = 0; i < baseStrategies.length; i++) {
       try {
         const st = states[i];
-        if (st && typeof st === 'object' && ('status' in st) && (st.status === 'not_configured' || st.status === 'error')) {
-          const normalized = normalizeStrategyFromDB({ ...baseStrategies[i], status: 'DATABASE_UNAVAILABLE' }, null);
-          normalizedList.push({
-            ...normalized,
-            status: 'DATABASE_UNAVAILABLE',
-            freshness: 'stale',
-            errors: [st.reason || 'Database state unavailable']
-          });
-        } else {
-          const normalized = normalizeStrategyFromDB(baseStrategies[i], st);
-          normalizedList.push(normalized);
-        }
+        const normalized = normalizeStrategyFromDB(baseStrategies[i], st);
+        normalizedList.push(normalized);
       } catch (e: any) {
         normalizedList.push({
           id: baseStrategies[i].id,

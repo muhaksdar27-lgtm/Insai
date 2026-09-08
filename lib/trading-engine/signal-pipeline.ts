@@ -806,3 +806,10 @@ export class SignalPipeline {
 
 export const signalPipeline = SignalPipeline.getInstance();
 
+export function getSignalPipeline(): SignalPipeline {
+  if (!(globalThis as any).__signalPipeline) {
+    (globalThis as any).__signalPipeline = SignalPipeline.getInstance();
+  }
+  return (globalThis as any).__signalPipeline;
+}
+

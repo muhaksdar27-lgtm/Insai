@@ -323,8 +323,9 @@ export class MarketScanner {
 }
 
 // Singleton for app-wide usage if needed
-let _marketScanner: MarketScanner | null = null;
 export function getMarketScanner(): MarketScanner {
-  if (!_marketScanner) _marketScanner = new MarketScanner();
-  return _marketScanner;
+  if (!(globalThis as any).__marketScanner) {
+    (globalThis as any).__marketScanner = new MarketScanner();
+  }
+  return (globalThis as any).__marketScanner;
 }
