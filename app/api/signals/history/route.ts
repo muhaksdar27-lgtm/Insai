@@ -3,23 +3,24 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { getDatabaseClient } from '@/lib/db/client';
 import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
-import { ApiResponse } from '@/types';
+import { ApiResponse, HistoricalTrade } from '@/types';
 import crypto from 'crypto';
 import { publicApiError } from '@/lib/utils/api-error';
 
 export async function GET() {
   const reqId = crypto.randomUUID();
   try {
-    const data: any = await getDatabaseClient().getHistoricalSignals();
+    const data = await getDatabaseClient().getHistoricalSignals();
     
     if (!Array.isArray(data)) {
-      if (data && (data.status === 'not_configured' || data.status === 'error')) {
+      const errStatus = (data as any)?.status;
+      if (data && (errStatus === 'not_configured' || errStatus === 'error')) {
         const errorResponse: ApiResponse<null> = {
           success: false,
           data: null,
           error: {
-            code: data.status === 'not_configured' ? 'DATABASE_NOT_CONFIGURED' : 'HISTORY_FETCH_ERROR',
-            message: data.reason || 'Database is not configured or returning an error state.'
+            code: errStatus === 'not_configured' ? 'DATABASE_NOT_CONFIGURED' : 'HISTORY_FETCH_ERROR',
+            message: (data as any)?.reason || 'Database is not configured or returning an error state.'
           },
           meta: {
             request_id: reqId,
@@ -28,11 +29,11 @@ export async function GET() {
         };
         return NextResponse.json(errorResponse, { status: 503 });
       }
-      throw new Error(data?.reason || 'Failed to fetch trade history');
+      throw new Error((data as any)?.reason || 'Failed to fetch trade history');
     }
 
     // Map DB schema to UI expected format with canonical strategy names and stable IDs
-    const formattedData = data.map((item: any, idx: number) => {
+    const formattedData: HistoricalTrade[] = data.map((item: any, idx: number) => {
       const signalData = item.signals || {};
       const closedAt = new Date(item.closed_at || item.created_at || Date.now());
       
@@ -59,7 +60,7 @@ export async function GET() {
       };
     });
 
-    const response: ApiResponse<any> = {
+    const response: ApiResponse<HistoricalTrade[]> = {
       success: true,
       data: formattedData,
       error: null,
@@ -70,7 +71,7 @@ export async function GET() {
     };
     return NextResponse.json(response);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,

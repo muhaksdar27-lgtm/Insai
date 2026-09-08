@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useFetch } from "@/hooks/use-fetch";
+import { HistoricalTrade } from "@/types";
 import { motion, AnimatePresence } from "motion/react";
 import {
   History as HistoryIcon,
@@ -35,9 +36,9 @@ const itemVariants = {
 };
 
 export default function History() {
-  const { data: history, loading, error, refetch } = useFetch<any[]>("/api/signals/history", []);
+  const { data: history, loading, error, refetch } = useFetch<HistoricalTrade[]>("/api/signals/history", []);
   
-  const [selectedHistory, setSelectedHistory] = useState<any>(null);
+  const [selectedHistory, setSelectedHistory] = useState<HistoricalTrade | null>(null);
   const [filter, setFilter] = useState<string>("ALL");
   const [strategyFilter, setStrategyFilter] = useState<string>("ALL");
   const [timeframeFilter, setTimeframeFilter] = useState<string>("ALL");
@@ -346,7 +347,7 @@ export default function History() {
                 className="grid grid-cols-1 md:grid-cols-2 gap-2.5"
               >
                 {filteredHistory.slice(0, 100).map((item) => {
-                  const isBuy = item.direction === "BUY" || item.direction === "LONG";
+                  const isBuy = item.direction === "BUY";
                   return (
                     <motion.div
                       variants={itemVariants}
@@ -456,14 +457,14 @@ export default function History() {
                 <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-lg p-3 shadow-sm">
                   <div className="flex justify-between items-center mb-2">
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border shadow-sm ${selectedHistory.direction === "BUY" || selectedHistory.direction === "LONG" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border shadow-sm ${selectedHistory.direction === "BUY" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20"}`}
                     >
-                      {selectedHistory.direction === "BUY" || selectedHistory.direction === "LONG" ? (
+                      {selectedHistory.direction === "BUY" ? (
                         <ArrowUpRight className="w-3 h-3" />
                       ) : (
                         <ArrowDownRight className="w-3 h-3" />
                       )}
-                      {(selectedHistory.direction === "LONG" ? "BUY" : selectedHistory.direction === "SHORT" ? "SELL" : selectedHistory.direction)} {selectedHistory.pair}
+                      {selectedHistory.direction} {selectedHistory.pair}
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border shadow-sm ${selectedHistory.outcome === "WIN" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : selectedHistory.outcome === "LOSS" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-zinc-800 text-zinc-300 border-zinc-700"}`}

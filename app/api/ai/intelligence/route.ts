@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getMarketDataService } from "@/lib/market-data/market-data-service";
 import { LocalTAAnalyzer } from "@/lib/trading-engine/local-ta-analyzer";
+import { logger } from "@/lib/utils/logger";
 import { 
   findFVGs, 
   findOrderBlocks, 
@@ -187,8 +188,9 @@ Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), 
     };
 
     return NextResponse.json(payload);
-  } catch (error: any) {
-    console.error("Failed to generate AI intelligence:", error?.message || error);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`Failed to generate AI intelligence: ${msg}`);
     return NextResponse.json(
       { success: false, error: { code: 'INTELLIGENCE_FAILED', message: "Market intelligence service temporarily unavailable." } },
       { status: 500 }

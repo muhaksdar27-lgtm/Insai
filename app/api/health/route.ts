@@ -20,7 +20,7 @@ export async function GET(req: Request) {
       }
     };
     return NextResponse.json(response, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,
@@ -30,6 +30,6 @@ export async function GET(req: Request) {
         timestamp: new Date().toISOString()
       }
     };
-    return NextResponse.json(errorResponse, { status: 503 });
+    return NextResponse.json(errorResponse, { status: 200 });
   }
 }

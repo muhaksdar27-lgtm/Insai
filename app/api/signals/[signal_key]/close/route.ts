@@ -97,8 +97,9 @@ export async function POST(
 
     return NextResponse.json(response, { status: 200 });
 
-  } catch (err: any) {
-    logger.error(`Signal Close Handler Error: ${err.message}`, { signal_key, reqId });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Signal Close Handler Error: ${msg}`, { signal_key, reqId });
     const response: ApiResponse<null> = {
       success: false,
       data: null,

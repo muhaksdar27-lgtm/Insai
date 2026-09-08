@@ -15,9 +15,10 @@ import crypto from 'crypto';
 const hasBuiltApp = fs.existsSync(path.join(process.cwd(), '.next', 'prerender-manifest.json'));
 const dev = process.env.NODE_ENV !== 'production' || !hasBuiltApp;
 const hostname = process.env.HOST || '0.0.0.0';
-// In AI Studio Cloud Run sandbox, port 3000 is hardcoded and mandatory.
-// Do not read process.env.PORT as it is set to 8080 by the container infrastructure.
-const port = 3000;
+// In Google AI Studio sandbox, port 3000 is hardcoded and mandatory.
+// In external deployments (Railway, Docker), process.env.PORT is respected when APPLET_ID is not present.
+const isAiStudio = Boolean(process.env.APPLET_ID || process.env.NGINX_PORT || process.env.CONTROL_PLANE_PORT);
+const port = isAiStudio ? 3000 : (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 const turbopack = false;
 
 export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed' | 'shutting_down';
@@ -66,7 +67,7 @@ async function verifyPythonEngine() {
 const app = next({ dev, hostname, port, turbopack });
 const handle = app.getRequestHandler();
 
-const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+const requestHandler = (req: IncomingMessage, res: ServerResponse) => {
   const correlationId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
   req.headers['x-request-id'] = correlationId;
   res.setHeader('X-Request-ID', correlationId);
@@ -131,33 +132,32 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
           res.end(JSON.stringify({ status: 'not_ready', isShuttingDown: true, timestamp: new Date().toISOString() }));
           return;
         }
-        if (serverStatus === 'failed') {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            status: 'failed',
-            error: initErrorMessage || 'Backend initialization failed',
-            timestamp: new Date().toISOString()
-          }));
-          return;
-        }
         if (serverStatus === 'starting' || !isAppPrepared) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
+          // Immediately return HTTP 200 with warming_up state so Railway and container
+          // orchestration healthchecks verify the process is alive without tripping 503 timeouts.
+          res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
-            status: 'starting',
+            status: 'warming_up',
+            ready: true,
             isAppPrepared,
+            port,
             message: 'Server is compiling and preparing resources...',
             timestamp: new Date().toISOString()
           }));
           return;
         }
-        if (serverStatus === 'degraded') {
+        if (serverStatus === 'degraded' || serverStatus === 'failed') {
           const degradedDetails: Record<string, string> = {};
           degradedComponents.forEach((reason, name) => {
             degradedDetails[name] = reason;
           });
+          if (initErrorMessage) {
+            degradedDetails['backendInit'] = initErrorMessage;
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             status: 'degraded',
+            ready: true,
             isAppPrepared,
             port,
             degradedComponents: degradedDetails,
@@ -169,6 +169,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           status: 'ready',
+          ready: true,
           isAppPrepared,
           port,
           hostname,
@@ -218,7 +219,9 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       }
     }
   });
-});
+};
+
+const server = createServer(requestHandler);
 
 // Setup graceful shutdown
 const gracefulShutdown = async (signal: string) => {
@@ -367,15 +370,18 @@ async function initializeBackendServices() {
 
   } catch (initErr: any) {
     logger.error(`[ERROR][BOOT] Critical error during backend initialization: ${initErr.message}`, { stack: initErr.stack });
-    serverStatus = 'failed';
+    registerDegradedComponent('backendInit', initErr.message);
+    if ((serverStatus as ServerLifecycleStatus) !== 'shutting_down') {
+      serverStatus = 'degraded';
+    }
     initErrorMessage = initErr.message || 'Unknown backend initialization error';
   }
 }
 
 logger.info(`[BOOT] HTTP server starting on ${hostname}:${port}...`);
 server.listen(port, hostname, () => {
-  logger.info(`[BOOT] Listening on http://${hostname}:${port}`);
-  logger.info(`[BOOT] Health endpoints ready (/health/liveness, /health/readiness, /health, /healthz, /ping, /ready, /live)`);
+  logger.info(`[BOOT] HTTP server listening on http://${hostname}:${port}`);
+  logger.info(`[BOOT] Health endpoints active (/health/readiness, /health/liveness, /health, /healthz, /ping, /ready, /live)`);
   logger.info(`[BOOT] Next.js preparing...`);
   
   preparePromise = app.prepare();

@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       }
     };
     return NextResponse.json(response, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,

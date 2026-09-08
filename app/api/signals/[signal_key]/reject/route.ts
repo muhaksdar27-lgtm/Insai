@@ -18,7 +18,7 @@ export async function POST(
   try {
     await getDatabaseClient().updateSignalState(signal_key, 'REJECTED');
     success = true;
-  } catch (err: any) {
+  } catch (err: unknown) {
     error = { code: 'DB_ERROR', message: publicApiError(err, 'Unable to reject signal') };
   }
 

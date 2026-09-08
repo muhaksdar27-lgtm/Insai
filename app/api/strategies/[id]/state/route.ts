@@ -1,9 +1,11 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
-import { ApiResponse } from '@/types';
+import { ApiResponse, StrategyResponse } from '@/types';
 import { getDatabaseClient } from '@/lib/db/client';
 import crypto from 'crypto';
 import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
+import { normalizeStrategyFromDB } from '@/lib/trading-engine/strategy-normalize';
+import { logger } from '@/lib/utils/logger';
 import { publicApiError } from '@/lib/utils/api-error';
 
 export async function GET(
@@ -13,7 +15,7 @@ export async function GET(
   const { id } = await params;
   let success = false;
   let error = null;
-  let data = null;
+  let data: StrategyResponse | null = null;
 
   try {
     const stratDef = getStrategyDefinition(id);
@@ -33,11 +35,10 @@ export async function GET(
     let stateData = null;
     try {
       stateData = await getDatabaseClient().getStrategyState(id);
-    } catch (dbErr: any) {
-      console.warn(`Database fetch failed for ${id}, using fallback:`, dbErr.message);
+    } catch (dbErr: unknown) {
+      const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      logger.warn(`Database fetch failed for ${id}, using fallback: ${msg}`);
     }
-    
-    const { normalizeStrategyFromDB } = require('@/lib/trading-engine/strategy-normalize');
     
     // Check if data is an error or not configured
     if (stateData && typeof stateData === 'object' && ('status' in stateData) && (stateData.status === 'not_configured' || stateData.status === 'error')) {
@@ -53,11 +54,11 @@ export async function GET(
     }
     
     success = true;
-  } catch (err: any) {
+  } catch (err: unknown) {
     error = { code: 'DB_ERROR', message: publicApiError(err, 'Unable to load strategy state') };
   }
   
-  const response: ApiResponse<any> = {
+  const response: ApiResponse<StrategyResponse> = {
     success,
     data,
     error,

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getMarketDataService } from "@/lib/market-data/market-data-service";
 import { getMcpRegistry } from "@/lib/mcp/registry";
 import { getDatabaseClient } from "@/lib/db/client";
+import { logger } from "@/lib/utils/logger";
 import { publicApiError } from "@/lib/utils/api-error";
 
 export async function POST(req: NextRequest) {
@@ -172,11 +173,12 @@ You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded 
         if (response && response.text) {
           break; // Successfully got response
         }
-      } catch (e: any) {
-        lastError = e;
-        const isUnavailableOrBusy = e.status === 503 || e.message?.includes('503') || e.message?.includes('high demand') || e.message?.includes('UNAVAILABLE') || e.message?.includes('RESOURCE_EXHAUSTED');
+      } catch (e: unknown) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        const errObj = e as any;
+        const isUnavailableOrBusy = errObj?.status === 503 || errObj?.message?.includes('503') || errObj?.message?.includes('high demand') || errObj?.message?.includes('UNAVAILABLE') || errObj?.message?.includes('RESOURCE_EXHAUSTED');
         if (isUnavailableOrBusy) {
-          console.warn(`Model ${modelName} experiencing high demand (503/429), falling back to next available model...`);
+          logger.warn(`Model ${modelName} experiencing high demand (503/429), falling back to next available model...`);
           continue;
         }
         // If other fatal error (e.g. invalid API key), break early
@@ -197,9 +199,11 @@ You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded 
       timestamp: new Date().toISOString()
     });
 
-  } catch (err: any) {
-    console.error("AI Chat error:", err);
-    const isHighDemand = err.status === 503 || err.message?.includes('503') || err.message?.includes('high demand') || err.message?.includes('UNAVAILABLE');
+  } catch (err: unknown) {
+    const errObj = err as any;
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`AI Chat error: ${msg}`);
+    const isHighDemand = errObj?.status === 503 || errObj?.message?.includes('503') || errObj?.message?.includes('high demand') || errObj?.message?.includes('UNAVAILABLE');
     
     return NextResponse.json({
       success: false,

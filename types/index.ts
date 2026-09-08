@@ -402,12 +402,31 @@ export interface DashboardSnapshotPerformance {
   lossCount: number;
 }
 
+export interface HistoricalTrade {
+  id: string;
+  signalKey: string;
+  pair: string;
+  direction: 'BUY' | 'SELL';
+  outcome: 'WIN' | 'LOSS' | 'BREAK_EVEN' | 'UNKNOWN' | string;
+  pips: number;
+  closedAtTimestamp: number;
+  closedAt: string;
+  duration?: string;
+  entry: number;
+  sl: number;
+  tp1: number;
+  strategyName: string;
+  strategyId: string;
+  status: string;
+  reason: string;
+}
+
 export interface DashboardSnapshot {
   timestamp: string;
   market: MarketSnapshot | null;
   strategies: StrategyResponse[];
   signals: Signal[];
-  history: any[];
+  history: HistoricalTrade[];
   engine: DashboardSnapshotEngine;
   system: DashboardSnapshotSystem;
   performance: DashboardSnapshotPerformance;

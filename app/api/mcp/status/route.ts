@@ -4,13 +4,17 @@ import { getMcpRegistry } from '@/lib/mcp/registry';
 import { getMcpManager } from '@/lib/mcp/mcp-manager';
 import { PythonEngineManager } from '@/lib/mcp/engines/deployment';
 import crypto from 'crypto';
+import { logger } from '@/lib/utils/logger';
 import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    await getMcpManager().initialize().catch(e => console.error("MCP Init error:", e));
+    await getMcpManager().initialize().catch(e => {
+      const msg = e instanceof Error ? e.message : String(e);
+      logger.error(`MCP Init error: ${msg}`);
+    });
     
     // Dynamically re-evaluate Python Engine to ensure honest status
     try {
@@ -24,8 +28,9 @@ export async function GET() {
         } else {
             await getMcpRegistry().reportError('Python Engine Manager', result.message);
         }
-    } catch (e: any) {
-        await getMcpRegistry().reportOffline('Python Engine Manager', e.message);
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await getMcpRegistry().reportOffline('Python Engine Manager', msg);
     }
 
     const mcpStatus = await getMcpRegistry().getAllStatusAsync();
@@ -41,7 +46,7 @@ export async function GET() {
     };
     
     return NextResponse.json(response);
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json({
       success: false,
       data: [],

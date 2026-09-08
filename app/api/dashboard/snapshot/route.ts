@@ -1,7 +1,7 @@
 import { getStrategiesData } from '@/lib/services/api-service';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { ApiResponse, DashboardSnapshot } from '@/types';
+import { ApiResponse, DashboardSnapshot, HistoricalTrade } from '@/types';
 import { getMarketDataService } from '@/lib/market-data/market-data-service';
 import { getDatabaseClient } from '@/lib/db/client';
 import { getStrategyDefinition } from '@/lib/trading-engine/strategy-registry';
@@ -106,7 +106,7 @@ export async function GET(req: Request) {
 
     // Parse History
     const rawHistory = historyResult.status === 'fulfilled' && Array.isArray(historyResult.value) ? historyResult.value : [];
-    const history = rawHistory.map((item: any, idx: number) => {
+    const history: HistoricalTrade[] = rawHistory.map((item: any, idx: number): HistoricalTrade => {
       const signalData = item.signals || {};
       const closedAt = new Date(item.closed_at || item.created_at || Date.now());
       const rawStrategyId = item.strategy_id || signalData.strategy_id || item.strategyName || 'UNKNOWN';
@@ -133,18 +133,18 @@ export async function GET(req: Request) {
     });
 
     // Calculate Performance Stats
-    const winCount = history.filter((h: any) => h.outcome === 'WIN' || h.pips > 0).length;
-    const lossCount = history.filter((h: any) => h.outcome === 'LOSS' || h.pips < 0).length;
+    const winCount = history.filter(h => h.outcome === 'WIN' || h.pips > 0).length;
+    const lossCount = history.filter(h => h.outcome === 'LOSS' || h.pips < 0).length;
     const totalTrades = history.length;
     const winRate = totalTrades > 0 ? Math.round((winCount / totalTrades) * 100) : 0;
-    const totalWinPips = history.reduce((sum: number, h: any) => h.pips > 0 ? sum + h.pips : sum, 0);
-    const totalLossPips = Math.abs(history.reduce((sum: number, h: any) => h.pips < 0 ? sum + h.pips : sum, 0));
+    const totalWinPips = history.reduce((sum: number, h) => h.pips > 0 ? sum + h.pips : sum, 0);
+    const totalLossPips = Math.abs(history.reduce((sum: number, h) => h.pips < 0 ? sum + h.pips : sum, 0));
     const profitFactor = totalLossPips > 0 ? Number((totalWinPips / totalLossPips).toFixed(2)) : totalWinPips > 0 ? 99.9 : 0;
-    const netProfit = history.reduce((sum: number, h: any) => sum + (h.pips || 0), 0);
-    const winningTrades = history.filter((h: any) => h.pips > 0);
-    const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum: number, h: any) => sum + h.pips, 0) / winningTrades.length : 0;
-    const losingTrades = history.filter((h: any) => h.pips < 0);
-    const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((sum: number, h: any) => sum + Math.abs(h.pips), 0) / losingTrades.length : 0;
+    const netProfit = history.reduce((sum: number, h) => sum + (h.pips || 0), 0);
+    const winningTrades = history.filter(h => h.pips > 0);
+    const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum: number, h) => sum + h.pips, 0) / winningTrades.length : 0;
+    const losingTrades = history.filter(h => h.pips < 0);
+    const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((sum: number, h) => sum + Math.abs(h.pips), 0) / losingTrades.length : 0;
     const avgRr = avgLoss > 0 ? Number((avgWin / avgLoss).toFixed(2)) : 0;
 
     // Parse News
@@ -221,7 +221,7 @@ export async function GET(req: Request) {
     };
 
     return NextResponse.json(response, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     const errorResponse: ApiResponse<null> = {
       success: false,
       data: null,

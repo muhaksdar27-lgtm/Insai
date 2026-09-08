@@ -28,9 +28,11 @@ start_python_engine() {
   fi
 }
 
+set +e
 start_python_engine || {
   echo "[WARN][BOOT][PYTHON] Background python start yielded non-zero exit code, proceeding with Node.js service."
 }
+set -e
 
 # Start Node.js Application
 echo "[BOOT] Starting Node.js Next.js server on 0.0.0.0:${PORT:-3000}..."

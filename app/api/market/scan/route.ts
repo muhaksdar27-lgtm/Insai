@@ -23,8 +23,9 @@ export async function POST(req: Request) {
       signals,
       meta: { request_id: reqId, timestamp: new Date().toISOString() }
     });
-  } catch (error: any) {
-    logger.error(`Market Scan POST Error: ${error.message}`, { reqId });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`Market Scan POST Error: ${msg}`, { reqId });
     return NextResponse.json({ 
       success: false, 
       error: { code: 'SCAN_FAILED', message: 'Market scan execution encountered an internal error.' },
@@ -43,8 +44,9 @@ export async function GET(req: Request) {
       signals,
       meta: { request_id: reqId, timestamp: new Date().toISOString() }
     });
-  } catch (error: any) {
-    logger.error(`Market Scan GET Error: ${error.message}`, { reqId });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`Market Scan GET Error: ${msg}`, { reqId });
     return NextResponse.json({ 
       success: false, 
       error: { code: 'SCAN_FAILED', message: 'Market scan execution encountered an internal error.' },

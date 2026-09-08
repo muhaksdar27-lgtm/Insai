@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/types';
 import { getDatabaseClient } from '@/lib/db/client';
 import { transformAiChecklist } from '@/lib/utils/rule-transformer';
+import { logger } from '@/lib/utils/logger';
 import { publicApiError } from '@/lib/utils/api-error';
 
 export const dynamic = "force-dynamic";
@@ -15,8 +16,9 @@ export async function GET() {
   try {
     try {
       data = await getDatabaseClient().getActiveSignals();
-    } catch (dbErr: any) {
-      console.warn(`Database fetch failed for active signals, using fallback:`, dbErr.message);
+    } catch (dbErr: unknown) {
+      const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      logger.warn(`Database fetch failed for active signals, using fallback: ${msg}`);
     }
     
     if (!Array.isArray(data)) {
@@ -146,7 +148,7 @@ export async function GET() {
     });
     
     success = true;
-  } catch (err: any) {
+  } catch (err: unknown) {
     error = {
       code: 'DB_ERROR',
       message: publicApiError(err, 'Failed to fetch active signals')
