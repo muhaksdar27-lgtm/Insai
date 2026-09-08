@@ -17,6 +17,20 @@ import { HTFTrendAnalyzer, HTFTrendResult } from './htf-trend-analyzer';
 import { SessionEngine } from '../market-data/session-engine';
 import { toCanonicalSymbol } from '../market-data/canonical-symbol';
 
+// High-speed memoization cache for strategy-isolated technical analysis
+const isolatedAnalysisCache = new Map<string, { data: Record<string, any>; expiresAt: number }>();
+
+function getIsolatedCacheKey(strategyId: string, marketContext: any): string {
+  const symbol = marketContext.symbol || 'XAUUSD';
+  const price = Math.round((marketContext.currentPrice || 0) * 10) / 10;
+  const m15Last = marketContext.M15?.candles?.[marketContext.M15.candles.length - 1]?.timestamp || '';
+  const m5Last = marketContext.M5?.candles?.[marketContext.M5.candles.length - 1]?.timestamp || '';
+  const m1Last = marketContext.M1?.candles?.[marketContext.M1.candles.length - 1]?.timestamp || '';
+  const h1Last = marketContext.H1?.candles?.[marketContext.H1.candles.length - 1]?.timestamp || '';
+  const session = marketContext.session || '';
+  return `${strategyId}_${symbol}_${price}_${m15Last}_${m5Last}_${m1Last}_${h1Last}_${session}`;
+}
+
 export class LocalTAAnalyzer {
   public static analyze(context: any): Record<string, any> {
     const symbol = toCanonicalSymbol(context.symbol || 'XAUUSD');
@@ -386,8 +400,32 @@ export class LocalTAAnalyzer {
   /**
    * Performs isolated, timeframe-pure Technical Analysis for a specific canonical strategy.
    * Strictly uses the authorized timeframes for bias, context, setup, and trigger.
+   * Uses high-speed memoization to eliminate duplicate calculations within tick cycles.
    */
   public static analyzeStrategyIsolated(
+    strategyId: string,
+    marketContext: import('@/types/strategy-market-context').StrategyMarketContext
+  ): Record<string, any> {
+    const cacheKey = getIsolatedCacheKey(strategyId, marketContext);
+    const now = Date.now();
+    const cached = isolatedAnalysisCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+
+    const data = this.performAnalyzeStrategyIsolated(strategyId, marketContext);
+
+    // Store in cache (10 second TTL)
+    isolatedAnalysisCache.set(cacheKey, { data, expiresAt: now + 10000 });
+    if (isolatedAnalysisCache.size > 80) {
+      const keysToDelete = Array.from(isolatedAnalysisCache.keys()).slice(0, 30);
+      keysToDelete.forEach(k => isolatedAnalysisCache.delete(k));
+    }
+
+    return data;
+  }
+
+  private static performAnalyzeStrategyIsolated(
     strategyId: string,
     marketContext: import('@/types/strategy-market-context').StrategyMarketContext
   ): Record<string, any> {

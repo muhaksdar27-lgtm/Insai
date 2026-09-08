@@ -221,10 +221,10 @@ export class SetupDetector {
     // Step-by-step sequential evaluation loop
     let keepEvaluating = true;
     while (keepEvaluating && setup.current_step_order <= setup.steps.length) {
-      const currentStep = setup.steps.find(s => s.step_order === setup.current_step_order);
+      const currentStep = setup.steps[setup.current_step_order - 1] || setup.steps.find(s => s.step_order === setup.current_step_order);
       if (!currentStep) break;
 
-      const priorSteps = setup.steps.filter(s => s.step_order < setup.current_step_order);
+      const priorSteps = setup.steps.slice(0, setup.current_step_order - 1);
 
       const evalResult: StepEvaluationOutput = StepEvaluator.evaluateStep(
         currentStep,
@@ -264,7 +264,7 @@ export class SetupDetector {
         setup.current_step_order++;
         
         if (setup.current_step_order <= setup.steps.length) {
-          const nextStep = setup.steps.find(s => s.step_order === setup.current_step_order)!;
+          const nextStep = setup.steps[setup.current_step_order - 1] || setup.steps.find(s => s.step_order === setup.current_step_order)!;
           setup.current_step_id = nextStep.step_id;
 
           // If the next step is AI_GATE, verify whether all prior technical steps are already VALIDATED
@@ -420,14 +420,24 @@ export class SetupDetector {
       step.transition_history = [];
     }
 
-    step.transition_history.push({
-      from_state: fromState,
-      to_state: toState,
-      timestamp: step.last_evaluated_at,
-      reason,
-      evidence: step.evidence,
-      source_event: sourceEvent
-    });
+    const lastEntry = step.transition_history[step.transition_history.length - 1];
+    const isStateChanged = fromState !== toState;
+    const isReasonChanged = lastEntry?.reason !== reason;
+
+    if (isStateChanged || isReasonChanged || step.transition_history.length === 0) {
+      step.transition_history.push({
+        from_state: fromState,
+        to_state: toState,
+        timestamp: step.last_evaluated_at,
+        reason,
+        evidence: step.evidence,
+        source_event: sourceEvent
+      });
+      // Cap at 50 entries to prevent memory bloat and slow serialization
+      if (step.transition_history.length > 50) {
+        step.transition_history.splice(1, step.transition_history.length - 50);
+      }
+    }
   }
 
   /**

@@ -30,9 +30,20 @@ export interface HTFTrendResult {
   error?: string;
 }
 
+// Fast LRU memoization cache for HTF trend analysis across strategies within a cycle
+const htfTrendCache = new Map<string, { result: HTFTrendResult; expiresAt: number }>();
+
+function getHTFCacheKey(candles: Candle[], timeframe: string): string {
+  if (!candles || candles.length === 0) return `empty_${timeframe}`;
+  const last = candles[candles.length - 1];
+  const roundedClose = Math.round(last.close * 10) / 10;
+  return `${timeframe}_${candles.length}_${last.timestamp}_${roundedClose}`;
+}
+
 export class HTFTrendAnalyzer {
   /**
    * Deterministically calculates HTF trend based on multi-MA alignment and swing structure.
+   * Leverages high-speed memoization to eliminate duplicate calculations across parallel strategy evaluations.
    */
   public static analyzeTrend(candles: Candle[], timeframe: string = 'H1'): HTFTrendResult {
     const tf = timeframe.toUpperCase();
@@ -62,6 +73,13 @@ export class HTFTrendAnalyzer {
         status: 'INSUFFICIENT_DATA',
         error: `Insufficient candles for ${tf} trend analysis`
       };
+    }
+
+    const cacheKey = getHTFCacheKey(candles, tf);
+    const now = Date.now();
+    const cached = htfTrendCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.result;
     }
 
     try {
@@ -198,7 +216,7 @@ export class HTFTrendAnalyzer {
         structureBasis = `${tf} Trend Neutral: Mixed signals (Bullish: ${bullishPoints} pts, Bearish: ${bearishPoints} pts), structure ${swingStructure}`;
       }
 
-      return {
+      const result: HTFTrendResult = {
         direction,
         timeframe: tf,
         timestamp,
@@ -221,6 +239,15 @@ export class HTFTrendAnalyzer {
         confidence: Number(confidence.toFixed(2)),
         status: 'VALID'
       };
+
+      // Store in high-performance cache (10 second TTL per candle bar state)
+      htfTrendCache.set(cacheKey, { result, expiresAt: now + 10000 });
+      if (htfTrendCache.size > 50) {
+        const keysToDelete = Array.from(htfTrendCache.keys()).slice(0, 20);
+        keysToDelete.forEach(k => htfTrendCache.delete(k));
+      }
+
+      return result;
     } catch (err: any) {
       return {
         direction: 'ANALYSIS_ERROR',

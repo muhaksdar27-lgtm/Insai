@@ -13,9 +13,9 @@ export async function GET() {
 
   try {
     data = await getMarketDataService().getLatestPrice('XAUUSD');
-    const hasErrorStatus = data && typeof data === 'object' && ('status' in data && (data as any).status !== 'live' && (data as any).status !== 'cached' && (data as any).status !== 'stale');
+    const isExplicitError = data && typeof data === 'object' && (data as any).status === 'error' || (data as any).status === 'not_configured';
     
-    if (data && typeof data.price === 'number' && !isNaN(data.price) && data.price > 0 && !hasErrorStatus) {
+    if (data && typeof data.price === 'number' && !isNaN(data.price) && data.price > 0 && !isExplicitError) {
       success = true;
     } else {
       const errCode = (data as any)?.status === 'not_configured' ? 'PROVIDER_NOT_CONFIGURED' : 'MARKET_DATA_UNAVAILABLE';
