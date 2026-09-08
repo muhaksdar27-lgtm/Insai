@@ -264,9 +264,18 @@ export class QueueManager {
   
   private localLocks = new Map<string, number>();
 
+  private pruneExpiredLocalLocks(now: number) {
+    if (this.localLocks.size > 500) {
+      for (const [k, exp] of this.localLocks.entries()) {
+        if (exp <= now) this.localLocks.delete(k);
+      }
+    }
+  }
+
   async acquireLock(key: string, ttlSeconds: number = 30): Promise<boolean> {
     if (!this.useRedis || !this.client || this.circuitOpen || this.client.status !== 'ready') {
        const now = Date.now();
+       this.pruneExpiredLocalLocks(now);
        const existing = this.localLocks.get(key);
        if (existing && existing > now) return false;
        this.localLocks.set(key, now + ttlSeconds * 1000);
@@ -281,6 +290,7 @@ export class QueueManager {
     } catch (err: any) {
       this.incrementFailure(); logger.warn(`Failed to acquire lock for ${key}: ${err.message}. Falling back to local.`);
       const now = Date.now();
+      this.pruneExpiredLocalLocks(now);
       const existing = this.localLocks.get(key);
       if (existing && existing > now) return false;
       this.localLocks.set(key, now + ttlSeconds * 1000);

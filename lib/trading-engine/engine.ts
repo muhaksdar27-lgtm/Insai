@@ -368,7 +368,7 @@ export class TradingEngine {
           this.setupDetector.recordTransition(setup, 'AI_PENDING', 'Evaluating Signal Lifecycle Pipeline...', 'candle_update');
           sm.transition('AI_PENDING', 'Running Signal Lifecycle Pipeline...');
 
-          const pipelineResult = await signalPipeline.executePipeline(setup, context, ruleResults);
+          const pipelineResult = await signalPipeline.executePipeline(setup, strategyEvalContext, ruleResults);
 
           if (!pipelineResult.success || pipelineResult.status !== 'APPROVED') {
             const isHardRejected = pipelineResult.status === 'REJECTED' || pipelineResult.status === 'VALIDATION_ERROR';
@@ -376,10 +376,14 @@ export class TradingEngine {
 
             if (isHardRejected) {
               logger.warn(`[PIPELINE REJECTED] Strategy ${strategyId} ${failMsg}`);
+              const aiStep = setup.steps.find(s => s.step_id === 'AI_GATE');
+              if (aiStep) {
+                this.setupDetector.recordStepTransition(aiStep, 'REJECTED', failMsg, 'invalidation');
+              }
               this.setupDetector.recordTransition(setup, 'REJECTED', failMsg, 'invalidation');
               sm.transition('REJECTED', failMsg);
 
-              const payload = this.buildSetupSnapshot(context, {
+              const payload = this.buildSetupSnapshot(strategyEvalContext, {
                 setup,
                 marketStates,
                 ruleResults,
@@ -395,7 +399,7 @@ export class TradingEngine {
               this.setupDetector.recordTransition(setup, 'AI_PENDING', failMsg, 'candle_update');
               sm.transition('AI_PENDING', failMsg);
 
-              const payload = this.buildSetupSnapshot(context, {
+              const payload = this.buildSetupSnapshot(strategyEvalContext, {
                 setup,
                 marketStates,
                 ruleResults,
@@ -409,13 +413,17 @@ export class TradingEngine {
           }
 
           // Step Approved & Dispatched
+          const aiStep = setup.steps.find(s => s.step_id === 'AI_GATE');
+          if (aiStep) {
+            this.setupDetector.recordStepTransition(aiStep, 'VALIDATED', `AI Confluence Gate approved (${pipelineResult.aiValidation?.aiReview?.confidenceScore || 85}%)`, 'candle_update', pipelineResult.aiValidation);
+          }
           this.setupDetector.recordTransition(setup, 'APPROVED', 'Setup fully approved by technical and AI gates', 'candle_update');
           this.setupDetector.recordTransition(setup, 'SIGNAL_ACTIVE', 'Signal dispatched to live streams and execution engines', 'candle_update');
 
           sm.transition('APPROVED', 'Setup confirmed and priced');
           sm.transition('SIGNAL_ACTIVE', 'Signal dispatched to feeds');
 
-          const readyPayload = this.buildSetupSnapshot(context, {
+          const readyPayload = this.buildSetupSnapshot(strategyEvalContext, {
             setup,
             marketStates,
             ruleResults,

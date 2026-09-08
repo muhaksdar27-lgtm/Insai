@@ -65,13 +65,13 @@ export default function LiveSignals() {
     }
   };
 
-  // Filter signals to active statuses (exclude only archived/closed ones)
+  // Strictly filter to approved and live active signals per backend contract
+  const APPROVED_STATUSES = ['APPROVED', 'SIGNAL_ACTIVE', 'ACTIVE', 'TAKE_PARTIAL', 'EXECUTING'];
   const allActiveSignals = (rawSignals || []).filter(s => {
-    const base = (s.baseStatus || '').toUpperCase();
-    const st = (s.status || '').toUpperCase();
-    const isClosed = ['CLOSED', 'FINISHED', 'ARCHIVED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'STOP_LOSS', 'TAKE_PROFIT', 'WIN', 'LOSS', 'SL HIT', 'TP1 HIT', 'TP2 HIT', 'TP3 HIT'].includes(base) || 
-                     ['CLOSED', 'FINISHED', 'ARCHIVED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'STOP_LOSS', 'TAKE_PROFIT', 'WIN', 'LOSS', 'SL HIT', 'TP1 HIT', 'TP2 HIT', 'TP3 HIT'].includes(st);
-    return !isClosed;
+    const st = String(s.status || s.baseStatus || '').toUpperCase();
+    const isExplicitlyClosed = ['CLOSED', 'FINISHED', 'ARCHIVED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'STOP_LOSS', 'TAKE_PROFIT', 'WIN', 'LOSS'].includes(st);
+    if (isExplicitlyClosed) return false;
+    return APPROVED_STATUSES.includes(st);
   });
 
   // Apply UI Filters

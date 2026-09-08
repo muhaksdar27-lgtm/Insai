@@ -675,11 +675,24 @@ export class LocalTAAnalyzer {
       const s5Atr = atrM15 || atrM5 || 1.2;
       const dealingRange = calculateDealingRange(m15Candles, currentPrice);
       const sdStructures = findSDZoneStructures(m15Candles);
+      const obs = findOrderBlocks(m15Candles);
+      const fvgs = findFVGs(m15Candles);
+
       const freshDemand = sdStructures.filter(s => s.type === 'demand' && s.freshness !== 'BREACHED');
       const freshSupply = sdStructures.filter(s => s.type === 'supply' && s.freshness !== 'BREACHED');
       
       const isNearDemand = freshDemand.some(d => Math.abs(currentPrice - d.top) <= s5Atr || (currentPrice >= d.bottom && currentPrice <= d.top));
       const isNearSupply = freshSupply.some(s => Math.abs(currentPrice - s.bottom) <= s5Atr || (currentPrice >= s.bottom && currentPrice <= s.top));
+      const hasSd = isNearDemand || isNearSupply;
+
+      const obFvgBull = fvgs.some(f => f.type === 'bullish') || obs.some(o => o.type === 'bullish');
+      const obFvgBear = fvgs.some(f => f.type === 'bearish') || obs.some(o => o.type === 'bearish');
+      const hasObFvg = obFvgBull || obFvgBear;
+
+      const fibLevel = dealingRange.fibLevel;
+      const hasFibOte = dealingRange.oteZone || (fibLevel >= 0.50 && fibLevel <= 0.886);
+
+      let overlapCount = (hasSd ? 1 : 0) + (hasObFvg ? 1 : 0) + (hasFibOte ? 1 : 0);
 
       const m5Sweeps = m5Candles.length >= 5 ? findSweeps(m5Candles) : [];
       let liqSweepBull = false;
@@ -690,7 +703,32 @@ export class LocalTAAnalyzer {
         if (lastSweep.type === 'high_sweep') liqSweepBear = true;
       }
 
-      const s5Direction: 'buy' | 'sell' = ((isNearDemand || liqSweepBull) && dealingRange.isDiscountForBuy) ? 'buy' : (((isNearSupply || liqSweepBear) && dealingRange.isPremiumForSell) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+      // Confluence trigger on M5/M1: engulfing, displacement, or wick rejection
+      let engulfingBull = false;
+      let engulfingBear = false;
+      let wickRejectionBull = false;
+      let wickRejectionBear = false;
+      const triggerCandles = m5Candles.length >= 2 ? m5Candles : (m1Candles.length >= 2 ? m1Candles : m15Candles);
+      if (triggerCandles.length >= 2) {
+        const last = triggerCandles[triggerCandles.length - 1];
+        const prev = triggerCandles[triggerCandles.length - 2];
+        const totalRange = last.high - last.low;
+        if (totalRange > 0) {
+          const upperWick = last.high - Math.max(last.open, last.close);
+          const lowerWick = Math.min(last.open, last.close) - last.low;
+          if (lowerWick / totalRange >= 0.40) wickRejectionBull = true;
+          if (upperWick / totalRange >= 0.40) wickRejectionBear = true;
+        }
+        if (last.close > last.open && prev.close < prev.open && last.close >= prev.open && last.open <= prev.close) engulfingBull = true;
+        if (last.close < last.open && prev.close > prev.open && last.close <= prev.open && last.open >= prev.close) engulfingBear = true;
+      }
+
+      const s5Direction: 'buy' | 'sell' = ((isNearDemand || liqSweepBull || wickRejectionBull || engulfingBull) && dealingRange.isDiscountForBuy) 
+        ? 'buy' 
+        : (((isNearSupply || liqSweepBear || wickRejectionBear || engulfingBear) && dealingRange.isPremiumForSell) 
+          ? 'sell' 
+          : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+
       const s5RiskDist = Math.max(s5Atr * 0.5, 1.2);
       const s5Entry = currentPrice;
       const s5Sl = s5Direction === 'buy' ? s5Entry - s5RiskDist : s5Entry + s5RiskDist;
@@ -707,6 +745,7 @@ export class LocalTAAnalyzer {
         session,
         trend_h1,
         trend: trend_h1,
+        trend_m15: m15Candles.length >= 10 ? HTFTrendAnalyzer.analyzeTrend(m15Candles, 'M15').direction : trend_h1,
         htf_trend: h1TrendResult,
         atr: s5Atr,
         m15_available: m15Candles.length > 0,
@@ -714,11 +753,24 @@ export class LocalTAAnalyzer {
         dealing_range_zone: dealingRange.zone,
         is_discount: dealingRange.isDiscountForBuy,
         is_premium: dealingRange.isPremiumForSell,
-        sd_zone_active: isNearDemand || isNearSupply,
+        sd_zone_active: hasSd,
         sd_pattern: primarySDPattern,
         zone_freshness: zoneFreshness,
+        ob_fvg_bull: obFvgBull,
+        ob_fvg_bear: obFvgBear,
+        fib_level: fibLevel,
+        overlap_count: overlapCount,
+        zone_upper: isNearSupply && freshSupply.length > 0 ? freshSupply[freshSupply.length - 1].top : +(currentPrice + (s5Atr * 0.5)).toFixed(2),
+        zone_lower: isNearDemand && freshDemand.length > 0 ? freshDemand[freshDemand.length - 1].bottom : +(currentPrice - (s5Atr * 0.5)).toFixed(2),
+        confluence_sweep_bull: liqSweepBull,
+        confluence_sweep_bear: liqSweepBear,
         liq_sweep_bull: liqSweepBull,
         liq_sweep_bear: liqSweepBear,
+        rejection_trigger: Boolean(wickRejectionBull || wickRejectionBear || engulfingBull || engulfingBear),
+        wick_rejection_bull: wickRejectionBull,
+        wick_rejection_bear: wickRejectionBear,
+        engulfing_bull: engulfingBull,
+        engulfing_bear: engulfingBear,
         spread_acceptable: Boolean(marketContext.spread?.isAcceptable ?? (typeof marketContext.spread === 'number' ? marketContext.spread <= 3.0 : true)),
         strategy5: {
           direction: s5Direction,

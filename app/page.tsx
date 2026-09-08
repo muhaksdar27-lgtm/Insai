@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { DashboardSnapshot } from "@/types";
 import { MarketPanel } from "@/components/dashboard/market-panel";
@@ -15,30 +15,21 @@ import { RefreshCw, AlertTriangle, ShieldCheck, Activity, Terminal } from "lucid
 export default function DashboardPage() {
   const { data: snapshot, loading, error, refetch } = useFetch<DashboardSnapshot | null>("/api/dashboard/snapshot", null);
   const [ping, setPing] = useState(false);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Debounced Event Bus Subscription to prevent SSE refetch thrashing
-  const handleUpdate = useCallback(() => {
-    setPing(true);
-    setTimeout(() => setPing(false), 300);
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      refetch();
-    }, 500); // 500ms debounce
-  }, [refetch]);
-
+  // Transient visual pulse indicator on live events without duplicate network fetches
   useEffect(() => {
-    window.addEventListener("app-update", handleUpdate);
-    window.addEventListener("app-refetch", handleUpdate);
-    return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      window.removeEventListener("app-update", handleUpdate);
-      window.removeEventListener("app-refetch", handleUpdate);
+    let timer: NodeJS.Timeout | null = null;
+    const handlePing = () => {
+      setPing(true);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setPing(false), 300);
     };
-  }, [handleUpdate]);
+    window.addEventListener("app-update", handlePing);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("app-update", handlePing);
+    };
+  }, []);
 
   const masterTimestamp = snapshot?.timestamp || new Date().toISOString();
   const isStale = snapshot?.market?.freshness === "stale";
@@ -74,7 +65,7 @@ export default function DashboardPage() {
           )}
 
           <button
-            onClick={() => handleUpdate()}
+            onClick={() => refetch()}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/80 text-[10px] font-mono font-bold tracking-wider uppercase transition-all disabled:opacity-50 active:scale-95"
           >

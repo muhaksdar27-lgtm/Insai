@@ -346,6 +346,33 @@ export class DatabaseService {
     throw new Error("Unreachable");
   }
 
+  public async withTransaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
+    if (this.circuitOpen) {
+      throw new Error("PostgreSQL circuit breaker is open");
+    }
+    const pool = this.getPool();
+    if (!pool) {
+      throw new Error("PostgreSQL is not configured");
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await operation(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rbErr: any) {
+        logger.warn(`Transaction rollback error: ${rbErr?.message}`);
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   public async insertSignal(signal: any) {
     const key = signal.signalKey || signal.signal_key || crypto.randomUUID();
     const payload = {

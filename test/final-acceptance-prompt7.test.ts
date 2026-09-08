@@ -327,4 +327,31 @@ describe('PROMPT 7 — FINAL INTEGRATION, PERFORMANCE, SECURITY, QA & RE-AUDIT S
       });
     });
   });
+
+  // 6. PRODUCTION HARDENING & HEALTH TRUTHFULNESS
+  describe('6. Production Hardening & Truthfulness Checks', () => {
+    it('ensures healthCheckEngine reports MarketData as DEGRADED when using fallback instead of claiming ONLINE', async () => {
+      const { healthCheckEngine } = await import('../lib/observability/health-check');
+      const health = await healthCheckEngine.runHealthChecks();
+      const marketDataService = health.services.find(s => s.serviceName === 'MarketData');
+      
+      // In testing without TwelveData / Polygon keys, status must be DEGRADED (honest about fallback)
+      expect(marketDataService).toBeDefined();
+      if (!process.env.TWELVEDATA_API_KEY && !process.env.POLYGON_API_KEY) {
+        expect(marketDataService?.status).toBe('DEGRADED');
+        expect(marketDataService?.message).toContain('fallback');
+      }
+    });
+
+    it('ensures PythonEngine health check does not default to localhost or 127.0.0.1', async () => {
+      const { healthCheckEngine } = await import('../lib/observability/health-check');
+      const health = await healthCheckEngine.runHealthChecks();
+      const pyEngine = health.services.find(s => s.serviceName === 'PythonEngine');
+      expect(pyEngine).toBeDefined();
+      if (!process.env.PYTHON_ENGINE_URL) {
+        expect(pyEngine?.status).toBe('NOT CONFIGURED');
+        expect(pyEngine?.message).toContain('PYTHON_ENGINE_URL');
+      }
+    });
+  });
 });

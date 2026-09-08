@@ -267,15 +267,25 @@ export class SetupDetector {
           const nextStep = setup.steps.find(s => s.step_order === setup.current_step_order)!;
           setup.current_step_id = nextStep.step_id;
 
-          // Update overall setup state sequentially
-          if (setup.state === 'AWAITING' && setup.current_step_order >= 2) {
-            this.recordTransition(setup, 'DETECTED', `Initial filter/trend validated (${currentStep.step_id})`, sourceEvent, currentStep.step_id);
-          } else if (setup.state === 'DETECTED' && setup.current_step_order >= 4) {
-            this.recordTransition(setup, 'ACTIVE', `Core structural conditions confirmed through Step ${currentStep.step_order - 1}`, sourceEvent, currentStep.step_id);
+          // If the next step is AI_GATE, verify whether all prior technical steps are already VALIDATED
+          if (nextStep.step_id === 'AI_GATE') {
+            const unvalidatedTechnical = setup.steps.filter(s => s.step_id !== 'AI_GATE' && s.state !== 'VALIDATED');
+            if (unvalidatedTechnical.length === 0) {
+              // All deterministic technical rules are validated! Setup is ready for AI Pipeline
+              this.recordTransition(setup, 'VALIDATED', 'All deterministic technical strategy rules validated. Awaiting AI pipeline', sourceEvent, nextStep.step_id);
+              isStateChanged = true;
+            }
+          } else {
+            // Update overall setup state sequentially
+            if (setup.state === 'AWAITING' && setup.current_step_order >= 2) {
+              this.recordTransition(setup, 'DETECTED', `Initial filter/trend validated (${currentStep.step_id})`, sourceEvent, currentStep.step_id);
+            } else if (setup.state === 'DETECTED' && setup.current_step_order >= 4) {
+              this.recordTransition(setup, 'ACTIVE', `Core structural conditions confirmed through Step ${currentStep.step_order - 1}`, sourceEvent, currentStep.step_id);
+            }
           }
           // Continue loop to evaluate next newly active step against available context!
         } else {
-          // All technical steps validated -> Move to VALIDATED / AI_PENDING
+          // All steps validated -> Move to VALIDATED
           this.recordTransition(setup, 'VALIDATED', 'All sequential strategy rules validated', sourceEvent, currentStep.step_id);
           keepEvaluating = false;
         }
@@ -288,6 +298,16 @@ export class SetupDetector {
       } else if (evalResult.status === 'AWAITING') {
         this.recordStepTransition(currentStep, 'AWAITING', evalResult.reason, sourceEvent, evalResult.evidence);
         
+        // If current step is AI_GATE and all prior technical steps are VALIDATED:
+        // Set setup.state to VALIDATED so the downstream SignalPipeline executes AI validation
+        if (currentStep.step_id === 'AI_GATE') {
+          const unvalidatedTechnical = setup.steps.filter(s => s.step_id !== 'AI_GATE' && s.state !== 'VALIDATED');
+          if (unvalidatedTechnical.length === 0 && setup.state !== 'VALIDATED' && setup.state !== 'APPROVED' && setup.state !== 'SIGNAL_ACTIVE') {
+            this.recordTransition(setup, 'VALIDATED', 'All deterministic technical strategy rules validated. Awaiting AI pipeline', sourceEvent, currentStep.step_id);
+            isStateChanged = true;
+          }
+        }
+
         // AWAITING preserves the setup and continues scanning on future ticks!
         // Throttled per strategy step & reason to prevent high-frequency log spam while preserving diagnostics
         const awaitingThrottleKey = `awaiting_${strategyId}_${currentStep.step_id}_${evalResult.reason}`;

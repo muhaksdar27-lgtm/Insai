@@ -6,8 +6,8 @@ const cspHeader = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://picsum.photos",
   "font-src 'self' data:",
-  "connect-src 'self' wss://ws.twelvedata.com https://api.twelvedata.com https://query1.finance.yahoo.com https://api.polygon.io",
-  "frame-ancestors 'self'",
+  "connect-src 'self' ws://127.0.0.1:* wss://ws.twelvedata.com https://api.twelvedata.com https://query1.finance.yahoo.com https://api.polygon.io",
+  "frame-ancestors 'self' https://ai.studio https://*.google.com https://*.google https://*.run.app",
   "base-uri 'self'",
   "form-action 'self'"
 ].join('; ');
@@ -68,6 +68,7 @@ const nextConfig = {
     ],
   },
   transpilePackages: ['motion'],
+  turbopack: {},
   webpack: (config, {dev}) => {
     if (dev && process.env.DISABLE_HMR === 'true') {
       config.watchOptions = {

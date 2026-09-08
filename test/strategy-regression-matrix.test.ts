@@ -431,7 +431,7 @@ describe('TASK 11: FULL REGRESSION TEST MATRIX (ALL 5 STRATEGIES)', () => {
         const qgRes = await qualityGate.evaluate(
           stratId,
           {} as any,
-          { symbol: fixture.symbol },
+          { symbol: fixture.symbol, timestamp: fixture.baseTimestamp },
           {},
           {
             strategyName: stratId,

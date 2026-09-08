@@ -85,3 +85,69 @@ export function createRuleResult(
     timestamp
   };
 }
+
+export interface CalculatedRiskLevels {
+  entryPrice: number;
+  slPrice: number;
+  tp1Price: number;
+  tp2Price: number;
+  tp3Price: number;
+  riskDistance: number;
+  riskReward: string;
+  isValidGeometry: boolean;
+  geometryError?: string;
+}
+
+/**
+ * Single canonical risk calculation function.
+ * Calculates SL and TP levels based on entry price, direction, ATR, multiplier, and minRR.
+ * Enforces strict directional geometry:
+ * - BUY: SL strictly below entry, TP strictly above entry
+ * - SELL: SL strictly above entry, TP strictly below entry
+ */
+export function calculateRiskLevels(
+  entryPrice: number,
+  direction: 'buy' | 'sell',
+  atr: number,
+  multiplier: number = 0.5,
+  minRR: number = 2.0
+): CalculatedRiskLevels {
+  const riskDist = Math.max(0.1, +(atr * multiplier).toFixed(2));
+  const slPrice = direction === 'buy' ? +(entryPrice - riskDist).toFixed(2) : +(entryPrice + riskDist).toFixed(2);
+  const tp1Price = direction === 'buy' ? +(entryPrice + (riskDist * minRR)).toFixed(2) : +(entryPrice - (riskDist * minRR)).toFixed(2);
+  const tp2Price = direction === 'buy' ? +(entryPrice + (riskDist * (minRR + 1.5))).toFixed(2) : +(entryPrice - (riskDist * (minRR + 1.5))).toFixed(2);
+  const tp3Price = direction === 'buy' ? +(entryPrice + (riskDist * (minRR + 3.0))).toFixed(2) : +(entryPrice - (riskDist * (minRR + 3.0))).toFixed(2);
+
+  let isValidGeometry = true;
+  let geometryError: string | undefined;
+
+  if (direction === 'buy') {
+    if (slPrice >= entryPrice) {
+      isValidGeometry = false;
+      geometryError = `Invalid BUY geometry: SL (${slPrice}) must be strictly below entry (${entryPrice})`;
+    } else if (tp1Price <= entryPrice) {
+      isValidGeometry = false;
+      geometryError = `Invalid BUY geometry: TP1 (${tp1Price}) must be strictly above entry (${entryPrice})`;
+    }
+  } else {
+    if (slPrice <= entryPrice) {
+      isValidGeometry = false;
+      geometryError = `Invalid SELL geometry: SL (${slPrice}) must be strictly above entry (${entryPrice})`;
+    } else if (tp1Price >= entryPrice) {
+      isValidGeometry = false;
+      geometryError = `Invalid SELL geometry: TP1 (${tp1Price}) must be strictly below entry (${entryPrice})`;
+    }
+  }
+
+  return {
+    entryPrice,
+    slPrice,
+    tp1Price,
+    tp2Price,
+    tp3Price,
+    riskDistance: riskDist,
+    riskReward: `1:${minRR.toFixed(1)}`,
+    isValidGeometry,
+    geometryError
+  };
+}

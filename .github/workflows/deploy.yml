@@ -43,7 +43,7 @@ jobs:
       - name: Run Python Engine Smoke Tests
         run: |
           python -c "import fastapi, uvicorn, numpy, pydantic; print('Python dependencies verified')"
-          pytest -q python-engine/tests/ || true
+          pytest -q python-engine/test_*.py || true
 
       - name: Build Next.js App
         run: npm run build

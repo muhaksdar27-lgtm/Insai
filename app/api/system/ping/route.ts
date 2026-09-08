@@ -53,8 +53,20 @@ async function pingBackend(): Promise<EnginePingResult> {
 async function pingPython(): Promise<EnginePingResult> {
   const start = Date.now();
   const externalUrl = getEnv("PYTHON_ENGINE_URL");
-  const defaultPyPort = process.env.PYTHON_PORT || '8181';
-  const pyUrl = externalUrl || `http://127.0.0.1:${defaultPyPort}`;
+
+  if (!externalUrl) {
+    return {
+      engineId: 'python',
+      name: 'Python Engine',
+      status: 'OFFLINE',
+      latencyMs: 0,
+      lastChecked: new Date().toISOString(),
+      message: 'PYTHON_ENGINE_URL is not configured (Node.js deterministic analyzer engine active)',
+      details: { configured: false }
+    };
+  }
+
+  const pyUrl = externalUrl;
 
   try {
     const controller = new AbortController();

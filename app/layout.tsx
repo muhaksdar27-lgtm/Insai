@@ -14,8 +14,12 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "INSAI Trading",
-  description: "INSAI Trading Application",
+  title: "XAUUSD Signal Engine",
+  description: "Real-time XAUUSD Gold Trading Signal Generator with Technical Indicators, Market Structure Analysis & Multi-Timeframe Strategy Engine",
+  openGraph: {
+    title: "XAUUSD Signal Engine",
+    description: "Real-time XAUUSD Gold Trading Signal Generator with Technical Indicators, Market Structure Analysis & Multi-Timeframe Strategy Engine",
+  },
 };
 
 export default function RootLayout({

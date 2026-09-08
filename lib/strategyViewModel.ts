@@ -3,7 +3,9 @@ import { getStrategyFlow, getStepDisplayName as getSMStepDisplayName } from "@/l
 import { getStrategyDefinition } from "@/lib/trading-engine/strategy-registry";
 import { 
   CANONICAL_STRATEGY_DEFINITIONS, 
-  CANONICAL_STRATEGY_IDS 
+  CANONICAL_STRATEGY_IDS,
+  CanonicalStrategyDefinition,
+  CanonicalStepDefinition
 } from "@/lib/trading-engine/strategies/definitions";
 import { transformCandidateRules, RuleValidationResult } from "@/lib/utils/rule-transformer";
 
@@ -13,8 +15,19 @@ export const CANONICAL_STRATEGIES = CANONICAL_STRATEGY_IDS.map(id => ({
   description: CANONICAL_STRATEGY_DEFINITIONS[id].description
 }));
 
+export function normalizeCanonicalId(id: string): string {
+  const clean = (id || '').toLowerCase().trim();
+  if (clean === 'strategy-1-smc' || clean === 'strategy-1' || clean === 'strategy_1' || clean === 'smc' || clean === '1') return 'strategy-1-smc';
+  if (clean === 'strategy-2-snd' || clean === 'strategy-2' || clean === 'strategy_2' || clean === 'snd' || clean === '2') return 'strategy-2-snd';
+  if (clean === 'strategy-3-scalping' || clean === 'strategy-3' || clean === 'strategy_3' || clean === 'scalping' || clean === '3') return 'strategy-3-scalping';
+  if (clean === 'strategy-4-news' || clean === 'strategy-4' || clean === 'strategy_4' || clean === 'news' || clean === '4') return 'strategy-4-news';
+  if (clean === 'strategy-5-smc-sd-confluence' || clean === 'strategy-5' || clean === 'strategy_5' || clean === 'confluence' || clean === '5') return 'strategy-5-smc-sd-confluence';
+  return clean;
+}
+
 export function normalizeStrategy(strategy: StrategyResponse) {
-  const steps = buildTimeline(strategy);
+  const normalizedId = normalizeCanonicalId(strategy.id);
+  const steps = buildTimeline({ ...strategy, id: normalizedId });
   const validatedCount = steps.filter((s: StrategyStep) => s.status === 'validated' || s.status === 'approved').length;
   const progress = steps.length > 0 ? Math.round((validatedCount / steps.length) * 100) : (strategy.progress || 0);
   
@@ -55,17 +68,109 @@ export function normalizeStrategy(strategy: StrategyResponse) {
     setupStatus = 'disabled';
   }
 
-  const activeStep = steps.find(s => s.status === 'active' || s.status === 'awaiting') || steps[steps.length - 1];
-  const currentStep = strategy.currentStep || activeStep?.name || 'Awaiting';
+  const activeStepIdx = steps.findIndex(s => s.status === 'active' || s.status === 'awaiting');
+  const activeStep = activeStepIdx !== -1 ? steps[activeStepIdx] : (steps.length > 0 ? steps[steps.length - 1] : null);
+  const currentStep = strategy.currentStep || activeStep?.name || 'Awaiting Setup';
   const currentStepId = activeStep?.id || null;
+  const currentStepOrder = activeStepIdx !== -1 ? activeStepIdx + 1 : (steps.length > 0 ? steps.length : 1);
+
+  // Canonical definition lookup
+  const canonDef = (CANONICAL_STRATEGY_DEFINITIONS as Record<string, CanonicalStrategyDefinition | undefined>)[normalizedId];
+  const stepDef = canonDef?.steps?.find((s: CanonicalStepDefinition) => 
+    s.step_id === currentStepId || 
+    s.name === currentStep || 
+    s.step_id === currentStep ||
+    s.step_order === currentStepOrder
+  ) || canonDef?.steps?.[Math.max(0, currentStepOrder - 1)];
+
+  // Strategy-specific default descriptions for initial awaiting step
+  const defaultConditions: Record<string, string> = {
+    'strategy-1-smc': 'Menunggu sweep likuiditas sesi Asia dan konfirmasi formasi CHoCH M15 pada sesi London (07:00-16:00 UTC).',
+    'strategy-2-snd': 'Menunggu harga menguji zona Supply/Demand H1/D1 dengan konfirmasi pola candlestick rejection/engulfing.',
+    'strategy-3-scalping': 'Menunggu pergerakan liquidity sweep M1 dan displacement cepat searah trend struktur H1.',
+    'strategy-4-news': 'Menunggu rilis berita berdampak tinggi dan pembentukan sweep likuiditas pasca-rilis.',
+    'strategy-5-smc-sd-confluence': 'Menunggu zona tumpang-tindih (confluence) antara Order Block SMC dan fresh Supply/Demand Zone.'
+  };
+
+  // Missing Condition derivation
+  let missingCondition = '';
+  if (setupStatus === 'APPROVED' || setupStatus === 'SIGNAL_ACTIVE') {
+    missingCondition = 'Semua kondisi terpenuhi. Sinyal telah divalidasi dan disiarkan secara aktif.';
+  } else if (setupStatus === 'AI_PENDING') {
+    missingCondition = 'Menunggu evaluasi konfluensi risiko dan validasi AI Quality Gate.';
+  } else if (setupStatus === 'REJECTED' || setupStatus === 'FAILED' || setupStatus === 'INVALIDATED') {
+    missingCondition = 'Setup tidak dilanjutkan karena telah terinvalidasi pada evaluasi aturan.';
+  } else if (stepDef?.description) {
+    missingCondition = `Langkah ${currentStepOrder}: ${stepDef.name} — ${stepDef.description}`;
+  } else if (strategy.currentStep && strategy.currentStep !== 'Awaiting') {
+    missingCondition = `Menunggu konfirmasi: ${strategy.currentStep}`;
+  } else {
+    missingCondition = defaultConditions[normalizedId] || 'Memindai pergerakan struktur harga untuk formasi setup awal.';
+  }
+
+  // Invalidation / Rejection Reason
+  let rejectionReason: string | null = null;
+  if (['REJECTED', 'FAILED', 'INVALIDATED', 'EXPIRED'].includes(setupStatus)) {
+    rejectionReason = (strategy.errors && strategy.errors.length > 0 ? strategy.errors[0] : null) ||
+                      (strategy.setupSnapshot as any)?.invalidationReason ||
+                      (strategy.setupSnapshot as any)?.rejectionReason ||
+                      (strategy.setupSnapshot as any)?.validationLogSummary ||
+                      stepDef?.invalidation ||
+                      'Setup dibatalkan karena tidak memenuhi toleransi aturan teknikal atau filter risiko.';
+  }
+
+  // Next Evaluation Cadence
+  let nextEvaluation = 'Candle close berikutnya';
+  if (normalizedId === 'strategy-3-scalping') nextEvaluation = 'Candle M1 berikutnya (~1m)';
+  else if (normalizedId === 'strategy-4-news') nextEvaluation = 'Candle M1 pasca-rilis (~1m)';
+  else if (normalizedId === 'strategy-5-smc-sd-confluence') nextEvaluation = 'Candle M5 berikutnya (~5m)';
+  else if (normalizedId === 'strategy-1-smc' || normalizedId === 'strategy-2-snd') nextEvaluation = 'Candle M15 berikutnya (~15m)';
+
+  // Validation Rules summary
+  const rules = buildRuleResults(normalizedId, strategy.ruleResults || {});
+  const rulesCount = rules.length;
+  const passedCount = rules.filter((r: any) => r.passed).length;
+  const validationScore = rulesCount > 0 ? `${passedCount}/${rulesCount}` : (setupStatus === 'APPROVED' ? 'PASS' : '0/0');
+
+  // Setup snapshot details
+  const setup = buildSetup({ ...strategy, id: normalizedId });
+
+  // Formatted last scan time
+  let lastScan = 'Real-time';
+  if (strategy.updatedAt) {
+    try {
+      const d = new Date(strategy.updatedAt);
+      if (!isNaN(d.getTime())) {
+        lastScan = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
+      }
+    } catch {
+      lastScan = String(strategy.updatedAt);
+    }
+  }
 
   return {
     ...strategy,
+    id: normalizedId,
+    strategyId: normalizedId,
+    strategyName: canonDef?.name || strategy.name || normalizedId,
     setupStatus,
     progress,
     steps,
-    currentStep,
-    currentStepId,
+    currentStep: stepDef?.name || currentStep,
+    currentStepId: stepDef?.step_id || currentStepId,
+    currentStepOrder,
+    missingCondition,
+    invalidationRule: stepDef?.invalidation || 'Penembusan level batas atau pembatalan bias struktur',
+    rejectionReason,
+    nextEvaluation,
+    lastScan,
+    validation: {
+      score: validationScore,
+      passedCount,
+      rulesCount,
+      rules
+    },
+    detectedSetup: setup,
     setupSnapshot: strategy.setupSnapshot || null,
     ruleResults: strategy.ruleResults || null,
     signal: strategy.signal || null
@@ -452,7 +557,8 @@ export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]):
   if (Array.isArray(rawStrategies)) {
     for (const raw of rawStrategies) {
       if (raw && raw.id) {
-        mapByCanonicalId.set(raw.id, raw);
+        const canonicalId = normalizeCanonicalId(raw.id);
+        mapByCanonicalId.set(canonicalId, { ...raw, id: canonicalId });
       }
     }
   }
@@ -465,7 +571,7 @@ export function getAllStrategiesWithFallback(rawStrategies: StrategyResponse[]):
         id: canon.id,
         name: canon.name,
         description: canon.description,
-        status: existing.status || 'unconfigured',
+        status: existing.status || 'ACTIVE',
         updatedAt: existing.updatedAt || null,
       };
     }

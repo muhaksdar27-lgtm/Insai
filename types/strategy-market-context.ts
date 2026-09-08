@@ -69,11 +69,11 @@ export const CANONICAL_STRATEGY_TIMEFRAME_MAP: Record<string, StrategyTimeframeR
     execution: ['M15']
   },
   'strategy-2-snd': {
-    bias: ['D1', 'H4', 'H1'],
+    bias: ['H1'],
     context: ['H1', 'M15'],
-    setup: ['M15', 'M5'],
-    trigger: ['M15', 'M5'],
-    execution: ['M15', 'M5']
+    setup: ['M15'],
+    trigger: ['M15'],
+    execution: ['M15']
   },
   'strategy-3-scalping': {
     bias: ['H1'],
@@ -92,7 +92,7 @@ export const CANONICAL_STRATEGY_TIMEFRAME_MAP: Record<string, StrategyTimeframeR
   'strategy-5-smc-sd-confluence': {
     bias: ['H1'],
     context: ['M15'],
-    setup: ['M15', 'M5'],
+    setup: ['M15'],
     trigger: ['M5', 'M1'],
     execution: ['M5', 'M1']
   }

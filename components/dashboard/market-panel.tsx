@@ -76,7 +76,7 @@ export const MarketPanel = memo(function MarketPanel({ market, newsEvents, times
           <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">Live Spot Price</span>
           <div className="mt-1">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-lg sm:text-xl font-mono font-black text-zinc-100 tracking-tight">
+              <span className="text-base sm:text-[17px] font-mono font-black text-zinc-100 tracking-tight">
                 {price > 0 ? `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "--.--"}
               </span>
               {isPositive ? (

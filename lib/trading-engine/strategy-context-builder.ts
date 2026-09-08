@@ -91,12 +91,12 @@ export class StrategyContextBuilder {
       };
     };
 
-    const D1 = buildTfContext('D1', d1Candles, 20);
-    const H4 = buildTfContext('H4', h4Candles, 20);
-    const H1 = buildTfContext('H1', h1Candles, 30);
-    const M15 = buildTfContext('M15', m15Candles, 30);
-    const M5 = buildTfContext('M5', m5Candles, 30);
-    const M1 = buildTfContext('M1', m1Candles, 30);
+    const D1 = buildTfContext('D1', d1Candles, 10);
+    const H4 = buildTfContext('H4', h4Candles, 10);
+    const H1 = buildTfContext('H1', h1Candles, 10);
+    const M15 = buildTfContext('M15', m15Candles, 15);
+    const M5 = buildTfContext('M5', m5Candles, 15);
+    const M1 = buildTfContext('M1', m1Candles, 15);
 
     const sessionInfo = SessionEngine.getSessionInfo(now);
 

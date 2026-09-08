@@ -70,12 +70,19 @@ export interface StrategyContextData {
   name?: string;
   timeframe?: string;
   parameters?: Record<string, unknown>;
+  strategyDef?: unknown;
+  [key: string]: unknown;
 }
 
 export interface RuleChecklistItem {
-  ruleId: string;
-  description: string;
-  passed: boolean;
+  ruleId?: string;
+  rule?: string;
+  description?: string;
+  reason?: string;
+  passed?: boolean;
+  status?: string;
+  evidence?: string;
+  isCritical?: boolean;
   weight?: number;
 }
 

@@ -15,8 +15,9 @@ import crypto from 'crypto';
 const hasBuiltApp = fs.existsSync(path.join(process.cwd(), '.next', 'prerender-manifest.json'));
 const dev = process.env.NODE_ENV !== 'production' || !hasBuiltApp;
 const hostname = process.env.HOST || '0.0.0.0';
-const rawPort = process.env.PORT || '3000';
-const port = parseInt(rawPort, 10) || 3000;
+// In AI Studio Cloud Run sandbox, port 3000 is hardcoded and mandatory.
+// Do not read process.env.PORT as it is set to 8080 by the container infrastructure.
+const port = 3000;
 const turbopack = false;
 
 export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed' | 'shutting_down';
@@ -24,6 +25,7 @@ export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed'
 let serverStatus: ServerLifecycleStatus = 'starting';
 let initErrorMessage: string | null = null;
 let isAppPrepared = false;
+let preparePromise: Promise<void> | null = null;
 let pyProcess: any = null;
 const degradedComponents = new Map<string, string>();
 
@@ -38,8 +40,12 @@ function registerDegradedComponent(name: string, reason: string) {
 }
 
 async function verifyPythonEngine() {
-  const pyUrl = process.env.PYTHON_ENGINE_URL || 'http://127.0.0.1:8181';
-  logger.info(`[BOOT] Python engine initialization started (Target: ${pyUrl})...`);
+  const pyUrl = process.env.PYTHON_ENGINE_URL;
+  if (!pyUrl) {
+    logger.info(`[BOOT] PYTHON_ENGINE_URL not set. Local Node.js deterministic analyzer engine active.`);
+    return;
+  }
+  logger.info(`[BOOT] Python engine probe started (Target: ${pyUrl})...`);
   
   try {
     const controller = new AbortController();
@@ -65,7 +71,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   req.headers['x-request-id'] = correlationId;
   res.setHeader('X-Request-ID', correlationId);
 
-  requestContext.run({ correlationId }, () => {
+  requestContext.run({ correlationId }, async () => {
     try {
       const parsedUrl = parse(req.url!, true);
       const { pathname } = parsedUrl;
@@ -97,8 +103,8 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       }
 
       // Universal Health checks endpoints (before Next.js handle)
-      const isLivenessPath = pathname === '/health/liveness' || pathname === '/health' || pathname === '/healthz' || pathname === '/live' || pathname === '/ping';
-      const isReadinessPath = pathname === '/health/readiness' || pathname === '/ready' || pathname === '/healthcheck';
+      const isLivenessPath = pathname === '/health/liveness' || pathname === '/health' || pathname === '/healthz' || pathname === '/live' || pathname === '/ping' || pathname === '/status';
+      const isReadinessPath = pathname === '/health/readiness' || pathname === '/ready' || pathname === '/healthcheck' || pathname === '/status/ready';
 
       if (isLivenessPath) {
         if (serverStatus === 'shutting_down') {
@@ -179,9 +185,21 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       }
 
       if (!isAppPrepared) {
-        res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '5' });
-        res.end(JSON.stringify({ error: 'Server is starting...' }));
-        return;
+        if (preparePromise) {
+          try {
+            await preparePromise;
+          } catch (prepErr: any) {
+            if (!res.headersSent) {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Server is starting...', details: prepErr?.message }));
+            }
+            return;
+          }
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '3' });
+          res.end(JSON.stringify({ error: 'Server is initializing...' }));
+          return;
+        }
       }
 
       // Pass to Next.js
@@ -360,7 +378,8 @@ server.listen(port, hostname, () => {
   logger.info(`[BOOT] Health endpoints ready (/health/liveness, /health/readiness, /health, /healthz, /ping, /ready, /live)`);
   logger.info(`[BOOT] Next.js preparing...`);
   
-  app.prepare()
+  preparePromise = app.prepare();
+  preparePromise
     .then(() => {
       isAppPrepared = true;
       if (serverStatus === 'starting') {

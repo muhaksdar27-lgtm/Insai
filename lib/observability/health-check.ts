@@ -100,7 +100,7 @@ class HealthCheckEngine {
         });
 
         if (configuredCount === 0) {
-            this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, 'Using YahooFinance fallback');
+            this.updateServiceHealth('MarketData', 'DEGRADED', Date.now() - start, 'Primary providers not configured; YahooFinance active fallback');
         } else if (onlineCount > 0) {
             this.updateServiceHealth('MarketData', 'ONLINE', Date.now() - start, onlineCount > 1 ? 'Hybrid Active' : 'Online');
         } else if (rateLimited) {

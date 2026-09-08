@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger';
 import { getTelegramBot } from './telegram-bot';
+import { getQueueManager } from '../redis/queue';
 
 export interface NotificationPayload {
   signal_key: string;
@@ -51,11 +52,23 @@ export class NotificationEngine {
       return false;
     }
 
-    // 2. In-Memory & Key Deduplication
+    // 2. In-Memory & Distributed Key Deduplication
     if (this.notifiedKeys.has(notificationKey)) {
       payload.status = 'deduped';
-      logger.info(`[TELEGRAM DEDUP] Notification deduped for notification key: ${notificationKey}`);
+      logger.info(`[TELEGRAM DEDUP] Notification deduped (in-memory) for notification key: ${notificationKey}`);
       return false;
+    }
+
+    try {
+      const redisDedup = await getQueueManager().getCache<boolean>(notificationKey);
+      if (redisDedup) {
+        this.notifiedKeys.add(notificationKey);
+        payload.status = 'deduped';
+        logger.info(`[TELEGRAM DEDUP] Notification deduped (Redis distributed) for notification key: ${notificationKey}`);
+        return false;
+      }
+    } catch {
+      // Redis optional fallback
     }
 
     const message = this.formatMessage(payload);
@@ -72,6 +85,7 @@ export class NotificationEngine {
         if (success) {
           payload.status = 'sent';
           this.notifiedKeys.add(notificationKey);
+          getQueueManager().setCache(notificationKey, true, 86400).catch(() => {});
           logger.info(`[TELEGRAM SENT] Telegram message successfully delivered for ${notificationKey} on attempt ${attempt}`);
           
           // Memory maintenance

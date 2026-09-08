@@ -186,6 +186,43 @@ export class CandleProcessor {
     );
   }
 
+  /**
+   * Returns timeframe duration in milliseconds.
+   */
+  public getTimeframeDurationMs(timeframe: string): number {
+    const tf = (timeframe || 'M15').toUpperCase();
+    switch (tf) {
+      case 'M1': return 60 * 1000;
+      case 'M5': return 5 * 60 * 1000;
+      case 'M15': return 15 * 60 * 1000;
+      case 'M30': return 30 * 60 * 1000;
+      case 'H1': return 60 * 60 * 1000;
+      case 'H4': return 4 * 60 * 60 * 1000;
+      case 'D1': return 24 * 60 * 60 * 1000;
+      case 'W1': return 7 * 24 * 60 * 60 * 1000;
+      default: return 15 * 60 * 1000;
+    }
+  }
+
+  /**
+   * Checks if a candle has closed with respect to reference time (defaults to Date.now()).
+   */
+  public isCandleClosed(candle: Candle, timeframe: string, referenceTime: number = Date.now()): boolean {
+    if (!candle || !candle.timestamp) return false;
+    const openTime = new Date(candle.timestamp).getTime();
+    if (isNaN(openTime)) return false;
+    const duration = this.getTimeframeDurationMs(timeframe);
+    return referenceTime >= openTime + duration;
+  }
+
+  /**
+   * Filters array of candles to strictly closed candles.
+   */
+  public getClosedCandles(candles: Candle[], timeframe: string, referenceTime: number = Date.now()): Candle[] {
+    if (!candles || candles.length === 0) return [];
+    return candles.filter(c => this.isCandleClosed(c, timeframe, referenceTime));
+  }
+
   public getLatest(symbol: string, timeframe: string): Candle | null {
     const key = `${toCanonicalSymbol(symbol)}_${timeframe.toUpperCase()}`;
     return this.latestCandles.get(key) || null;

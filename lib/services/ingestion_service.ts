@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import { getQueueManager } from '../redis/queue';
 import { getMarketDataService } from '../market-data/market-data-service';
+import { toCanonicalSymbol } from '../market-data/canonical-symbol';
 
 export class IngestionService {
   private currentSymbol: string = 'XAUUSD';
@@ -12,17 +13,18 @@ export class IngestionService {
   public async start(symbol: string = 'XAUUSD') {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.currentSymbol = symbol;
+    const canonical = toCanonicalSymbol(symbol);
+    this.currentSymbol = canonical;
     
-    logger.info(`Starting Ingestion Service for ${symbol}`);
+    logger.info(`Starting Ingestion Service for ${canonical}`);
     
     // 1. Ambil history saat inisialisasi menggunakan MarketDataService
     try {
-      const history = await getMarketDataService().getCandles(symbol, '15m', 500);
+      const history = await getMarketDataService().getCandles(canonical, 'M15', 500);
       if (Array.isArray(history) && history.length > 0) {
-        logger.info(`History loaded: ${history.length} candles for ${symbol}`);
+        logger.info(`History loaded: ${history.length} candles for ${canonical}`);
         this.pushToRedis({
-          symbol,
+          symbol: canonical,
           price: history[history.length - 1].close,
           timestamp: history[history.length - 1].timestamp,
           provider: 'Init',
@@ -36,7 +38,7 @@ export class IngestionService {
     // 2. The TwelveData provider WS is initialized lazily when getLatestPrice is called
     // So we just call it once to bootstrap the connection
     try {
-       await getMarketDataService().getLatestPrice(symbol);
+       await getMarketDataService().getLatestPrice(canonical);
     } catch (e: any) {
       logger.debug(`Ingestion bootstrap price check notice: ${e?.message || e}`);
     }

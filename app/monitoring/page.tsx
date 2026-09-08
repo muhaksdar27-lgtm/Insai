@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { 
   Activity, Clock, Timer, History, 
   CheckCircle2, XCircle, Loader2, RotateCw, AlertTriangle,
-  Zap, Search, Layers, Cpu
+  Zap, Search, Layers, Cpu, ShieldCheck, AlertCircle,
+  Crosshair, Target, ChevronDown, ChevronUp
 } from "lucide-react";
-import { StrategyResponse, StrategyStep } from "@/types";
+import { StrategyResponse } from "@/types";
 import { getAllStrategiesWithFallback, normalizeStrategy, buildTimeline } from "@/lib/strategyViewModel";
 
 const CANONICAL_ORDER = [
@@ -26,187 +27,77 @@ const STRATEGY_LABELS: Record<string, { shortName: string; tf: string; session: 
   'strategy-5-smc-sd-confluence': { shortName: 'SMC-SD Confluence', tf: 'H1/M15 Structure / M5 Entry', session: 'Any Session' }
 };
 
-function formatTime(dateString?: string | Date | null) {
-  if (!dateString) return "--:--:--";
-  const d = new Date(dateString);
-  return isNaN(d.getTime()) ? "--:--:--" : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-const STEP_SCAN_LABELS: Record<string, string> = {
-  'LONDON_FILTER': 'SCANNING: LONDON SESSION',
-  'H1_TREND': 'SCANNING: H1 TREND',
-  'ASIA_SWEEP': 'SCANNING: ASIA LIQUIDITY',
-  'M15_CHOCH': 'SCANNING: M15 CHOCH',
-  'OB_FVG': 'SCANNING: OB / FVG ZONE',
-  'MA_TREND': 'SCANNING: MA TREND',
-  'SD_ZONE': 'SCANNING: SUPPLY & DEMAND',
-  'ENGULFING_TRIGGER': 'SCANNING: ENGULFING TRIGGER',
-  'M15_RETRACEMENT': 'SCANNING: M15 RETRACEMENT',
-  'M1_M5_SWEEP': 'SCANNING: M1/M5 SWEEP',
-  'DOUBLE_TOP_BOTTOM': 'SCANNING: DOUBLE TOP/BOTTOM',
-  'NECKLINE_BREAK': 'SCANNING: NECKLINE BREAK',
-  'NEWS_WINDOW': 'SCANNING: NEWS WINDOW',
-  'SPREAD_NORMAL': 'SCANNING: SPREAD NORMALITY',
-  'POST_NEWS_SWEEP': 'SCANNING: POST-NEWS SWEEP',
-  'WICK_REJECTION': 'SCANNING: WICK REJECTION',
-  'M1_BOS_REVERSAL': 'SCANNING: M1 BOS REVERSAL',
-  'H1_M15_STRUCTURE': 'SCANNING: HTF STRUCTURE',
-  'SD_FIB_OVERLAP': 'SCANNING: SD/FIB OVERLAP',
-  'CONFLUENCE_SWEEP': 'SCANNING: LIQUIDITY SWEEP',
-  'REJECTION_TRIGGER': 'SCANNING: REJECTION TRIGGER',
-  'RISK_PARAMS': 'SCANNING: RISK PARAMETERS',
-  'RISK_NEWS_FILTER': 'SCANNING: RISK FILTER',
-  'MIN_RR_CALC': 'SCANNING: 1:2 R:R CHECK',
-  'AI_GATE': 'EVALUATING: AI CONFLUENCE',
-  'SETUP_FOUND': 'SCANNING: SETUP IDENTIFICATION',
-  'SCANNING_TREND': 'SCANNING: TREND ALIGNMENT',
-  'SCANNING_LIQUIDITY': 'SCANNING: LIQUIDITY SWEEP',
-  'SCANNING_STRUCTURE': 'SCANNING: MARKET STRUCTURE'
-};
-
-function StatusBadge({ status, currentStepId, currentStepName }: { status: string; currentStepId?: string; currentStepName?: string }) {
+function StatusBadge({ status }: { status: string }) {
   const s = (status || '').toUpperCase();
-  if (s === 'APPROVED' || s === 'SIGNAL_ACTIVE' || s === 'DISPATCHED') return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1">
-      <CheckCircle2 className="w-3 h-3 text-emerald-400" /> {s === 'SIGNAL_ACTIVE' ? 'SIGNAL ACTIVE' : 'APPROVED'}
-    </span>
-  );
-  if (s === 'AI_PENDING') return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-500/10 text-purple-400 border border-purple-500/30 uppercase tracking-wider flex items-center gap-1 font-mono">
-      <Loader2 className="w-3 h-3 text-purple-400 animate-spin" /> EVALUASI AI
-    </span>
-  );
-  if (s === 'VALIDATED' || s === 'PASSED') return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/10 text-blue-400 border border-blue-500/30 uppercase tracking-wider flex items-center gap-1">
-      <CheckCircle2 className="w-3 h-3 text-blue-400" /> TERVALIDASI
-    </span>
-  );
-  if (s === 'DATABASE_UNAVAILABLE' || s === 'NOT_CONFIGURED') return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-zinc-900 text-rose-400 border border-rose-900/50 uppercase tracking-wider flex items-center gap-1 font-mono">
-      <AlertTriangle className="w-3 h-3 text-rose-500" /> DB UNAVAILABLE
-    </span>
-  );
-  if (s === 'ACTIVE' || s === 'DETECTED' || s === 'SCANNING' || s === 'SETUP_FOUND' || s === 'AWAITING') {
-    let label = 'MENCARI SETUP';
-    if (currentStepId && STEP_SCAN_LABELS[currentStepId]) {
-      label = STEP_SCAN_LABELS[currentStepId];
-    } else if (currentStepId) {
-      label = `MENCARI: ${currentStepId.replace(/_/g, ' ')}`;
-    } else if (currentStepName) {
-      label = `MENCARI: ${currentStepName.toUpperCase()}`;
-    }
-
+  if (s === 'APPROVED' || s === 'SIGNAL_ACTIVE' || s === 'DISPATCHED') {
     return (
-      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/15 text-amber-300 border border-amber-500/40 uppercase tracking-wider animate-pulse flex items-center gap-1.5 font-mono shadow-[0_0_10px_rgba(245,158,11,0.15)]">
-        <Search className="w-3 h-3 text-amber-400 animate-spin shrink-0" /> {label}
+      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1">
+        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" /> {s === 'SIGNAL_ACTIVE' ? 'SIGNAL ACTIVE' : 'APPROVED'}
       </span>
     );
   }
-  if (s === 'REJECTED' || s === 'FAILED' || s === 'INVALIDATED') return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/30 uppercase tracking-wider flex items-center gap-1">
-      <XCircle className="w-3 h-3 text-rose-400" /> {s === 'INVALIDATED' ? 'TERINVALIDASI' : 'DITOLAK'}
-    </span>
-  );
-  if (s === 'EXPIRED') return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-orange-500/10 text-orange-400 border border-orange-500/30 uppercase tracking-wider flex items-center gap-1">
-      <XCircle className="w-3 h-3 text-orange-400" /> KADALUARSA
-    </span>
-  );
+  if (s === 'AI_PENDING') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-500/15 text-purple-300 border border-purple-500/30 uppercase tracking-wider flex items-center gap-1 font-mono">
+        <Loader2 className="w-3 h-3 text-purple-400 animate-spin shrink-0" /> EVALUASI AI
+      </span>
+    );
+  }
+  if (s === 'VALIDATED' || s === 'PASSED') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/15 text-blue-300 border border-blue-500/30 uppercase tracking-wider flex items-center gap-1 font-mono">
+        <CheckCircle2 className="w-3 h-3 text-blue-400 shrink-0" /> TERVALIDASI
+      </span>
+    );
+  }
+  if (s === 'DATABASE_UNAVAILABLE' || s === 'NOT_CONFIGURED') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-zinc-900 text-rose-400 border border-rose-900/50 uppercase tracking-wider flex items-center gap-1 font-mono">
+        <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" /> DB UNAVAILABLE
+      </span>
+    );
+  }
+  if (s === 'REJECTED' || s === 'FAILED' || s === 'INVALIDATED') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/15 text-rose-400 border border-rose-500/30 uppercase tracking-wider flex items-center gap-1 font-mono">
+        <XCircle className="w-3 h-3 text-rose-400 shrink-0" /> {s === 'INVALIDATED' ? 'TERINVALIDASI' : 'DITOLAK'}
+      </span>
+    );
+  }
+  if (s === 'EXPIRED') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-orange-500/15 text-orange-400 border border-orange-500/30 uppercase tracking-wider flex items-center gap-1 font-mono">
+        <XCircle className="w-3 h-3 text-orange-400 shrink-0" /> KADALUARSA
+      </span>
+    );
+  }
   return (
-    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-900 text-zinc-400 border border-zinc-800 uppercase tracking-wider flex items-center gap-1">
-      <Clock className="w-3 h-3 text-zinc-500" /> {s === 'UNKNOWN' ? 'UNKNOWN' : 'MENUNGGU'}
+    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/15 text-amber-300 border border-amber-500/40 uppercase tracking-wider flex items-center gap-1 font-mono">
+      <Search className="w-3 h-3 text-amber-400 animate-spin shrink-0" /> MEMINDAI PASAR
     </span>
   );
 }
 
 function StepBadge({ status }: { status: string }) {
   const s = (status || '').toLowerCase();
-  if (s === 'approved') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5" /> LOLOS</span>;
-  if (s === 'validated') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase tracking-wider flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5" /> TERVALIDASI</span>;
-  if (s === 'active' || s === 'detected') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase tracking-wider animate-pulse flex items-center gap-1"><Search className="w-2.5 h-2.5 animate-spin text-amber-400" /> MENCARI</span>;
-  if (s === 'rejected' || s === 'invalidated') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30 uppercase tracking-wider flex items-center gap-1"><XCircle className="w-2.5 h-2.5" /> GAGAL</span>;
+  if (s === 'approved') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5 shrink-0" /> LOLOS</span>;
+  if (s === 'validated') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase tracking-wider flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5 shrink-0" /> TERVALIDASI</span>;
+  if (s === 'active' || s === 'detected') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase tracking-wider flex items-center gap-1"><Search className="w-2.5 h-2.5 text-amber-400 shrink-0" /> AKTIF</span>;
+  if (s === 'rejected' || s === 'invalidated') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30 uppercase tracking-wider flex items-center gap-1"><XCircle className="w-2.5 h-2.5 shrink-0" /> GAGAL</span>;
   if (s === 'expired') return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase tracking-wider">KADALUARSA</span>;
   return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-zinc-900 text-zinc-500 border border-zinc-800 uppercase tracking-wider">MENUNGGU</span>;
-}
-
-function SequentialStepTimeline({ steps }: { steps: StrategyStep[] }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      {steps.map((step, idx) => {
-        const s = (step.status || '').toLowerCase();
-        const isActive = s === 'active' || s === 'detected';
-        const isApproved = s === 'approved';
-        const isValidated = s === 'validated';
-        const isRejected = s === 'rejected' || s === 'invalidated';
-        const isExpired = s === 'expired';
-
-        let bgCls = 'bg-zinc-950/40 border-zinc-800/60 text-zinc-500';
-        let icon = <span className="w-4 h-4 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[8px] font-bold text-zinc-500">{idx + 1}</span>;
-
-        if (isApproved) {
-          bgCls = 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300';
-          icon = <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />;
-        } else if (isValidated) {
-          bgCls = 'bg-blue-950/30 border-blue-500/30 text-blue-300';
-          icon = <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />;
-        } else if (isActive) {
-          bgCls = 'bg-amber-950/40 border-amber-500/50 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.2)] animate-pulse';
-          icon = <Search className="w-4 h-4 text-amber-400 animate-spin shrink-0" />;
-        } else if (isRejected) {
-          bgCls = 'bg-rose-950/30 border-rose-500/30 text-rose-300';
-          icon = <XCircle className="w-4 h-4 text-rose-400 shrink-0" />;
-        } else if (isExpired) {
-          bgCls = 'bg-orange-950/30 border-orange-500/30 text-orange-300';
-          icon = <XCircle className="w-4 h-4 text-orange-400 shrink-0" />;
-        }
-
-        return (
-          <div key={step.id || idx} className={`flex items-center justify-between p-2 rounded border ${bgCls} transition-all`}>
-            <div className="flex items-center gap-2.5 min-w-0">
-              {icon}
-              <div className="flex flex-col min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide truncate">{step.name}</span>
-                  {isActive && (
-                    <span className="text-[8px] font-mono text-amber-300 bg-amber-500/20 px-1 py-0.2 rounded border border-amber-500/30 animate-pulse">
-                      SEDANG DICARI
-                    </span>
-                  )}
-                </div>
-                <span className="text-[9px] text-zinc-500 font-mono">Urutan Langkah {idx + 1} dari {steps.length}</span>
-              </div>
-            </div>
-            <StepBadge status={s} />
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 export default function MonitoringPage() {
   const { data: rawStrategies, loading, error, refetch } = useFetch<StrategyResponse[]>("/api/strategies", []);
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>("ALL");
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>("" );
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    const handleAppUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail?.type === 'STRATEGY_TRANSITION') {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-          refetch();
-        }, 800);
-      }
-    };
-    window.addEventListener('app-update', handleAppUpdate as EventListener);
-    return () => {
-      window.removeEventListener('app-update', handleAppUpdate as EventListener);
-      clearTimeout(timeout);
-    };
-  }, [refetch]);
+  const toggleDetails = (id: string) => {
+    setExpandedDetails(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const triggerScan = async () => {
     setIsScanning(true);
@@ -244,7 +135,6 @@ export default function MonitoringPage() {
     });
   }, [strategies, selectedStrategyId, searchQuery]);
 
-  // Overall Statistics
   const stats = useMemo(() => {
     let active = 0;
     let approved = 0;
@@ -262,166 +152,373 @@ export default function MonitoringPage() {
 
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center flex-col p-10 bg-black text-center">
-         <AlertTriangle className="w-12 h-12 text-rose-500 mb-3 animate-bounce" />
-         <h2 className="text-sm font-bold text-rose-400 tracking-wider uppercase font-mono">Gagal Mengisi Data Strategi</h2>
-         <p className="text-xs text-zinc-500 mt-2 max-w-md">{error.message}</p>
-         <button onClick={refetch} className="mt-6 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 text-xs font-bold uppercase tracking-widest rounded border border-zinc-700 transition-all">Hubungkan Ulang</button>
+      <div className="h-full flex items-center justify-center flex-col p-8 bg-black text-center">
+        <AlertTriangle className="w-10 h-10 text-rose-500 mb-3" />
+        <h2 className="text-xs font-bold text-rose-400 tracking-wider uppercase font-mono">Gagal Memuat Data Monitoring</h2>
+        <p className="text-[11px] text-zinc-500 mt-1 max-w-md">{error.message}</p>
+        <button 
+          onClick={refetch} 
+          className="mt-4 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 text-[10px] font-bold uppercase tracking-widest rounded border border-zinc-700 transition-all"
+        >
+          Muat Ulang
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full gap-5 pb-12 font-sans bg-black text-zinc-100">
+    <div className="flex flex-col h-full gap-3 pb-10 font-sans text-zinc-100">
       
-      {/* Header & Control Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-zinc-800 pb-4 gap-4">
+      {/* Header & Scan Control Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800/80 pb-3 gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <Activity className="w-5 h-5 text-blue-500" />
-            <h1 className="text-sm font-black text-zinc-100 tracking-widest uppercase font-mono">
-              Scanner & Monitoring Signal
+            <Activity className="w-4 h-4 text-blue-400 shrink-0" />
+            <h1 className="text-xs sm:text-sm font-black text-zinc-100 tracking-wider uppercase font-mono">
+              Engine Monitoring & Scanner
             </h1>
+            <span className="text-[9px] px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/30 text-blue-400 font-mono font-bold rounded">
+              XAUUSD 5-STRATEGI
+            </span>
           </div>
-          <p className="text-[11px] text-zinc-400 mt-1 uppercase tracking-wider font-semibold">
-            Deteksi Setup Real-Time — 5 Strategi Sesuai PRD
+          <p className="text-[10px] text-zinc-400 mt-0.5">
+            Audit status multi-langkah sekuensial, kondisi missing, validasi teknikal, dan evaluasi real-time.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button 
             onClick={triggerScan}
             disabled={isScanning}
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded border border-blue-400/30 transition-all shadow-lg shadow-blue-900/20"
+            className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded border border-blue-400/30 transition-all shadow-sm"
           >
-            <Zap className={`w-3.5 h-3.5 ${isScanning ? 'animate-bounce text-amber-300' : ''}`} />
-            {isScanning ? 'Jalankan Scan...' : 'Scan Sekarang'}
+            <Zap className={`w-3 h-3 ${isScanning ? 'animate-bounce text-amber-300' : ''}`} />
+            {isScanning ? 'Memindai...' : 'Pindai Sekarang'}
           </button>
           
           <button 
             onClick={refetch}
-            className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-3.5 py-2 bg-zinc-900 border border-zinc-800 rounded hover:bg-zinc-800 hover:text-white transition-all text-zinc-300"
+            className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 bg-zinc-900 border border-zinc-800 rounded hover:bg-zinc-800 hover:text-white transition-all text-zinc-300"
           >
-            <RotateCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-400' : ''}`} />
+            <RotateCw className={`w-3 h-3 ${loading ? 'animate-spin text-blue-400' : ''}`} />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Stats Summary Panel */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-zinc-950 border border-zinc-800 rounded p-3 flex items-center justify-between">
+      {/* Metric Counters */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="bg-zinc-950/80 border border-zinc-800/80 rounded p-2.5 flex items-center justify-between">
           <div>
-            <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-0.5">Total Strategi</span>
-            <span className="text-base font-mono font-black text-zinc-100">{stats.total} Active</span>
+            <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold block">Total Strategi</span>
+            <span className="text-sm font-mono font-bold text-zinc-200">{stats.total} Terkonfigurasi</span>
           </div>
-          <Layers className="w-5 h-5 text-zinc-600" />
+          <Layers className="w-4 h-4 text-zinc-600" />
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 rounded p-3 flex items-center justify-between">
+        <div className="bg-zinc-950/80 border border-zinc-800/80 rounded p-2.5 flex items-center justify-between">
           <div>
-            <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-0.5">Sedang Scanning</span>
-            <span className="text-base font-mono font-black text-amber-400">{stats.active}</span>
+            <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold block">Memantau Pasar</span>
+            <span className="text-sm font-mono font-bold text-amber-400">{stats.active}</span>
           </div>
-          <Cpu className="w-5 h-5 text-amber-500" />
+          <Cpu className="w-4 h-4 text-amber-500" />
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 rounded p-3 flex items-center justify-between">
+        <div className="bg-zinc-950/80 border border-zinc-800/80 rounded p-2.5 flex items-center justify-between">
           <div>
-            <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-0.5">Setup Approved</span>
-            <span className="text-base font-mono font-black text-emerald-400">{stats.approved}</span>
+            <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold block">Setup Approved</span>
+            <span className="text-sm font-mono font-bold text-emerald-400">{stats.approved}</span>
           </div>
-          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 rounded p-3 flex items-center justify-between">
+        <div className="bg-zinc-950/80 border border-zinc-800/80 rounded p-2.5 flex items-center justify-between">
           <div>
-            <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-0.5">Setup Rejected</span>
-            <span className="text-base font-mono font-black text-rose-400">{stats.rejected}</span>
+            <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold block">Terinvalidasi</span>
+            <span className="text-sm font-mono font-bold text-rose-400">{stats.rejected}</span>
           </div>
-          <XCircle className="w-5 h-5 text-rose-500" />
+          <XCircle className="w-4 h-4 text-rose-500" />
         </div>
       </div>
 
       {/* Filter Tabs & Search */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-zinc-950 p-2 border border-zinc-800/80 rounded">
-        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-zinc-950/80 p-2 border border-zinc-800/80 rounded">
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
           <button
             onClick={() => setSelectedStrategyId("ALL")}
-            className={`px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider whitespace-nowrap transition-all ${selectedStrategyId === "ALL" ? 'bg-blue-600 text-white shadow' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
+            className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-all ${selectedStrategyId === "ALL" ? 'bg-blue-600 text-white' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
           >
-            SEMUA STRATEGI (5)
+            SEMUA ({strategies.length})
           </button>
           {CANONICAL_ORDER.map((id, idx) => (
             <button
               key={id}
               onClick={() => setSelectedStrategyId(id)}
-              className={`px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider whitespace-nowrap transition-all ${selectedStrategyId === id ? 'bg-blue-600 text-white shadow' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
+              className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider whitespace-nowrap transition-all ${selectedStrategyId === id ? 'bg-blue-600 text-white' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
             >
               STRAT {idx + 1}
             </button>
           ))}
         </div>
 
-        <div className="relative min-w-[200px]">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+        <div className="relative min-w-[180px]">
+          <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
-            placeholder="Cari strategi atau signal key..."
+            placeholder="Cari ID strategi / nama..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded pl-8 pr-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded pl-7 pr-2.5 py-1 text-[10px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>
 
-      {/* Strategy Cards Container */}
-      <div className="flex flex-col gap-5">
+      {/* Strategy Engine Deep Monitoring Cards */}
+      <div className="flex flex-col gap-3">
         {filteredStrategies.map((strat, idx) => {
           const steps = buildTimeline(strat);
           const labelInfo = STRATEGY_LABELS[strat.id] || { shortName: strat.name, tf: '--', session: '--' };
+          const isExpanded = !!expandedDetails[strat.id];
+          const anyStrat = strat as any;
+          const detected = anyStrat.detectedSetup || {};
+          const validation = anyStrat.validation || { score: '0/0', passedCount: 0, rulesCount: 0, rules: [] };
+          const isRejected = ['REJECTED', 'FAILED', 'INVALIDATED', 'EXPIRED'].includes(strat.setupStatus);
 
           return (
-            <div key={strat.id} className="bg-zinc-950 border border-zinc-800/90 rounded-lg overflow-hidden flex flex-col shadow-2xl">
-               
-               {/* Strategy Card Header */}
-               <div className="bg-zinc-900/80 p-3.5 border-b border-zinc-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-black uppercase tracking-widest rounded font-mono">
-                        STRATEGI {idx + 1} / 5
-                      </span>
-                      <h2 className="text-xs font-black text-zinc-100 tracking-wider uppercase font-mono">{strat.name || strat.id}</h2>
-                      <StatusBadge status={strat.setupStatus} currentStepId={(strat as any).currentStepId} currentStepName={strat.currentStep} />
-                    </div>
-                    <p className="text-[10px] text-zinc-400 leading-snug">{strat.description}</p>
-                    
-                    <div className="flex flex-wrap items-center gap-4 mt-2 text-[10px] text-zinc-400 font-mono font-bold">
-                      <span className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-blue-400" /> Timeframe: <span className="text-zinc-200">{labelInfo.tf}</span></span>
-                      <span className="flex items-center gap-1.5"><Timer className="w-3 h-3 text-amber-400" /> Sesi: <span className="text-zinc-200">{labelInfo.session}</span></span>
-                      <span className="flex items-center gap-1.5"><History className="w-3 h-3 text-zinc-500" /> Waktu Log: <span className="text-zinc-200">{formatTime(strat.updatedAt)}</span></span>
-                    </div>
+            <div 
+              key={strat.id} 
+              className="bg-zinc-950 border border-zinc-800/90 rounded-lg overflow-hidden flex flex-col shadow-lg"
+            >
+              
+              {/* Header: Strategy ID, Name, Step, Status */}
+              <div className="bg-zinc-900/90 p-3 border-b border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <div className="flex flex-col gap-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/30 text-[9px] font-mono font-bold rounded uppercase">
+                      ID: {strat.id}
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-zinc-800 text-zinc-300 text-[9px] font-mono font-bold rounded">
+                      STRATEGI {idx + 1}
+                    </span>
+                    <h2 className="text-xs font-bold text-zinc-100 uppercase font-mono tracking-tight truncate">
+                      {strat.name || strat.id}
+                    </h2>
+                    <StatusBadge status={strat.setupStatus} />
                   </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-400 font-mono">
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-blue-400 shrink-0" /> TF: <span className="text-zinc-200">{labelInfo.tf}</span></span>
+                    <span className="flex items-center gap-1"><Timer className="w-3 h-3 text-amber-400 shrink-0" /> Sesi: <span className="text-zinc-200">{labelInfo.session}</span></span>
+                    <span className="flex items-center gap-1"><Target className="w-3 h-3 text-emerald-400 shrink-0" /> Langkah: <span className="text-zinc-200 font-bold">{anyStrat.currentStepOrder || 1}/{steps.length} — {anyStrat.currentStep || 'Awaiting'}</span></span>
+                  </div>
+                </div>
 
-                  <div className="flex flex-col lg:items-end justify-center bg-black/60 p-2.5 rounded border border-zinc-800/80 shrink-0">
-                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-extrabold mb-1">Single Signal Record Key</span>
-                    <span className="text-[10px] font-mono text-zinc-300 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 truncate max-w-[220px]">
-                      {strat.signal || 'AWAITING_SETUP'}
+                {/* Right Header Status Bar */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="bg-black/60 px-2.5 py-1 rounded border border-zinc-800/80 text-right">
+                    <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold block">Validasi Aturan</span>
+                    <span className="text-[10px] font-mono font-bold text-blue-400">
+                      Score: {validation.score}
                     </span>
                   </div>
-               </div>
+                  <button 
+                    onClick={() => toggleDetails(strat.id)}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-mono font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors"
+                  >
+                    {isExpanded ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
+                    {isExpanded ? 'Tutup Detail' : 'Detail Step'}
+                  </button>
+                </div>
+              </div>
 
-               {/* Card Body - Setup Sequence Workflow (Steps 1 to 9) */}
-               <div className="p-4 flex flex-col gap-2">
-                  <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5 mb-1">
-                    <h3 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-                      <Layers className="w-3.5 h-3.5 text-blue-400" />
-                      Urutan Setup Sekuensial (Step 1 - 9)
-                    </h3>
-                    <span className="text-[9px] text-zinc-500 font-mono font-bold">Tanpa Lompat Step</span>
+              {/* Engine Metrics Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 bg-zinc-950/90 border-b border-zinc-800/60 p-2 gap-2 text-[10px] font-mono">
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold">Terakhir Dipindai</span>
+                  <span className="text-zinc-200 font-bold flex items-center gap-1">
+                    <History className="w-3 h-3 text-zinc-500 shrink-0" />
+                    {anyStrat.lastScan || 'Real-time'}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold">Evaluasi Berikutnya</span>
+                  <span className="text-zinc-300 font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                    {anyStrat.nextEvaluation || 'Candle close'}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold">Single Signal Key</span>
+                  <span className="text-zinc-300 font-bold truncate">
+                    {strat.signal || 'MONITORING_SETUP'}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-extrabold">Progress Pipeline</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex-1 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-300 ${isRejected ? 'bg-rose-500' : 'bg-blue-500'}`} 
+                        style={{ width: `${strat.progress || 0}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-zinc-400">{strat.progress || 0}%</span>
                   </div>
-                  <SequentialStepTimeline steps={steps} />
-               </div>
+                </div>
+              </div>
+
+              {/* Core Engine Intelligence: Missing Condition & Detected Setup */}
+              <div className="p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
+                
+                {/* Left Column: Missing Condition & Invalidation / Rejection Info */}
+                <div className="lg:col-span-7 flex flex-col gap-2">
+                  
+                  {/* Current Missing Condition Box */}
+                  <div className="bg-zinc-900/60 border border-zinc-800/80 rounded p-2.5 flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                        Kondisi yang Diperlukan (Missing Condition)
+                      </span>
+                      <span className="text-[8px] text-zinc-500 font-mono">
+                        Langkah {anyStrat.currentStepOrder || 1}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-200 leading-relaxed font-sans">
+                      {anyStrat.missingCondition || 'Memantau formasi struktur harga dan likuiditas market untuk memenuhi syarat validasi berikutnya.'}
+                    </p>
+                  </div>
+
+                  {/* Rejection / Invalidation Criteria Box */}
+                  {isRejected ? (
+                    <div className="bg-rose-950/20 border border-rose-500/30 rounded p-2.5 flex flex-col gap-1">
+                      <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1">
+                        <XCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                        Penyebab Ditolak / Terinvalidasi (Rejection Reason)
+                      </span>
+                      <p className="text-[11px] text-rose-300 font-sans leading-relaxed">
+                        {anyStrat.rejectionReason || 'Setup gagal memenuhi toleransi aturan batas teknikal atau filter risiko.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-zinc-900/40 border border-zinc-800/60 rounded p-2 flex items-start gap-1.5">
+                      <ShieldCheck className="w-3 h-3 text-zinc-500 shrink-0 mt-0.5" />
+                      <div className="flex flex-col text-[10px]">
+                        <span className="text-zinc-400 font-mono font-bold uppercase text-[8px]">Kriteria Pembatalan Setup (Invalidation)</span>
+                        <span className="text-zinc-400">{anyStrat.invalidationRule || 'Penembusan level swing berlawanan atau pembatalan bias HTF.'}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Gate Snapshot if available */}
+                  {(strat.aiDecision || anyStrat.detectedSetup?.aiDecision) && (
+                    <div className="bg-purple-950/20 border border-purple-500/25 rounded p-2 flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-purple-300 flex items-center gap-1">
+                        <Cpu className="w-3 h-3 text-purple-400 shrink-0" />
+                        AI Confluence Quality Gate:
+                      </span>
+                      <span className="font-bold text-purple-200">
+                        {strat.aiDecision || anyStrat.detectedSetup?.aiDecision}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Detected Setup Snapshot & Rules */}
+                <div className="lg:col-span-5 flex flex-col gap-2">
+                  <div className="bg-zinc-900/50 border border-zinc-800/80 rounded p-2.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between border-b border-zinc-800/80 pb-1">
+                      <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
+                        <Crosshair className="w-3 h-3 text-blue-400 shrink-0" />
+                        Setup Terdeteksi (Detected Setup)
+                      </span>
+                      <span className="text-[9px] font-mono text-zinc-400 font-bold">
+                        {detected.pair || 'XAUUSD'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
+                      <div className="bg-zinc-950/80 p-1.5 rounded border border-zinc-800/50 flex justify-between">
+                        <span className="text-zinc-500">Arah:</span>
+                        <span className={`font-bold ${detected.direction === 'BUY' ? 'text-emerald-400' : detected.direction === 'SELL' ? 'text-rose-400' : 'text-zinc-300'}`}>
+                          {detected.direction || '--'}
+                        </span>
+                      </div>
+                      <div className="bg-zinc-950/80 p-1.5 rounded border border-zinc-800/50 flex justify-between">
+                        <span className="text-zinc-500">Bias HTF:</span>
+                        <span className="font-bold text-zinc-200">{detected.bias || '--'}</span>
+                      </div>
+                      <div className="bg-zinc-950/80 p-1.5 rounded border border-zinc-800/50 flex justify-between">
+                        <span className="text-zinc-500">Entry:</span>
+                        <span className="font-bold text-zinc-200">{detected.entry || '--'}</span>
+                      </div>
+                      <div className="bg-zinc-950/80 p-1.5 rounded border border-zinc-800/50 flex justify-between">
+                        <span className="text-zinc-500">Stop Loss:</span>
+                        <span className="font-bold text-rose-400">{detected.sl || '--'}</span>
+                      </div>
+                      <div className="bg-zinc-950/80 p-1.5 rounded border border-zinc-800/50 flex justify-between">
+                        <span className="text-zinc-500">Take Profit:</span>
+                        <span className="font-bold text-emerald-400">{detected.tp || '--'}</span>
+                      </div>
+                      <div className="bg-zinc-950/80 p-1.5 rounded border border-zinc-800/50 flex justify-between">
+                        <span className="text-zinc-500">R:R Ratio:</span>
+                        <span className="font-bold text-amber-400">{detected.rr || '--'}</span>
+                      </div>
+                    </div>
+
+                    {/* Sweep & Confirmation Status */}
+                    <div className="flex items-center justify-between text-[9px] font-mono text-zinc-400 pt-1 border-t border-zinc-800/60">
+                      <span>Liquidity Sweep: <strong className="text-zinc-200">{detected.sweepStatus || 'Monitored'}</strong></span>
+                      <span>Konfirmasi: <strong className="text-zinc-200">{detected.confirmationStatus || 'Awaiting'}</strong></span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Sequential Step Timeline (Expandable or Default) */}
+              <div className="border-t border-zinc-800/80 p-3 bg-zinc-950/60 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-blue-400 shrink-0" />
+                    Urutan Alur Sekuensial Step (1 - {steps.length})
+                  </span>
+                  <span className="text-[8px] text-zinc-500 font-mono">Transisi Terstruktur Tanpa Lompat</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                  {steps.map((step, sIdx) => {
+                    const s = (step.status || '').toLowerCase();
+                    const isActive = s === 'active' || s === 'detected';
+                    const isApproved = s === 'approved';
+                    const isValidated = s === 'validated';
+                    const isStepRejected = s === 'rejected' || s === 'invalidated';
+
+                    let stepBg = 'bg-zinc-900/40 border-zinc-800/60 text-zinc-500';
+                    if (isApproved) stepBg = 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300';
+                    else if (isValidated) stepBg = 'bg-blue-950/20 border-blue-500/30 text-blue-300';
+                    else if (isActive) stepBg = 'bg-amber-950/30 border-amber-500/40 text-amber-200';
+                    else if (isStepRejected) stepBg = 'bg-rose-950/20 border-rose-500/30 text-rose-300';
+
+                    return (
+                      <div 
+                        key={step.id || sIdx} 
+                        className={`p-2 rounded border flex items-center justify-between gap-2 ${stepBg}`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-4 h-4 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[8px] font-bold text-zinc-400 shrink-0 font-mono">
+                            {sIdx + 1}
+                          </span>
+                          <span className="text-[10px] font-bold truncate">
+                            {step.name}
+                          </span>
+                        </div>
+                        <StepBadge status={s} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
             </div>
           );

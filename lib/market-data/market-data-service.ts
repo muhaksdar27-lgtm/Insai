@@ -1,5 +1,6 @@
 import { MarketSnapshot, Candle, NewsEvent, CalendarEvent } from '@/types';
 import { TwelveDataProvider } from './providers/twelvedata';
+import { PolygonProvider } from './providers/polygon';
 import { NewsApiProvider } from './providers/newsapi';
 import { YahooFinanceProvider } from './providers/yahoofinance';
 import { BinanceProvider } from './providers/binance';
@@ -33,9 +34,11 @@ export class MarketDataService {
     // Fallback chain for price
     // 1. TwelveData (Primary - Real-time Spot XAU/USD)
     this.priceChain.addProvider(new TwelveDataProvider(), 'TwelveData');
-    // 2. Binance (Secondary / High-precision Spot Gold proxy)
+    // 2. Polygon (Secondary / Direct Forex-Metals Aggregator)
+    this.priceChain.addProvider(new PolygonProvider(), 'Polygon.io');
+    // 3. Binance (Tertiary / High-precision Spot Gold proxy)
     this.priceChain.addProvider(new BinanceProvider(), 'Binance');
-    // 3. Yahoo Finance (Tertiary / Index Fallback)
+    // 4. Yahoo Finance (Quaternary / Index Fallback)
     this.priceChain.addProvider(new YahooFinanceProvider(), 'YahooFinance');
 
     // Fallback chain for news
@@ -184,14 +187,17 @@ export class MarketDataService {
     );
 
     if (Array.isArray(data) && data.length > 0 && !data.hasOwnProperty('status')) {
+      // Deduplicate and ensure chronological order
+      const cleanData = getCandleProcessor().deduplicateAndOrder(data);
+
       // Validate candles integrity
-      const validation = dataValidator.validateCandles(data, canonical, tf);
+      const validation = dataValidator.validateCandles(cleanData, canonical, tf);
       if (!validation.isValid) {
         logger.warn(`Candle validation warning for ${canonical} ${tf}: ${validation.reason}`);
       }
 
       // Process latest candle through CandleProcessor
-      const latest = data[data.length - 1];
+      const latest = cleanData[cleanData.length - 1];
       getCandleProcessor().processCandle(canonical, tf, latest);
 
       let ttlMs = this.CANDLE_CACHE_TTL_MS;
@@ -201,11 +207,12 @@ export class MarketDataService {
       else if (tf === 'H1') ttlMs = 900000;
 
       const cacheEntry = {
-        data,
+        data: cleanData,
         expiresAt: now + ttlMs
       };
       this.candleCache.set(cacheKey, cacheEntry);
       getQueueManager().setCache(`candles:${cacheKey}`, cacheEntry, Math.ceil(ttlMs / 1000)).catch(() => {});
+      return cleanData.slice(-limit);
     }
 
     return Array.isArray(data) ? data.slice(-limit) : data;

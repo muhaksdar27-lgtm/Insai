@@ -690,7 +690,7 @@ export default function Settings() {
                   className="w-full bg-white/5 border border-white/10 focus:border-blue-500/50 rounded px-2.5 py-1.5 text-white font-mono outline-none tracking-wide"
                   value={formData.PYTHON_ENGINE_URL || ''}
                   onChange={(e) => setFormData({ ...formData, PYTHON_ENGINE_URL: e.target.value })}
-                  placeholder="http://localhost:8000"
+                  placeholder="https://python-ta.run.app"
                 />
               </div>
 
