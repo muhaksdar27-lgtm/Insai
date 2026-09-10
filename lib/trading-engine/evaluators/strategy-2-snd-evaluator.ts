@@ -223,6 +223,7 @@ export class Strategy2SNDEvaluator implements IStrategyEvaluator {
           evidence: {
             source: 'RiskEngine',
             timestamp,
+            timeframe: 'M15',
             entryPrice,
             slPrice,
             tp1Price,

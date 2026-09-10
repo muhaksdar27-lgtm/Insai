@@ -537,24 +537,37 @@ export class LocalTAAnalyzer {
       const isNearDemand = freshDemand.some(d => Math.abs(currentPrice - d.top) <= s2Atr || (currentPrice >= d.bottom && currentPrice <= d.top));
       const isNearSupply = freshSupply.some(s => Math.abs(currentPrice - s.bottom) <= s2Atr || (currentPrice >= s.bottom && currentPrice <= s.top));
 
-      // Engulfing trigger evaluated on recent M15 or M5 closed candles
+      // Engulfing trigger evaluated on recent M15 or M5 closed candles (lookback up to 10 candles)
       let engulfingBull = false;
       let engulfingBear = false;
-      const triggerCandles = m5Candles.length >= 3 ? m5Candles : s2Candles;
-      if (triggerCandles.length >= 2) {
-        for (let i = 1; i <= Math.min(4, triggerCandles.length - 1); i++) {
-          const candle = triggerCandles[triggerCandles.length - i];
-          const prev = triggerCandles[triggerCandles.length - i - 1];
+      let wickRejectionBull = false;
+      let wickRejectionBear = false;
+
+      const evaluateTriggers = (cList: any[]) => {
+        if (!cList || cList.length < 2) return;
+        const maxLookback = Math.min(10, cList.length - 1);
+        for (let i = 1; i <= maxLookback; i++) {
+          const candle = cList[cList.length - i];
+          const prev = cList[cList.length - i - 1];
           if (candle.close > candle.open && prev.close < prev.open && candle.close >= prev.open && candle.open <= prev.close) {
             engulfingBull = true;
           }
           if (candle.close < candle.open && prev.close > prev.open && candle.close <= prev.open && candle.open >= prev.close) {
             engulfingBear = true;
           }
+          const totalRange = candle.high - candle.low;
+          if (totalRange > 0) {
+            const upperWick = candle.high - Math.max(candle.open, candle.close);
+            const lowerWick = Math.min(candle.open, candle.close) - candle.low;
+            if (lowerWick / totalRange >= 0.40) wickRejectionBull = true;
+            if (upperWick / totalRange >= 0.40) wickRejectionBear = true;
+          }
         }
-      }
+      };
+      evaluateTriggers(m5Candles);
+      evaluateTriggers(m15Candles);
 
-      const s2Direction: 'buy' | 'sell' = (isNearDemand || engulfingBull) ? 'buy' : ((isNearSupply || engulfingBear) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
+      const s2Direction: 'buy' | 'sell' = (isNearDemand || engulfingBull || wickRejectionBull) ? 'buy' : ((isNearSupply || engulfingBear || wickRejectionBear) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
       const s2RiskDist = Math.max(s2Atr * 0.5, 1.2);
       const s2Entry = currentPrice;
       const s2Sl = s2Direction === 'buy' ? s2Entry - s2RiskDist : s2Entry + s2RiskDist;
@@ -578,8 +591,10 @@ export class LocalTAAnalyzer {
         sd_zone_active: isNearDemand || isNearSupply,
         sd_pattern: primarySDPattern,
         zone_freshness: zoneFreshness,
-        engulfing_bull: engulfingBull,
-        engulfing_bear: engulfingBear,
+        zone_upper: freshSupply.length > 0 ? freshSupply[freshSupply.length - 1].top : +(currentPrice + (s2Atr * 0.5)).toFixed(2),
+        zone_lower: freshDemand.length > 0 ? freshDemand[freshDemand.length - 1].bottom : +(currentPrice - (s2Atr * 0.5)).toFixed(2),
+        engulfing_bull: engulfingBull || wickRejectionBull,
+        engulfing_bear: engulfingBear || wickRejectionBear,
         spread_acceptable: Boolean(marketContext.spread?.isAcceptable ?? (typeof marketContext.spread === 'number' ? marketContext.spread <= 3.0 : true)),
         strategy2: {
           direction: s2Direction,

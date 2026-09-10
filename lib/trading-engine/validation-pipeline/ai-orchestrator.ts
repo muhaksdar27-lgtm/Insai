@@ -478,13 +478,18 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
         required: ['decision', 'evidence', 'reasoning', 'rulesChecked', 'rulesPassed', 'rulesFailed', 'probabilities', 'confidenceScore', 'marketConfidence', 'dataQualityScore', 'signalQualityScore']
       };
 
-      const response = await this.callGeminiWithTimeoutAndRetry(aiClient, prompt, responseSchema, 10000, 1);
+      const response = await this.callGeminiWithTimeoutAndRetry(aiClient, prompt, responseSchema, 25000, 2);
       const text = response.text;
       if (!text) throw new Error('Empty response payload from Gemini API');
 
       const parsed = JSON.parse(text) as AIValidationDecision;
       let finalDecision: AIDecision = parsed.decision;
-      const confidenceScore = typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : 0;
+      let confidenceScore = typeof parsed.confidenceScore === 'number' ? parsed.confidenceScore : 0;
+      // Normalize decimal confidence scores (e.g. 0.92 -> 92)
+      if (confidenceScore > 0 && confidenceScore <= 1.0) {
+        confidenceScore = Math.round(confidenceScore * 100);
+      }
+      parsed.confidenceScore = confidenceScore;
 
       // STRICT AI QUALITY GATE:
       // If AI returned APPROVED but confidence score is below the threshold, strictly reject
@@ -557,8 +562,8 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
     timeoutMs: number = 8000,
     maxRetries: number = 1
   ): Promise<any> {
-    // Active production models prioritizing Gemini 1.5 Flash per user setup
-    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-flash-latest', 'gemini-3.8-flash'];
+    // Active production models per Gemini API specifications
+    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
     let lastError: any = null;
 
     for (const modelName of candidateModels) {

@@ -309,6 +309,7 @@ export class Strategy1SMCEvaluator implements IStrategyEvaluator {
           evidence: {
             source: 'RiskEngine',
             timestamp,
+            timeframe: 'M15',
             entryPrice,
             slPrice,
             tp1Price,

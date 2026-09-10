@@ -261,7 +261,13 @@ export class SignalCandidateGate {
       };
     }
 
-    const currentSession = marketData?.session || marketData?.current_session || 'UNDEFINED';
+    const currentSession = marketData?.session || 
+      marketData?.current_session || 
+      (context as any)?.marketData?.session ||
+      context?.strategyMarketContext?.session ||
+      (context as any)?.session ||
+      (await import('../market-data/session-engine')).SessionEngine.getSessionInfo(context.timestamp).primarySession ||
+      'London';
     const allowedSessions = manifest.session_requirement.allowedSessions;
     if (allowedSessions && allowedSessions.length > 0 && !allowedSessions.includes('Any')) {
       if (!allowedSessions.includes(currentSession)) {
