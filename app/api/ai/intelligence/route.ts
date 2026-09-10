@@ -123,7 +123,7 @@ High Impact News: ${newsEvents.length > 0 ? newsEvents[0].title : 'None'}
 
 Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), accumulationScore (0-100), distributionScore (0-100), keyActionableZone, liquidityNarrative, recommendation) dalam Bahasa Indonesia.`;
 
-        const candidateModels = ["gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+        const candidateModels = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-flash-latest", "gemini-3.8-flash"];
         for (const modelName of candidateModels) {
           try {
             const res = await ai.models.generateContent({
@@ -141,8 +141,8 @@ Berikan JSON singkat (marketRegime, institutionalBias, confidenceScore (0-100), 
               break;
             }
           } catch (e: any) {
-            const isUnavailableOrBusy = e.status === 503 || e.message?.includes('503') || e.message?.includes('high demand') || e.message?.includes('UNAVAILABLE');
-            if (isUnavailableOrBusy) {
+            const isRetryable = e.status === 503 || e.status === 404 || e.message?.includes('503') || e.message?.includes('404') || e.message?.includes('not found') || e.message?.includes('high demand') || e.message?.includes('UNAVAILABLE') || e.message?.includes('RESOURCE_EXHAUSTED');
+            if (isRetryable) {
               continue;
             }
             break;

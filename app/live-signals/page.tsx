@@ -19,7 +19,9 @@ import {
   Zap,
   ChevronRight,
   TrendingUp,
-  BarChart2
+  BarChart2,
+  Copy,
+  Check
 } from "lucide-react";
 
 const listVariants = {
@@ -43,6 +45,15 @@ export default function LiveSignals() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, fieldId: string) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    }
+    setCopiedField(fieldId);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   // Trigger real-time market scan
   const handleTriggerScan = async () => {
@@ -66,7 +77,7 @@ export default function LiveSignals() {
   };
 
   // Strictly filter to approved and live active signals per backend contract
-  const APPROVED_STATUSES = ['APPROVED', 'SIGNAL_ACTIVE', 'ACTIVE', 'TAKE_PARTIAL', 'EXECUTING'];
+  const APPROVED_STATUSES = ['APPROVED', 'SIGNAL_ACTIVE', 'ACTIVE', 'TAKE_PARTIAL', 'EXECUTING', 'PENDING', 'TP1 HIT', 'TP2 HIT'];
   const allActiveSignals = (rawSignals || []).filter(s => {
     const st = String(s.status || s.baseStatus || '').toUpperCase();
     const isExplicitlyClosed = ['CLOSED', 'FINISHED', 'ARCHIVED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'STOP_LOSS', 'TAKE_PROFIT', 'WIN', 'LOSS'].includes(st);
@@ -575,6 +586,80 @@ export default function LiveSignals() {
                       <span className="block text-[9px] font-mono font-bold uppercase text-teal-400 mb-0.5">TP2</span>
                       <span className="text-xs font-mono font-bold text-teal-400">{selectedSignal.tp2 ? Number(selectedSignal.tp2).toFixed(2) : '-'}</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* MetaTrader 4 / 5 Manual Entry Quick Actions */}
+                <div className="bg-zinc-900/90 border border-blue-500/30 rounded-xl p-3.5 space-y-3 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-blue-400" />
+                      MetaTrader Manual Entry Guide
+                    </h5>
+                    <button
+                      onClick={() => {
+                        const fullText = `PAIR: ${selectedSignal.pair || 'XAUUSD'}\nTYPE: ${selectedSignal.direction}\nENTRY: ${Number(selectedSignal.entry || 0).toFixed(2)}\nSL: ${Number(selectedSignal.sl || 0).toFixed(2)}\nTP1: ${Number(selectedSignal.tp1 || 0).toFixed(2)}${selectedSignal.tp2 ? `\nTP2: ${Number(selectedSignal.tp2).toFixed(2)}` : ''}`;
+                        copyToClipboard(fullText, 'full_order');
+                      }}
+                      className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded text-[9px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 transition-all"
+                    >
+                      {copiedField === 'full_order' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      {copiedField === 'full_order' ? 'Copied MT Order' : 'Copy MT Order'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] font-mono">
+                    <button
+                      onClick={() => copyToClipboard(String(Number(selectedSignal.entry || 0).toFixed(2)), 'entry')}
+                      className="p-2 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left transition-all group"
+                    >
+                      <span className="text-[9px] text-zinc-500 block uppercase font-bold">Entry Price</span>
+                      <span className="text-zinc-200 font-bold block">{Number(selectedSignal.entry || 0).toFixed(2)}</span>
+                      <span className="text-[8px] text-blue-400 mt-1 flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                        {copiedField === 'entry' ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
+                        {copiedField === 'entry' ? 'Copied' : 'Copy'}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(String(Number(selectedSignal.sl || 0).toFixed(2)), 'sl')}
+                      className="p-2 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left transition-all group"
+                    >
+                      <span className="text-[9px] text-rose-500 block uppercase font-bold">Stop Loss</span>
+                      <span className="text-rose-400 font-bold block">{Number(selectedSignal.sl || 0).toFixed(2)}</span>
+                      <span className="text-[8px] text-rose-400 mt-1 flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                        {copiedField === 'sl' ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
+                        {copiedField === 'sl' ? 'Copied' : 'Copy'}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(String(Number(selectedSignal.tp1 || 0).toFixed(2)), 'tp1')}
+                      className="p-2 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left transition-all group"
+                    >
+                      <span className="text-[9px] text-emerald-500 block uppercase font-bold">Take Profit 1</span>
+                      <span className="text-emerald-400 font-bold block">{Number(selectedSignal.tp1 || 0).toFixed(2)}</span>
+                      <span className="text-[8px] text-emerald-400 mt-1 flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                        {copiedField === 'tp1' ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
+                        {copiedField === 'tp1' ? 'Copied' : 'Copy'}
+                      </span>
+                    </button>
+                    {selectedSignal.tp2 ? (
+                      <button
+                        onClick={() => copyToClipboard(String(Number(selectedSignal.tp2 || 0).toFixed(2)), 'tp2')}
+                        className="p-2 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left transition-all group"
+                      >
+                        <span className="text-[9px] text-teal-500 block uppercase font-bold">Take Profit 2</span>
+                        <span className="text-teal-400 font-bold block">{Number(selectedSignal.tp2 || 0).toFixed(2)}</span>
+                        <span className="text-[8px] text-teal-400 mt-1 flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                          {copiedField === 'tp2' ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
+                          {copiedField === 'tp2' ? 'Copied' : 'Copy'}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="p-2 bg-zinc-950/50 border border-zinc-800/50 rounded-lg text-left opacity-50">
+                        <span className="text-[9px] text-zinc-600 block uppercase font-bold">Take Profit 2</span>
+                        <span className="text-zinc-600 font-bold block">-</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

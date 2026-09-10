@@ -537,15 +537,21 @@ export class LocalTAAnalyzer {
       const isNearDemand = freshDemand.some(d => Math.abs(currentPrice - d.top) <= s2Atr || (currentPrice >= d.bottom && currentPrice <= d.top));
       const isNearSupply = freshSupply.some(s => Math.abs(currentPrice - s.bottom) <= s2Atr || (currentPrice >= s.bottom && currentPrice <= s.top));
 
-      // Engulfing trigger evaluated on M15 or M5
+      // Engulfing trigger evaluated on recent M15 or M5 closed candles
       let engulfingBull = false;
       let engulfingBear = false;
-      const triggerCandles = m5Candles.length >= 2 ? m5Candles : s2Candles;
+      const triggerCandles = m5Candles.length >= 3 ? m5Candles : s2Candles;
       if (triggerCandles.length >= 2) {
-        const last = triggerCandles[triggerCandles.length - 1];
-        const prev = triggerCandles[triggerCandles.length - 2];
-        if (last.close > last.open && prev.close < prev.open && last.close >= prev.open && last.open <= prev.close) engulfingBull = true;
-        if (last.close < last.open && prev.close > prev.open && last.close <= prev.open && last.open >= prev.close) engulfingBear = true;
+        for (let i = 1; i <= Math.min(4, triggerCandles.length - 1); i++) {
+          const candle = triggerCandles[triggerCandles.length - i];
+          const prev = triggerCandles[triggerCandles.length - i - 1];
+          if (candle.close > candle.open && prev.close < prev.open && candle.close >= prev.open && candle.open <= prev.close) {
+            engulfingBull = true;
+          }
+          if (candle.close < candle.open && prev.close > prev.open && candle.close <= prev.open && candle.open >= prev.close) {
+            engulfingBear = true;
+          }
+        }
       }
 
       const s2Direction: 'buy' | 'sell' = (isNearDemand || engulfingBull) ? 'buy' : ((isNearSupply || engulfingBear) ? 'sell' : (trend_h1 === 'BEARISH' ? 'sell' : 'buy'));
@@ -748,17 +754,19 @@ export class LocalTAAnalyzer {
       let wickRejectionBear = false;
       const triggerCandles = m5Candles.length >= 2 ? m5Candles : (m1Candles.length >= 2 ? m1Candles : m15Candles);
       if (triggerCandles.length >= 2) {
-        const last = triggerCandles[triggerCandles.length - 1];
-        const prev = triggerCandles[triggerCandles.length - 2];
-        const totalRange = last.high - last.low;
-        if (totalRange > 0) {
-          const upperWick = last.high - Math.max(last.open, last.close);
-          const lowerWick = Math.min(last.open, last.close) - last.low;
-          if (lowerWick / totalRange >= 0.40) wickRejectionBull = true;
-          if (upperWick / totalRange >= 0.40) wickRejectionBear = true;
+        for (let i = 1; i <= Math.min(4, triggerCandles.length - 1); i++) {
+          const candle = triggerCandles[triggerCandles.length - i];
+          const prev = triggerCandles[triggerCandles.length - i - 1];
+          const totalRange = candle.high - candle.low;
+          if (totalRange > 0) {
+            const upperWick = candle.high - Math.max(candle.open, candle.close);
+            const lowerWick = Math.min(candle.open, candle.close) - candle.low;
+            if (lowerWick / totalRange >= 0.35) wickRejectionBull = true;
+            if (upperWick / totalRange >= 0.35) wickRejectionBear = true;
+          }
+          if (candle.close > candle.open && prev.close < prev.open && candle.close >= prev.open && candle.open <= prev.close) engulfingBull = true;
+          if (candle.close < candle.open && prev.close > prev.open && candle.close <= prev.open && candle.open >= prev.close) engulfingBear = true;
         }
-        if (last.close > last.open && prev.close < prev.open && last.close >= prev.open && last.open <= prev.close) engulfingBull = true;
-        if (last.close < last.open && prev.close > prev.open && last.close <= prev.open && last.open >= prev.close) engulfingBear = true;
       }
 
       const s5Direction: 'buy' | 'sell' = ((isNearDemand || liqSweepBull || wickRejectionBull || engulfingBull) && dealingRange.isDiscountForBuy) 

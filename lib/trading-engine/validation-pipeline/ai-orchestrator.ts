@@ -557,8 +557,8 @@ VALIDATOR RULES RESULTS: ${JSON.stringify(simplifiedResults)}`;
     timeoutMs: number = 8000,
     maxRetries: number = 1
   ): Promise<any> {
-    // User requested gemini-1.5-flash; fallback gracefully to gemini-flash-latest, 3.6-flash, 3.5-flash
-    const candidateModels = ['gemini-1.5-flash', 'gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+    // Active production models prioritizing Gemini 1.5 Flash per user setup
+    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-flash-latest', 'gemini-3.8-flash'];
     let lastError: any = null;
 
     for (const modelName of candidateModels) {

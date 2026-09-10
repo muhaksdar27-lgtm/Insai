@@ -19,6 +19,7 @@ import {
   Save,
   RotateCcw,
   Check,
+  Send,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { ClientDate } from "@/components/client-date";
@@ -108,6 +109,35 @@ export default function Settings() {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTestTelegram = async () => {
+    setTestingTelegram(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch("/api/notifications/telegram/test", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTelegramTestResult({
+          success: true,
+          message: data.message || "Test signal sent to Telegram successfully!"
+        });
+      } else {
+        setTelegramTestResult({
+          success: false,
+          message: data.error || "Failed to send test signal to Telegram. Please verify TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID."
+        });
+      }
+    } catch (err: any) {
+      setTelegramTestResult({
+        success: false,
+        message: err.message || "Network error connecting to Telegram test endpoint."
+      });
+    } finally {
+      setTestingTelegram(false);
+    }
+  };
 
   useEffect(() => {
     if (!configStatus?.values) return;
@@ -703,6 +733,22 @@ export default function Settings() {
                   onChange={(e) => setFormData({ ...formData, TELEGRAM_CHAT_ID: e.target.value })}
                   placeholder="-100123456789"
                 />
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleTestTelegram}
+                    disabled={testingTelegram}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded text-[10px] font-bold tracking-wider uppercase transition-all disabled:opacity-50"
+                  >
+                    <Send className={`w-3 h-3 ${testingTelegram ? 'animate-pulse' : ''}`} />
+                    {testingTelegram ? "Dispatching Telegram Test..." : "Test Telegram Dispatch"}
+                  </button>
+                  {telegramTestResult && (
+                    <div className={`p-2 rounded text-[10px] font-mono border ${telegramTestResult.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
+                      {telegramTestResult.message}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </form>

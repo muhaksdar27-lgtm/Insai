@@ -155,8 +155,8 @@ You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded 
 
     contents.push({ role: 'user', parts: currentParts });
 
-    // Robust Multi-Model Fallback Cascade to handle temporary 503 / high demand spikes
-    const candidateModels = ["gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+    // Robust Multi-Model Fallback Cascade prioritizing Gemini 1.5 Flash
+    const candidateModels = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-flash-latest", "gemini-3.8-flash"];
     let response: any = null;
     let lastError: any = null;
 
@@ -176,9 +176,9 @@ You are INSAi Lead Quantitative Gold Analyst & Trading Mentor. You are embedded 
       } catch (e: unknown) {
         lastError = e instanceof Error ? e : new Error(String(e));
         const errObj = e as any;
-        const isUnavailableOrBusy = errObj?.status === 503 || errObj?.message?.includes('503') || errObj?.message?.includes('high demand') || errObj?.message?.includes('UNAVAILABLE') || errObj?.message?.includes('RESOURCE_EXHAUSTED');
-        if (isUnavailableOrBusy) {
-          logger.warn(`Model ${modelName} experiencing high demand (503/429), falling back to next available model...`);
+        const isRetryable = errObj?.status === 503 || errObj?.status === 404 || errObj?.message?.includes('503') || errObj?.message?.includes('404') || errObj?.message?.includes('not found') || errObj?.message?.includes('high demand') || errObj?.message?.includes('UNAVAILABLE') || errObj?.message?.includes('RESOURCE_EXHAUSTED');
+        if (isRetryable) {
+          logger.warn(`Model ${modelName} unavailable or not found, falling back to next available model...`);
           continue;
         }
         // If other fatal error (e.g. invalid API key), break early
