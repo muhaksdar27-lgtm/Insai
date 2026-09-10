@@ -1,5 +1,5 @@
 import { getDatabaseClient } from "../db/client";
-import { healthCheckEngine } from "../observability/health-check";
+import { healthCheckEngine, ServiceHealthStatus } from "../observability/health-check";
 import { TradingEngine } from './engine';
 import { StrategyContextBuilder } from './strategy-context-builder';
 import { getMarketDataService } from '../market-data/market-data-service';
@@ -95,20 +95,30 @@ export class MarketScanner {
     logger.info('Market Scanner stopped');
   }
 
-  public async scan(force: boolean = false) {
-    if (this.isScanning && !force) {
-       return;
+  // Distributed lock TTL: 60 seconds safely covers multi-timeframe fetching,
+  // calendar validation, active signal checks, and multi-strategy execution pipeline (C-02).
+  private static readonly SCAN_LOCK_TTL_SECONDS = 60;
+
+  public async scan(force: boolean = false): Promise<boolean> {
+    // C-01: Prevent overlapping scans in the same process regardless of force flag
+    if (this.isScanning) {
+      logger.info('Market scan already in progress on this instance, skipping overlapping scan request.');
+      return false;
     }
     
-    // Acquire distributed lock for scanning (10 seconds to prevent overlapping scans from same or other instances)
-    const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', 10);
-    if (!lockAcquired && !force) {
-       return;
+    // C-01 & C-02: Acquire distributed lock with safe 60s TTL. Never bypass distributed lock even if force is true.
+    const lockAcquired = await getQueueManager().acquireLock('market_scan_xauusd', MarketScanner.SCAN_LOCK_TTL_SECONDS);
+    if (!lockAcquired) {
+      logger.info('Distributed lock market_scan_xauusd held by another instance/process, skipping concurrent scan.');
+      return false;
     }
     
     this.isScanning = true;
     healthCheckEngine.updateServiceHealth('MarketScanner', 'SCAN_IN_PROGRESS', 0, 'Scan in progress');
     const startTime = Date.now();
+    let serviceStatus: ServiceHealthStatus = 'ONLINE';
+    let statusMessage = 'Scan completed';
+
     try {
       // 1. Check if any strategies are active before fetching data
       let activeCount = 0;
@@ -142,54 +152,38 @@ export class MarketScanner {
          try {
            const strats = await getDatabaseClient().getStrategies();
            if (Array.isArray(strats) && strats.length > 0) {
-             const activeStrats = strats.filter(s => s.enabled);
-             if (activeStrats.length > 0) {
-               activeCount = activeStrats.length;
-               activeStrategyIds = activeStrats.map(s => s.id);
-               logger.info(`Found ${strats.length} strategies, ${activeCount} active.`);
+             const activeStrats = strats.filter(s => Boolean(s.enabled));
+             activeCount = activeStrats.length;
+             activeStrategyIds = activeStrats.map(s => s.id);
+             if (activeCount > 0) {
+               logger.info(`Found ${strats.length} strategies in database, ${activeCount} active.`);
              } else {
-               activeStrategyIds = [
-                 'strategy-1-smc',
-                 'strategy-2-snd',
-                 'strategy-3-scalping',
-                 'strategy-4-news',
-                 'strategy-5-smc-sd-confluence'
-               ];
-               activeCount = activeStrategyIds.length;
-               logger.info(`Database strategies disabled. Falling back to default ${activeCount} active strategies.`);
+               // C-05: User explicitly disabled all strategies. Never silently force default strategies on!
+               logger.info(`All ${strats.length} database strategies are disabled by user configuration.`);
              }
            } else {
-             activeStrategyIds = [
-               'strategy-1-smc',
-               'strategy-2-snd',
-               'strategy-3-scalping',
-               'strategy-4-news',
-               'strategy-5-smc-sd-confluence'
-             ];
-             activeCount = activeStrategyIds.length;
-             if ((strats as any)?.status !== 'not_configured') {
-               logger.warn(`getStrategies returned empty or non-array. Falling back to default ${activeCount} active strategies.`);
-             }
+             // C-05: Database returned empty or non-array strategies. Do not silently enable default strategies.
+             activeStrategyIds = [];
+             activeCount = 0;
+             logger.warn('No strategies found in database. Market scan will be skipped.');
            }
+
+           const cacheEntry = { activeCount, activeIds: activeStrategyIds, expiresAt: now + this.STRATEGIES_CACHE_TTL };
+           this.strategiesCache = cacheEntry;
+           getQueueManager().setCache('active_strategies_data', cacheEntry, Math.ceil(this.STRATEGIES_CACHE_TTL / 1000)).catch(() => {});
          } catch (e: any) {
-           activeStrategyIds = [
-             'strategy-1-smc',
-             'strategy-2-snd',
-             'strategy-3-scalping',
-             'strategy-4-news',
-             'strategy-5-smc-sd-confluence'
-           ];
-           activeCount = activeStrategyIds.length;
-           logger.warn(`Failed to check active strategies. Falling back to default ${activeCount} active strategies. Error: ${e.message}`);
+           // C-05: Database strategy fetch failed. Do not silently enable default strategies.
+           activeStrategyIds = [];
+           activeCount = 0;
+           logger.error(`Failed to load strategies from database: ${e.message}. Market scan will be skipped.`);
          }
-         const cacheEntry = { activeCount, activeIds: activeStrategyIds, expiresAt: now + this.STRATEGIES_CACHE_TTL };
-         this.strategiesCache = cacheEntry;
-         getQueueManager().setCache('active_strategies_data', cacheEntry, Math.ceil(this.STRATEGIES_CACHE_TTL / 1000)).catch(() => {});
       }
       
       if (activeCount === 0) {
-        logger.info('No active strategies, skipping market scan.');
-        return;
+        logger.info('No active strategies enabled, skipping market scan.');
+        serviceStatus = 'ONLINE';
+        statusMessage = 'Scan skipped: No active strategies enabled';
+        return false;
       }
       
       // Get the current M1 candle block (1 minute = 60000 ms) for high precision
@@ -201,7 +195,9 @@ export class MarketScanner {
       
       if (!currentPrice) {
          logger.warn('Market price for XAUUSD is currently unavailable. Skipping scan.');
-         return;
+         serviceStatus = 'DEGRADED';
+         statusMessage = 'Scan skipped: Market price for XAUUSD unavailable';
+         return false;
       }
       
       const isNewCandle = currentCandleBlock !== this.lastScannedCandleBlock;
@@ -210,11 +206,10 @@ export class MarketScanner {
       
       if (!force && !isNewCandle && !isSignificantPriceChange && !isHeartbeatDue && this.lastScannedPrice > 0) {
          // Skip scan to preserve TwelveData/YahooFinance API quota!
-         return;
+         serviceStatus = 'ONLINE';
+         statusMessage = 'Scan throttled: Price and candle unchanged';
+         return false;
       }
-      
-      this.lastScannedPrice = currentPrice;
-      this.lastScannedCandleBlock = currentCandleBlock;
 
       logger.info('Running market scan for XAUUSD (triggered by real-time WebSocket/throttle)...');
       
@@ -236,7 +231,9 @@ export class MarketScanner {
       const marketStatus = MarketCalendar.getMarketStatus("XAUUSD", baseContext);
       if (marketStatus.isHardBlocked) {
         logger.info(`[HARD_BLOCK_SCAN_SKIPPED] Market scan skipped for XAUUSD: ${marketStatus.blockReason}`);
-        return;
+        serviceStatus = 'ONLINE';
+        statusMessage = `Market scan skipped for XAUUSD: ${marketStatus.blockReason}`;
+        return false;
       }
 
       // 2c. Monitor Active Signals for SL/TP hits
@@ -246,7 +243,16 @@ export class MarketScanner {
           const pricesCache = new Map<string, number>();
           pricesCache.set("XAUUSD", currentPrice);
 
+          // C-07: Executable statuses only - strictly exclude PENDING, REJECTED, EXPIRED, etc.
+          const EXECUTABLE_STATUSES = new Set(['APPROVED', 'SIGNAL_ACTIVE', 'ACTIVE', 'TAKE_PARTIAL']);
+
           for (const signal of activeSignals) {
+             const rawStatus = String(signal.status || '').trim().toUpperCase();
+             if (!EXECUTABLE_STATUSES.has(rawStatus)) {
+               logger.debug(`[ACTIVE_SIGNAL_MONITOR] Skipping signal ${signal.signal_key}: status '${signal.status}' is not executable (e.g. PENDING)`);
+               continue;
+             }
+
              const symbol = signal.symbol || 'XAUUSD';
              let sigPrice = pricesCache.get(symbol);
              if (sigPrice === undefined) {
@@ -256,7 +262,20 @@ export class MarketScanner {
              }
              if (sigPrice <= 0) continue;
 
-             const dir = (signal.direction || 'BUY').toUpperCase();
+             // C-06: Strictly validate direction - reject/skip malformed signals instead of defaulting to BUY
+             const rawDir = String(signal.direction || '').trim().toUpperCase();
+             let dir: 'BUY' | 'SELL' | null = null;
+             if (rawDir === 'BUY' || rawDir === 'LONG') {
+               dir = 'BUY';
+             } else if (rawDir === 'SELL' || rawDir === 'SHORT') {
+               dir = 'SELL';
+             }
+
+             if (!dir) {
+               logger.warn(`[ACTIVE_SIGNAL_MONITOR] Skipping signal ${signal.signal_key}: invalid or missing direction '${signal.direction}'`);
+               continue;
+             }
+
              const sl = parseFloat(signal.sl_price || signal.slPrice || '0');
              const tp = parseFloat(signal.tp1_price || signal.tp1Price || signal.tp_price || signal.tpPrice || '0');
              const ep = parseFloat(signal.entry_price || signal.entryPrice || '0');
@@ -292,11 +311,23 @@ export class MarketScanner {
       // 3. Pass StrategyMarketContext to engine for true multi-timeframe strategy isolation
       await this.engine.processStrategyMarketContext('XAUUSD', globalContext, activeStrategyIds);
       
+      // C-03: Update lastScannedPrice and lastScannedCandleBlock ONLY after pipeline completes successfully!
+      this.lastScannedPrice = currentPrice;
+      this.lastScannedCandleBlock = currentCandleBlock;
+      this.lastScanTime = Date.now();
+      serviceStatus = 'ONLINE';
+      statusMessage = `Scan completed successfully (${activeStrategyIds.length} strategies evaluated)`;
+      return true;
+
     } catch (error: any) {
-      if (error.message.includes('not configured')) {
-        logger.warn(`Market scan skipped: ${error.message}`);
-      } else if (error.message.includes('DATA_VALIDATION_ERROR')) {
-        logger.error(`Pipeline stopped by Data Validation Layer: ${error.message}`);
+      if (error.message?.includes('not configured')) {
+        serviceStatus = 'NOT CONFIGURED';
+        statusMessage = `Market scan skipped: ${error.message}`;
+        logger.warn(statusMessage);
+      } else if (error.message?.includes('DATA_VALIDATION_ERROR')) {
+        serviceStatus = 'DEGRADED';
+        statusMessage = `Pipeline stopped by Data Validation Layer: ${error.message}`;
+        logger.error(statusMessage);
         import('../observability/audit-logger').then(({ auditLogger }) => {
            auditLogger.log({
              action: 'DATA_VALIDATION_FAILED',
@@ -307,22 +338,23 @@ export class MarketScanner {
            });
         });
       } else {
+        serviceStatus = 'RUNTIME_ERROR';
+        statusMessage = `Market scan failed: ${error.message}`;
         errorTracker.trackError({
           component: 'MarketScanner',
           error: error,
           severity: 'high'
         });
-        logger.error(`Market scan failed: ${error.message}`);
+        logger.error(statusMessage);
       }
+      return false;
     } finally {
       this.isScanning = false;
-      healthCheckEngine.updateServiceHealth('MarketScanner', 'ONLINE', Date.now() - startTime, 'Scan completed');
-      metricsEngine.recordScannerDuration(Date.now() - startTime);
-      // A forced scan may intentionally bypass the distributed lock. Never
-      // release a lock that this invocation did not acquire.
-      if (lockAcquired) {
-        await getQueueManager().releaseLock('market_scan_xauusd');
-      }
+      const duration = Date.now() - startTime;
+      // C-04: Accurately report real health status instead of unconditionally marking ONLINE
+      healthCheckEngine.updateServiceHealth('MarketScanner', serviceStatus, duration, statusMessage);
+      metricsEngine.recordScannerDuration(duration);
+      await getQueueManager().releaseLock('market_scan_xauusd');
     }
   }
 }

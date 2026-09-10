@@ -1,7 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
-import fs from 'fs';
-import path from 'path';
 import next from 'next';
 
 
@@ -12,21 +10,16 @@ import { validateEnvironment } from '@/lib/security/env-validator';
 import { getIngestionService } from '@/lib/services/ingestion_service';
 import crypto from 'crypto';
 
-const hasBuiltApp = fs.existsSync(path.join(process.cwd(), '.next', 'prerender-manifest.json'));
-const dev = process.env.NODE_ENV !== 'production' || !hasBuiltApp;
-const hostname = process.env.HOST || '0.0.0.0';
-// In Google AI Studio sandbox, port 3000 is hardcoded and mandatory.
-// In external deployments (Railway, Docker), process.env.PORT is respected when APPLET_ID is not present.
-const isAiStudio = Boolean(process.env.APPLET_ID || process.env.NGINX_PORT || process.env.CONTROL_PLANE_PORT);
-const port = isAiStudio ? 3000 : (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
-const turbopack = false;
+const dev = process.env.NODE_ENV !== 'production';
+const hostname = '0.0.0.0';
+// In Google AI Studio sandbox, port 3000 is hardcoded and mandatory by infrastructure.
+const port = 3000;
 
 export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed' | 'shutting_down';
 
 let serverStatus: ServerLifecycleStatus = 'starting';
 let initErrorMessage: string | null = null;
 let isAppPrepared = false;
-let preparePromise: Promise<void> | null = null;
 let pyProcess: any = null;
 const degradedComponents = new Map<string, string>();
 
@@ -64,7 +57,7 @@ async function verifyPythonEngine() {
   }
 }
 
-const app = next({ dev, hostname, port, turbopack });
+const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 const requestHandler = (req: IncomingMessage, res: ServerResponse) => {
@@ -186,21 +179,9 @@ const requestHandler = (req: IncomingMessage, res: ServerResponse) => {
       }
 
       if (!isAppPrepared) {
-        if (preparePromise) {
-          try {
-            await preparePromise;
-          } catch (prepErr: any) {
-            if (!res.headersSent) {
-              res.writeHead(503, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'Server is starting...', details: prepErr?.message }));
-            }
-            return;
-          }
-        } else {
-          res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '3' });
-          res.end(JSON.stringify({ error: 'Server is initializing...' }));
-          return;
-        }
+        res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '2' });
+        res.end(JSON.stringify({ error: 'Server is initializing...' }));
+        return;
       }
 
       // Pass to Next.js
@@ -378,32 +359,33 @@ async function initializeBackendServices() {
   }
 }
 
-logger.info(`[BOOT] HTTP server starting on ${hostname}:${port}...`);
-server.listen(port, hostname, () => {
-  logger.info(`[BOOT] HTTP server listening on http://${hostname}:${port}`);
-  logger.info(`[BOOT] Health endpoints active (/health/readiness, /health/liveness, /health, /healthz, /ping, /ready, /live)`);
-  logger.info(`[BOOT] Next.js preparing...`);
-  
-  preparePromise = app.prepare();
-  preparePromise
-    .then(() => {
-      isAppPrepared = true;
-      if (serverStatus === 'starting') {
-        serverStatus = 'ready';
-      }
-      logger.info(`[BOOT] Next.js prepared successfully`);
-      
+async function startServer() {
+  logger.info(`[BOOT] Next.js preparing (dev=${dev})...`);
+  try {
+    await app.prepare();
+    isAppPrepared = true;
+    if (serverStatus === 'starting') {
+      serverStatus = 'ready';
+    }
+    logger.info(`[BOOT] Next.js prepared successfully`);
+
+    server.listen(port, hostname, () => {
+      logger.info(`[BOOT] HTTP server listening on http://${hostname}:${port}`);
+      logger.info(`[BOOT] Health endpoints active (/health/readiness, /health/liveness, /health, /healthz, /ping, /ready, /live)`);
+
       // Start background services asynchronously (does NOT block HTTP serving or health probes)
       initializeBackendServices().catch((err: any) => {
         logger.error(`[ERROR][BOOT] Unhandled error during background initialization: ${err.message}`, { stack: err.stack });
         registerDegradedComponent('backendInit', err.message);
       });
-    })
-    .catch((err: any) => {
-      logger.error(`[ERROR][BOOT][NEXT] Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
-      serverStatus = 'failed';
-      initErrorMessage = `Next.js preparation failed: ${err.message}`;
-      process.exit(1);
     });
-});
+  } catch (err: any) {
+    logger.error(`[ERROR][BOOT][NEXT] Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
+    serverStatus = 'failed';
+    initErrorMessage = `Next.js preparation failed: ${err.message}`;
+    process.exit(1);
+  }
+}
+
+startServer();
 
