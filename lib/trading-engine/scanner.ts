@@ -318,7 +318,11 @@ export class MarketScanner {
       this.isScanning = false;
       healthCheckEngine.updateServiceHealth('MarketScanner', 'ONLINE', Date.now() - startTime, 'Scan completed');
       metricsEngine.recordScannerDuration(Date.now() - startTime);
-      await getQueueManager().releaseLock('market_scan_xauusd');
+      // A forced scan may intentionally bypass the distributed lock. Never
+      // release a lock that this invocation did not acquire.
+      if (lockAcquired) {
+        await getQueueManager().releaseLock('market_scan_xauusd');
+      }
     }
   }
 }

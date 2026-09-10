@@ -264,6 +264,10 @@ export class DatabaseService {
         max: 20,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 5000,
+        // Never allow a stalled query to hold an API request or scanner cycle
+        // indefinitely. Callers can then use their documented memory fallback.
+        statement_timeout: 8000,
+        query_timeout: 8000,
       });
 
       this.pool.on('error', (err) => {
@@ -720,8 +724,9 @@ export class DatabaseService {
             FROM signals s
             LEFT JOIN signal_evidence se ON s.signal_key = se.signal_key
             WHERE s.status IN ('APPROVED', 'SIGNAL_ACTIVE', 'ACTIVE', 'TAKE_PARTIAL', 'PENDING')
-            GROUP BY s.id
-            ORDER BY s.created_at DESC;
+                   GROUP BY s.id
+                   ORDER BY s.created_at DESC
+                   LIMIT 100;
           `;
           const { rows } = await pool.query(query);
           return rows || [];
@@ -1078,5 +1083,4 @@ export function getDatabaseClient(): DatabaseService {
   }
   return (globalThis as any).__dbClient;
 }
-
 
