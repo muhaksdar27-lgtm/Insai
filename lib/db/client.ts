@@ -238,9 +238,16 @@ export class DatabaseService {
       return null;
     }
 
-    // Hostnames ending in .internal or .local are private VPC hostnames (e.g. Railway private network)
-    // that cannot resolve in this environment. Skip immediately to prevent DNS latency spikes.
-    if (dbUrl.includes('.railway.internal') || dbUrl.includes('.internal') || dbUrl.includes('.local')) {
+    // In local sandbox environment outside Railway, private hostnames like .internal cannot resolve.
+    // However, on Railway (where RAILWAY_ENVIRONMENT, RAILWAY_PROJECT_ID, or RAILWAY_SERVICE_ID exists),
+    // .railway.internal is the valid private VPC network address for Railway PostgreSQL.
+    const isRunningOnRailway = Boolean(
+      process.env.RAILWAY_ENVIRONMENT ||
+      process.env.RAILWAY_PROJECT_ID ||
+      process.env.RAILWAY_SERVICE_ID ||
+      process.env.RAILWAY_STATIC_URL
+    );
+    if (!isRunningOnRailway && (dbUrl.includes('.railway.internal') || dbUrl.includes('.internal') || dbUrl.includes('.local'))) {
       return null;
     }
 

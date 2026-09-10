@@ -13,7 +13,14 @@ import crypto from 'crypto';
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0';
 // In Google AI Studio sandbox, port 3000 is hardcoded and mandatory by infrastructure.
-const port = 3000;
+// On Railway or external cloud deployments, detect environment and bind to assigned PORT if provided.
+const isRailway = Boolean(
+  process.env.RAILWAY_ENVIRONMENT ||
+  process.env.RAILWAY_PROJECT_ID ||
+  process.env.RAILWAY_SERVICE_ID ||
+  process.env.RAILWAY_STATIC_URL
+);
+const port = isRailway && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 export type ServerLifecycleStatus = 'starting' | 'ready' | 'degraded' | 'failed' | 'shutting_down';
 
@@ -360,31 +367,31 @@ async function initializeBackendServices() {
 }
 
 async function startServer() {
-  logger.info(`[BOOT] Next.js preparing (dev=${dev})...`);
-  try {
-    await app.prepare();
-    isAppPrepared = true;
-    if (serverStatus === 'starting') {
-      serverStatus = 'ready';
-    }
-    logger.info(`[BOOT] Next.js prepared successfully`);
+  // Bind HTTP server immediately so Railway and container orchestration healthchecks
+  // receive immediate HTTP 200 responses (/health/readiness) without waiting on Next.js compile.
+  server.listen(port, hostname, () => {
+    logger.info(`[BOOT] HTTP server listening on http://${hostname}:${port}`);
+    logger.info(`[BOOT] Health endpoints active (/health/readiness, /health/liveness, /health, /healthz, /ping, /ready, /live)`);
 
-    server.listen(port, hostname, () => {
-      logger.info(`[BOOT] HTTP server listening on http://${hostname}:${port}`);
-      logger.info(`[BOOT] Health endpoints active (/health/readiness, /health/liveness, /health, /healthz, /ping, /ready, /live)`);
+    logger.info(`[BOOT] Next.js preparing (dev=${dev})...`);
+    app.prepare().then(() => {
+      isAppPrepared = true;
+      if (serverStatus === 'starting') {
+        serverStatus = 'ready';
+      }
+      logger.info(`[BOOT] Next.js prepared successfully`);
 
       // Start background services asynchronously (does NOT block HTTP serving or health probes)
       initializeBackendServices().catch((err: any) => {
         logger.error(`[ERROR][BOOT] Unhandled error during background initialization: ${err.message}`, { stack: err.stack });
         registerDegradedComponent('backendInit', err.message);
       });
+    }).catch((err: any) => {
+      logger.error(`[ERROR][BOOT][NEXT] Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
+      serverStatus = 'degraded';
+      initErrorMessage = `Next.js preparation failed: ${err.message}`;
     });
-  } catch (err: any) {
-    logger.error(`[ERROR][BOOT][NEXT] Failed to prepare Next.js app: ${err.message}`, { stack: err.stack });
-    serverStatus = 'failed';
-    initErrorMessage = `Next.js preparation failed: ${err.message}`;
-    process.exit(1);
-  }
+  });
 }
 
 startServer();
